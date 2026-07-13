@@ -2,10 +2,10 @@
 
 | Field | Value |
 |-------|-------|
-| **Engine Version** | Unity 6.3 LTS |
+| **Engine Version** | Unity 6.3 LTS (6000.3.19f1) |
 | **Release Date** | December 2025 |
-| **Project Pinned** | 2026-02-13 |
-| **Last Docs Verified** | 2026-02-13 |
+| **Project Pinned** | 2026-07-13 |
+| **Last Docs Verified** | 2026-07-13 |
 | **LLM Knowledge Cutoff** | May 2025 |
 
 ## Knowledge Gap Warning
@@ -22,7 +22,7 @@ before suggesting Unity API calls.
 | 6.0 | Oct 2024 | HIGH | Unity 6 rebrand, new rendering features, Entities 1.3, DOTS improvements |
 | 6.1 | Nov 2024 | MEDIUM | Bug fixes, stability improvements |
 | 6.2 | Dec 2024 | MEDIUM | Performance optimizations, new input system improvements |
-| 6.3 LTS | Dec 2025 | HIGH | First LTS since 6.0, production-ready DOTS, enhanced graphics features |
+| 6.3 LTS | Dec 2025 | HIGH | URP Compatibility Mode removed, SerializeField fields-only, HTTP/2 default, Netcode 2.x |
 
 ## Major Changes from 2022 LTS to Unity 6.3 LTS
 

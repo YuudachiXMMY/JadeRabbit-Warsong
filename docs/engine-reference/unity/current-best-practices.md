@@ -1,6 +1,6 @@
 # Unity 6.3 LTS — Current Best Practices
 
-**Last verified:** 2026-02-13
+**Last verified:** 2026-07-13
 
 Modern Unity 6 patterns that may not be in the LLM's training data.
 These are production-ready recommendations as of Unity 6.3 LTS.
@@ -328,7 +328,50 @@ Debug.Log($"Player {playerName} scored {score} points");
 
 ---
 
+---
+
+## Unity 6.3 LTS — New APIs to Know
+
+### Animator Pooling — `ResetControllerState()`
+
+```csharp
+// ✅ New in 6.3: Reset animator before returning to pool
+public void ReturnToPool(GameObject go) {
+    go.GetComponent<Animator>().ResetControllerState();
+    pool.Return(go);
+}
+```
+
+### Low-Level 2D Physics (Box2D v3)
+
+Unity 6.3 adds a new low-level 2D physics API based on Box2D v3. It runs
+alongside the existing API and will eventually replace it. Use through the
+standard `Physics2D` API — no code changes needed yet, but be aware it exists
+and improves simulation quality.
+
+### HTTP/2 by Default
+
+`UnityWebRequest` now uses HTTP/2 by default on major platforms.
+
+```csharp
+// No code change needed — HTTP/2 is automatic
+// But ensure your server supports HTTP/2 or downgrade explicitly:
+var request = UnityWebRequest.Get(url);
+// If HTTP/2 causes issues, check server compatibility first
+```
+
+### GC on Scene Load is Now Optional (6.2+)
+
+```csharp
+// Player Settings > Force GC on Scene Loads
+// Disabling this reduces scene load hitches in production
+// Test with it disabled to measure impact on your specific project
+```
+
+---
+
 **Sources:**
 - https://docs.unity3d.com/6000.0/Documentation/Manual/BestPracticeGuides.html
 - https://docs.unity3d.com/Packages/com.unity.entities@1.3/manual/index.html
 - https://docs.unity3d.com/Packages/com.unity.inputsystem@1.11/manual/index.html
+- https://docs.unity3d.com/6000.3/Documentation/Manual/WhatsNewUnity63.html

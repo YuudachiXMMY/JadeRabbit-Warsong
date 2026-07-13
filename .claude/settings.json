@@ -4,6 +4,9 @@
     "type": "command",
     "command": "bash .claude/statusline.sh"
   },
+  "env": {
+    "CLAUDE_CODE_DISABLE_1M_CONTEXT": "1"
+  },
   "permissions": {
     "allow": [
       "Bash(git status*)",

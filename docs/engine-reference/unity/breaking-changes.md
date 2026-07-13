@@ -1,6 +1,6 @@
 # Unity 6.3 LTS — Breaking Changes
 
-**Last verified:** 2026-02-13
+**Last verified:** 2026-07-13
 
 This document tracks breaking API changes and behavioral differences between Unity 2022 LTS
 (likely in model training) and Unity 6.3 LTS (current version). Organized by risk level.
@@ -149,6 +149,104 @@ When upgrading from 2022 LTS to Unity 6.3 LTS:
 
 ---
 
+---
+
+## Unity 6.3 LTS — Specific Breaking Changes (6.1 → 6.3)
+
+### HIGH: URP Compatibility Mode Removed
+**Version:** 6.3 LTS
+
+URP Compatibility Mode (deprecated in 6.0) is now **completely removed**. The
+`RenderGraphSettings.enableRenderCompatibilityMode` property is now read-only (returns `false`).
+
+```csharp
+// ❌ No longer works — Compatibility Mode is stripped from code by default
+RenderGraphSettings.enableRenderCompatibilityMode = true; // compile error
+
+// ✅ Must use Render Graph API
+public override void RecordRenderGraph(RenderGraph renderGraph, ContextContainer frameData) { }
+```
+
+If you have Compatibility Mode code, add `URP_COMPATIBILITY_MODE` scripting define to Player
+Settings to re-enable it — but this is not supported for shipping. Migrate to Render Graph.
+
+---
+
+### HIGH: `[SerializeField]` Now Restricted to Fields Only
+
+```csharp
+// ❌ Compile error in 6.3 — attribute applied to a property
+[SerializeField]
+public int Health { get; set; }  // ERROR: CS0592
+
+// ✅ Correct usage — field only
+[SerializeField]
+private int _health;
+```
+
+---
+
+### MEDIUM: `Physics.autoSyncTransforms` Deprecated
+
+```csharp
+// ❌ Deprecated in 6.3
+Physics.autoSyncTransforms = false;
+
+// ✅ Use explicit sync
+Physics.SyncTransforms();
+```
+
+---
+
+### MEDIUM: `UnityWebRequest` Defaults to HTTP/2
+
+HTTP/2 is now the default protocol on Android, Linux, macOS, PS4, PS5, UWP, and Windows.
+If your server does not support HTTP/2, you may see connection failures. Test your endpoints
+and downgrade explicitly if needed.
+
+---
+
+### MEDIUM: Netcode for GameObjects 1.x Deprecated
+
+```csharp
+// ❌ Netcode 1.x API (deprecated)
+using Unity.Netcode;
+// older NetworkVariable patterns
+
+// ✅ Migrate to Netcode 2.x — see official migration guide
+// https://docs-multiplayer.unity3d.com/netcode/current/upgrade-guide/
+```
+
+---
+
+### LOW: `AccessibilityNode.selected` → `AccessibilityNode.invoked`
+
+```csharp
+// ❌ Deprecated (will be obsolete in future release)
+node.selected = true;
+
+// ✅ New name
+node.invoked = true;
+```
+
+---
+
+### LOW: Android Adaptive Icons Required
+
+Round and legacy Android icons are deprecated. Use **Adaptive Icons** only.
+`PlayerSettings.Android.androidIsGame` is obsolete — use the **App Category** Player setting instead.
+
+---
+
+### LOW: Search Index Manager Removed
+
+`Windows > Search > Index Manager` has been removed.
+Go to `Preferences > Search > Indexing` instead.
+
+---
+
 **Sources:**
 - https://docs.unity3d.com/6000.0/Documentation/Manual/upgrade-guides.html
 - https://docs.unity3d.com/Packages/com.unity.entities@1.3/manual/upgrade-guide.html
+- https://docs.unity3d.com/6000.3/Documentation/Manual/UpgradeGuideUnity63.html
+- https://discussions.unity.com/t/planned-breaking-changes-in-unity-6-3/1646418

@@ -1,6 +1,6 @@
 # Unity 6.3 LTS — Deprecated APIs
 
-**Last verified:** 2026-02-13
+**Last verified:** 2026-07-13
 
 Quick lookup table for deprecated APIs and their replacements.
 Format: **Don't use X** → **Use Y instead**
@@ -151,6 +151,22 @@ rootVisualElement.Q<Label>("score-label").text = "Score: 100";
 
 ---
 
+## Unity 6.3 LTS — Additional Deprecations
+
+| Deprecated | Replacement | Notes |
+|------------|-------------|-------|
+| `AccessibilityNode.selected` | `AccessibilityNode.invoked` | Will be obsolete in future release |
+| `Physics.autoSyncTransforms` | `Physics.SyncTransforms()` | Use explicit sync call |
+| `PlayerSettings.Android.androidIsGame` | **App Category** Player setting | Android Game categorization |
+| Round / legacy Android icons | Adaptive Icons | Use adaptive icon format only |
+| Netcode for GameObjects 1.x | Netcode for GameObjects 2.x | Major version migration required |
+| Multiplayer Widgets package | Unity Building Blocks | Replaced by Building Blocks |
+| Facebook Instant Games platform | Web platform | Use Web build target instead |
+| Unity Magic Leap XR Plugin | N/A (discontinued) | No longer supported for new projects |
+
+---
+
 **Sources:**
 - https://docs.unity3d.com/6000.0/Documentation/Manual/deprecated-features.html
 - https://docs.unity3d.com/Packages/com.unity.inputsystem@1.11/manual/Migration.html
+- https://docs.unity3d.com/6000.3/Documentation/Manual/UpgradeGuideUnity63.html
