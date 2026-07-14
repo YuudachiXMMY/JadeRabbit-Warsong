@@ -1,0 +1,325 @@
+{
+  "_meta": {
+    "title": "玉兔:破阵 · 角色动物选定寓意数据表 (Animal Roster)",
+    "version": 1,
+    "status": "canon",
+    "created": "2026-07-13",
+    "author": "Cowork",
+    "companion_doc": "design/worldbuilding/setting-proposal-v2.md",
+    "purpose": "结构化的动物阵容 + 寓意 + 讽刺解读，供评审与后续导入。经确认后合并进 design/registry/entities.yaml，敌人数值字段（health/damage 等）由后续 EnemyInfoSO 补齐。",
+    "field_notes": {
+      "category": "protagonist | enemy_martial(武官兽) | official_civil(文官禽) | censor(监察) | npc | boss_candidate",
+      "has_buzi": "核心讽刺机制：true=体制内=敌，false=体制外=友/主角。视觉上以身上有无补子瞬间区分敌我与阶级。",
+      "difficulty_tier": "仅 enemy_martial 使用，1=最弱，7=最强，等于补子官阶由低到高。",
+      "dynasty_note": "补子鸟兽的具体分配明清略有出入，本表以常见明制为准，属设定选择而非史实错误。"
+    },
+    "thematic_axes": [
+      "阶级：长生药机器（谁劳作/谁送死/谁永生）",
+      "反战：破阵乐的反讽（一将功成万骨枯；要破战争机器须自成兵器）",
+      "循环：兔死狗烹（权力用完即弃其工具）"
+    ],
+    "era_framework": "架空复合天朝：宋院体画美术 + 明补子制度 + 唐破阵乐 + 辛弃疾苍凉基调",
+    "core_rule": "有补子=体制内=敌；无补子/劳役牲口=体制外=友或主角。"
+  },
+
+  "protagonist": [
+    {
+      "id": "jade-rabbit",
+      "name_cn": "玉兔",
+      "name_en": "Jade Rabbit",
+      "category": "protagonist",
+      "has_buzi": false,
+      "buzi_rank": null,
+      "real_animal": "兔",
+      "symbolism": "玉兔捣药（汉乐府《董逃行》）：跪地以玉杵捣不死药供上层长生；象征长生、生命力、祥瑞。",
+      "satirical_reading": "永生机器最底层的劳工。放下药杵、拿起兵器即阶级反抗；无补子、不在等级内，故有资格破阵。亦是兔死狗烹里那只拒绝被烹的狡兔。",
+      "narrative_role": "反英雄主角，被逼反抗的劳工，非天选之子。",
+      "weapon_motif": "苗刀=开了刃的捣药杵；长枪/剑为后续。",
+      "art_note": "沿用 art-bible：朱砂袍、月白内衬、长耳剪影、皮影动作弧线，全部保留。",
+      "mvp": true,
+      "status": "active"
+    }
+  ],
+
+  "enemy_martial": [
+    {
+      "id": "seahorse-9",
+      "name_cn": "海马",
+      "name_en": "Seahorse",
+      "category": "enemy_martial",
+      "has_buzi": true,
+      "buzi_rank": "九品",
+      "difficulty_tier": 1,
+      "symbolism": "武官补子之末，海中小兽。",
+      "satirical_reading": "最底层的爪牙、可悲的炮灰，与玉兔同为被驱使者。",
+      "combat_role": "教程/最弱杂兵",
+      "mvp": true,
+      "status": "proposed"
+    },
+    {
+      "id": "rhino-8",
+      "name_cn": "犀牛",
+      "name_en": "Rhinoceros",
+      "category": "enemy_martial",
+      "has_buzi": true,
+      "buzi_rank": "八品",
+      "difficulty_tier": 2,
+      "symbolism": "皮甲厚重，心有灵犀。",
+      "satirical_reading": "有勇无谋的重甲兵，只认命令。",
+      "combat_role": "重甲盾兵，破防设计（呼应苗刀 X-X-X 第三击破防）",
+      "mvp": false,
+      "status": "proposed"
+    },
+    {
+      "id": "biao-67",
+      "name_cn": "彪",
+      "name_en": "Tiger Cub (Biao)",
+      "category": "enemy_martial",
+      "has_buzi": true,
+      "buzi_rank": "六/七品",
+      "difficulty_tier": 3,
+      "symbolism": "小虎、虎之幼，寓勇力。",
+      "satirical_reading": "仗着虎的余威狐假虎威的中低层军头。",
+      "combat_role": "成群中阶兵",
+      "mvp": false,
+      "status": "proposed"
+    },
+    {
+      "id": "bear-5",
+      "name_cn": "熊（罴）",
+      "name_en": "Bear",
+      "category": "enemy_martial",
+      "has_buzi": true,
+      "buzi_rank": "五品",
+      "difficulty_tier": 4,
+      "symbolism": "蛮力。",
+      "satirical_reading": "不怕死也不思考的蛮力打手。",
+      "combat_role": "重击型精英",
+      "mvp": false,
+      "status": "proposed"
+    },
+    {
+      "id": "leopard-4",
+      "name_cn": "豹",
+      "name_en": "Leopard",
+      "category": "enemy_martial",
+      "has_buzi": true,
+      "buzi_rank": "四品",
+      "difficulty_tier": 5,
+      "symbolism": "豹变、迅捷（君子豹变）。",
+      "satirical_reading": "见风使舵、投机上位的中层军官（豹变的反讽）。",
+      "combat_role": "高速突进敌人",
+      "mvp": false,
+      "status": "proposed"
+    },
+    {
+      "id": "tiger-3",
+      "name_cn": "虎",
+      "name_en": "Tiger",
+      "category": "enemy_martial",
+      "has_buzi": true,
+      "buzi_rank": "三品",
+      "difficulty_tier": 6,
+      "symbolism": "虎将、威猛；苛政猛于虎。",
+      "satirical_reading": "虎将的暴虐，苛政猛于虎的具象。",
+      "combat_role": "精英/小 Boss",
+      "mvp": false,
+      "status": "proposed"
+    },
+    {
+      "id": "lion-12",
+      "name_cn": "狮",
+      "name_en": "Lion",
+      "category": "enemy_martial",
+      "has_buzi": true,
+      "buzi_rank": "一/二品",
+      "difficulty_tier": 7,
+      "symbolism": "佛教护法、最高武力；狮为丝路/佛教外来。",
+      "satirical_reading": "高居顶端的武力象征，却是外来的、被供起来的门面。",
+      "combat_role": "武官线 Boss 候选",
+      "mvp": false,
+      "status": "proposed"
+    }
+  ],
+
+  "official_civil": [
+    {
+      "id": "quail-9",
+      "name_cn": "鹌鹑",
+      "name_en": "Quail",
+      "category": "official_civil",
+      "has_buzi": true,
+      "buzi_rank": "九品",
+      "symbolism": "鹌谐安；鹑衣褴褛。",
+      "satirical_reading": "只求自保、明哲保身的最低阶小吏，得过且过。",
+      "combat_role": "事件房文吏，可转非战斗 NPC",
+      "mvp": false,
+      "status": "proposed"
+    },
+    {
+      "id": "oriole-8",
+      "name_cn": "黄鹂",
+      "name_en": "Oriole",
+      "category": "official_civil",
+      "has_buzi": true,
+      "buzi_rank": "八品",
+      "dynasty_note": "明作黄鹂，清多作鹌鹑。",
+      "symbolism": "婉转啼鸣。",
+      "satirical_reading": "只会歌功颂德的喉舌。",
+      "combat_role": "造势/喊话型敌人",
+      "mvp": false,
+      "status": "proposed"
+    },
+    {
+      "id": "mandarin-duck-7",
+      "name_cn": "鸂鶒（一说鸳鸯）",
+      "name_en": "Mandarin Duck",
+      "category": "official_civil",
+      "has_buzi": true,
+      "buzi_rank": "七品",
+      "dynasty_note": "明制七品或作鸂鶒，一说鸳鸯。以鸳鸯的忠贞象征取讽刺解读。",
+      "symbolism": "鸳鸯喻忠贞（实则并不专一）。",
+      "satirical_reading": "表演式的忠诚，忠贞是装的。",
+      "combat_role": "成对出现的敌人（机制呼应成双）",
+      "mvp": false,
+      "status": "proposed"
+    },
+    {
+      "id": "egret-6",
+      "name_cn": "鹭鸶（鹭）",
+      "name_en": "Egret",
+      "category": "official_civil",
+      "has_buzi": true,
+      "buzi_rank": "六品",
+      "symbolism": "洁白、清高。",
+      "satirical_reading": "假清高、洁身自好的姿态。",
+      "combat_role": "秩序层敌人",
+      "mvp": false,
+      "status": "proposed"
+    },
+    {
+      "id": "silver-pheasant-5",
+      "name_cn": "白鹇",
+      "name_en": "Silver Pheasant",
+      "category": "official_civil",
+      "has_buzi": true,
+      "buzi_rank": "五品",
+      "symbolism": "隐逸、闲雅。",
+      "satirical_reading": "尸位素餐的清客。",
+      "combat_role": "秩序层敌人",
+      "mvp": false,
+      "status": "proposed"
+    },
+    {
+      "id": "wild-goose-4",
+      "name_cn": "云雁",
+      "name_en": "Wild Goose",
+      "category": "official_civil",
+      "has_buzi": true,
+      "buzi_rank": "四品",
+      "symbolism": "守时、秩序（雁阵）。",
+      "satirical_reading": "循规蹈矩的官僚齿轮。",
+      "combat_role": "阵型敌人（雁阵=队形，直接呼应破阵）",
+      "mvp": false,
+      "status": "proposed"
+    },
+    {
+      "id": "peacock-3",
+      "name_cn": "孔雀",
+      "name_en": "Peacock",
+      "category": "official_civil",
+      "has_buzi": true,
+      "buzi_rank": "三品",
+      "symbolism": "美丽、前程似锦、象征官阶权利。",
+      "satirical_reading": "把官位当羽毛炫耀的虚荣野心家。",
+      "combat_role": "中 Boss 候选",
+      "mvp": false,
+      "status": "proposed"
+    },
+    {
+      "id": "golden-pheasant-2",
+      "name_cn": "锦鸡",
+      "name_en": "Golden Pheasant",
+      "category": "official_civil",
+      "has_buzi": true,
+      "buzi_rank": "二品",
+      "symbolism": "华美。",
+      "satirical_reading": "华而不实的权贵。",
+      "combat_role": "精英",
+      "mvp": false,
+      "status": "proposed"
+    },
+    {
+      "id": "crane-1",
+      "name_cn": "仙鹤",
+      "name_en": "Red-crowned Crane",
+      "category": "official_civil",
+      "has_buzi": true,
+      "buzi_rank": "一品",
+      "symbolism": "长寿、圣洁、清雅，俗称一品鸟。",
+      "satirical_reading": "最高文官披着圣洁长寿的皮，恰是永生机器的门面与既得利益顶点。",
+      "combat_role": "终局 Boss 强候选（纯净假面 vs 最深腐败）",
+      "mvp": false,
+      "status": "proposed"
+    }
+  ],
+
+  "censor": [
+    {
+      "id": "xiezhi",
+      "name_cn": "獬豸",
+      "name_en": "Xiezhi (Justice Beast)",
+      "category": "censor",
+      "has_buzi": true,
+      "buzi_rank": "风宪官/御史（独立于文武两列）",
+      "symbolism": "独角法兽，触不直者；公正与法治的象征。",
+      "satirical_reading": "本该执法却已同流合污：法治之死。角不再触向真正的邪，而触向反抗者（玉兔）。",
+      "combat_role": "关键 Boss（御史台），反讽最锋利的一战",
+      "mvp": true,
+      "status": "proposed"
+    }
+  ],
+
+  "npc": [
+    {
+      "id": "npc-merchant-rabbit",
+      "name_cn": "商人兔",
+      "name_en": "Merchant Rabbit",
+      "category": "npc",
+      "has_buzi": false,
+      "symbolism": "与主角同为兔。",
+      "narrative_role": "没有造反的那部分兔；玉兔是造反的那一只。强化兔=底层/平民的阶级线。",
+      "art_note": "沿用 art-bible 商人设定。",
+      "mvp": false,
+      "status": "proposed"
+    },
+    {
+      "id": "npc-blacksmith-ox",
+      "name_cn": "铁匠牛",
+      "name_en": "Blacksmith Ox",
+      "category": "npc",
+      "has_buzi": false,
+      "symbolism": "无补子的劳役牲口。",
+      "narrative_role": "呼应劳工主题。原 art-bible 铁匠为熊/牛，建议定为牛，把熊专留给敌人（避免与五品武官兽撞）。",
+      "mvp": false,
+      "status": "proposed"
+    },
+    {
+      "id": "npc-archivist-egret",
+      "name_cn": "典籍官鹭",
+      "name_en": "Archivist Egret",
+      "category": "npc",
+      "has_buzi": false,
+      "symbolism": "边缘/退休的鹭。",
+      "narrative_role": "原 art-bible 典籍官为鹤/白鹭。因鹤已定为一品文官（终局门面），建议典籍官改用鹭或鹌鹑，把鹤专留给权力顶点。",
+      "mvp": false,
+      "status": "proposed"
+    }
+  ],
+
+  "open_questions": [
+    "乌鸦 Boss（PRD F3）去留：重定位为体系外存在，还是用獬豸/孔雀替换首发 Boss？",
+    "终局 Boss 选仙鹤（假面）还是獬豸（法治死）？或仙鹤终局、獬豸中期。",
+    "是否引入夺补子作为心法隐喻机制（挂钩支柱四构筑驱动复盘）？"
+  ]
+}
