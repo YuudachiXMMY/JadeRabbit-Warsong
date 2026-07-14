@@ -1,7 +1,8 @@
 # Game Concept: 玉兔:破阵 (Jade Rabbit: Warsong)
 
 *Created: 2026-07-13*
-*Status: Vision Locked — Pending M0 Spike*
+**Status**: Approved
+*（Vision Locked — M0 Spike 待定，见 Open Questions 节）*
 *Source: Synthesized from ClaudeCowork/ v2 restart documents (PRD, system design, rebuild roadmap)*
 
 ---

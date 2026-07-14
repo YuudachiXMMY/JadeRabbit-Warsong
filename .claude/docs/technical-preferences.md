@@ -50,12 +50,43 @@
 ## Forbidden Patterns
 
 <!-- Add patterns that should never appear in this project's codebase -->
-- [None configured yet — add as architectural decisions are made]
+
+- **禁止修改 TDE 源码**: 一切对 TopDownEngine 内部类的直接改动均被禁止。
+  理由：TDE 升级会覆盖修改；v1 项目因此留下 582 行覆写陷阱。
+  替代方案：继承 TDE 类后 override，或通过 TDE 的事件系统扩展。
+
+- **禁止在 Runtime 代码中引用 Odin 命名空间** (`Sirenix.*`):
+  Odin 仅在 Editor 程序集中可用；Runtime 代码引用会导致打包失败或体积膨胀。
+  替代方案：在 `#if UNITY_EDITOR` 块内或 `Editor/` 目录下使用 Odin API。
+
+- **禁止用 `Update()` 轮询做节拍判定**:
+  60FPS 下 `Update()` 时间戳误差高达 16.7ms，超过目标判定窗口容差。
+  替代方案：使用 Input System 的 `InputAction.performed` callback 提供的精确时间戳。
+  来源：game-concept.md 技术风险 § 帧量化误差。
+
+- **禁止绑死攻击动画帧数**:
+  固定帧数的攻击动画无法随 BPM 变速，破坏节奏手感一致性。
+  替代方案：通过 Animancer 的 `AnimancerState.Speed` 属性按当前 BPM 动态缩放动画时长。
 
 ## Allowed Libraries / Addons
 
 <!-- Add approved third-party dependencies here -->
-- [None configured yet — add as dependencies are approved]
+
+- **TopDownEngine** (More Mountains, Asset Store) — 移动系统、生命系统、关卡管理（LevelManager）、
+  MMFeedbacks/Feel 反馈基础设施。F6 TDE 集成层的基础。
+  **边界合约（强制）**: TDE 负责移动/生命/关卡/反馈；CombatCore 程序集负责节奏量化与连招逻辑。
+  **禁止修改 TDE 源码**，只允许通过继承和事件扩展。覆写 TDE 内部类需走 ADR 审批。
+
+- **Animancer** (Kybernetik, Asset Store) — 运行时动画状态管理，用于攻击层动画与 BPM 变速适配。
+  替代 Animator Controller 的状态机逻辑（仅攻击层），TDE 的角色 Animator 层保持不变。
+  **注意**: Animancer 攻击层与 TDE 原生 Animator 层不可冲突，须在 F6 GDD 接口合约中明确边界。
+
+- **Odin Inspector** (Sirenix, Asset Store) — 编辑器检视面板增强，ScriptableObject 可视化编辑与验证。
+  **仅限 Editor 程序集使用**，Runtime 代码禁止引用 Odin 命名空间（打包时 Odin 不打入包体）。
+  ScriptableObject 类的 `[Required]`、`[ValidateInput]` 等 Attribute 仅在 Editor 生效。
+
+- **Odin Validator** (Sirenix, Asset Store) — 项目资源合规性验证，确保 SO 数据字段完整性。
+  配合 Odin Inspector 使用；同样仅限 Editor，禁止在 Runtime 代码路径中触发验证逻辑。
 
 ## Architecture Decisions Log
 
