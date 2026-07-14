@@ -10,24 +10,6 @@ using UnityEngine.Events;
 
 namespace MoreMountains.Tools
 {
-	public enum MMCinemachineZoneEventTypes { Enter, Exit }
-	
-	public struct MMCinemachineZoneEvent
-	{
-		static MMCinemachineZoneEvent e;
-
-		public MMCinemachineZone Zone;
-		public MMCinemachineZoneEventTypes Type;
-		
-		
-		public static void Trigger(MMCinemachineZone zone, MMCinemachineZoneEventTypes type)
-		{
-			e.Zone = zone;
-			e.Type = type;
-			MMEventManager.TriggerEvent(e);
-		}
-	}	
-	
 	/// <summary>
 	/// An abstract class that lets you define a zone that, when entered, enables a virtual camera, and takes care
 	/// of all the boilerplate setup
@@ -305,8 +287,6 @@ namespace MoreMountains.Tools
 			{
 				go.SetActive(true);
 			}
-			
-			MMCinemachineZoneEvent.Trigger(this, MMCinemachineZoneEventTypes.Enter);
 		}
 
 		protected virtual void ExitZone()
@@ -321,7 +301,6 @@ namespace MoreMountains.Tools
 			{
 				go.SetActive(false);
 			}
-			MMCinemachineZoneEvent.Trigger(this, MMCinemachineZoneEventTypes.Exit);
 		}
 
 		/// <summary>

@@ -53,9 +53,6 @@ namespace MoreMountains.Feedbacks
 		/// whether or not that sprite renderer should be turned off on start
 		[Tooltip("whether or not that sprite renderer should be turned off on start")]
 		public bool StartsOff = false;
-		/// whether or not to set active and enable the target sprite renderer on play
-		[Tooltip("whether or not to set active and enable the target sprite renderer on play")]
-		public bool SetActiveOnPlay = true;
 		/// if this is true, calling that feedback will trigger it, even if it's in progress. If it's false, it'll prevent any new Play until the current one is over
 		[Tooltip("if this is true, calling that feedback will trigger it, even if it's in progress. If it's false, it'll prevent any new Play until the current one is over")] 
 		public bool AllowAdditivePlays = false;
@@ -129,16 +126,13 @@ namespace MoreMountains.Feedbacks
 				_initialAlpha = BoundSpriteRenderer.color.a;
 			}
             
-			if (SetActiveOnPlay)
-			{
-				Turn(true);	
-			}
-			
+			float intensityMultiplier = ComputeIntensity(feedbacksIntensity, position);
+			Turn(true);
 			switch (Mode)
 			{
 				case Modes.Instant:
 					float newAlpha = NormalPlayDirection ? InstantAlpha : _initialAlpha;
-					SetAlpha(newAlpha, feedbacksIntensity, position);
+					SetAlpha(newAlpha);
 					break;
 				case Modes.OverTime:
 					if (!AllowAdditivePlays && (_coroutine != null))
@@ -146,7 +140,7 @@ namespace MoreMountains.Feedbacks
 						return;
 					}
 					if (_coroutine != null) { Owner.StopCoroutine(_coroutine); }
-					_coroutine = Owner.StartCoroutine(SpriteRendererSequence(feedbacksIntensity, position));
+					_coroutine = Owner.StartCoroutine(SpriteRendererSequence());
 					break;
 				case Modes.ToDestinationAlpha:
 					if (!AllowAdditivePlays && (_coroutine != null))
@@ -154,7 +148,7 @@ namespace MoreMountains.Feedbacks
 						return;
 					}
 					if (_coroutine != null) { Owner.StopCoroutine(_coroutine); }
-					_coroutine = Owner.StartCoroutine(SpriteRendererToDestinationSequence(false, feedbacksIntensity, position));
+					_coroutine = Owner.StartCoroutine(SpriteRendererToDestinationSequence(false));
 					break;
 				case Modes.ToDestinationAlphaAndBack:
 					if (!AllowAdditivePlays && (_coroutine != null))
@@ -162,7 +156,7 @@ namespace MoreMountains.Feedbacks
 						return;
 					}
 					if (_coroutine != null) { Owner.StopCoroutine(_coroutine); }
-					_coroutine = Owner.StartCoroutine(SpriteRendererToDestinationSequence(true, feedbacksIntensity, position));
+					_coroutine = Owner.StartCoroutine(SpriteRendererToDestinationSequence(true));
 					break;
 			}
 		}
@@ -171,7 +165,7 @@ namespace MoreMountains.Feedbacks
 		/// This coroutine will modify the values on the SpriteRenderer
 		/// </summary>
 		/// <returns></returns>
-		protected virtual IEnumerator SpriteRendererSequence(float intensity, Vector3 position)
+		protected virtual IEnumerator SpriteRendererSequence()
 		{
 			float journey = NormalPlayDirection ? 0f : FeedbackDuration;
 			IsPlaying = true;
@@ -180,12 +174,12 @@ namespace MoreMountains.Feedbacks
 			{
 				float remappedTime = MMFeedbacksHelpers.Remap(journey, 0f, FeedbackDuration, 0f, 1f);
 
-				SetSpriteRendererValues(remappedTime, intensity, position);
+				SetSpriteRendererValues(remappedTime);
 
 				journey += NormalPlayDirection ? FeedbackDeltaTime : -FeedbackDeltaTime;
 				yield return null;
 			}
-			SetSpriteRendererValues(FinalNormalizedTime, intensity, position);
+			SetSpriteRendererValues(FinalNormalizedTime);
 			if (StartsOff)
 			{
 				Turn(false);
@@ -199,7 +193,7 @@ namespace MoreMountains.Feedbacks
 		/// This coroutine will modify the values on the SpriteRenderer
 		/// </summary>
 		/// <returns></returns>
-		protected virtual IEnumerator SpriteRendererToDestinationSequence(bool andBack, float intensity, Vector3 position)
+		protected virtual IEnumerator SpriteRendererToDestinationSequence(bool andBack)
 		{
 			float journey = NormalPlayDirection ? 0f : FeedbackDuration;
 			IsPlaying = true;
@@ -216,14 +210,14 @@ namespace MoreMountains.Feedbacks
                 
 				float curveValue = ToDestinationAlphaCurve.Evaluate(remappedTime);
 				float newAlpha = MMMaths.Remap(curveValue, 0f, 1f, _initialAlpha, ToDestinationAlpha);
-				SetAlpha(newAlpha, intensity, position);
+				SetAlpha(newAlpha);
 
 				journey += NormalPlayDirection ? FeedbackDeltaTime : -FeedbackDeltaTime;
 				yield return null;
 			}
 
 			float finalAlpha = andBack ? _initialAlpha : ToDestinationAlpha;
-			SetAlpha(finalAlpha, intensity, position);
+			SetAlpha(finalAlpha);
 			
 			if (StartsOff)
 			{
@@ -238,10 +232,10 @@ namespace MoreMountains.Feedbacks
 		/// Sets the various values on the sprite renderer on a specified time (between 0 and 1)
 		/// </summary>
 		/// <param name="time"></param>
-		protected virtual void SetSpriteRendererValues(float time, float intensity, Vector3 position)
+		protected virtual void SetSpriteRendererValues(float time)
 		{
 			float newAlpha = AlphaOverTime.Evaluate(time);
-			SetAlpha(newAlpha, intensity, position);
+			SetAlpha(newAlpha);
 		}
 
 		/// <summary>
@@ -284,15 +278,13 @@ namespace MoreMountains.Feedbacks
 			
 			if (BoundSpriteRenderer != null)
 			{
-				SetAlpha(_initialAlpha, 1f, Owner.transform.position);	
+				SetAlpha(_initialAlpha);	
 			}
 		}
 
-		protected virtual void SetAlpha(float newAlpha, float feedbacksIntensity, Vector3 position)
+		protected virtual void SetAlpha(float newAlpha)
 		{
-			float intensityMultiplier = ComputeIntensity(feedbacksIntensity, position);
-			float setAlpha = newAlpha * intensityMultiplier;
-			BoundSpriteRenderer.color = BoundSpriteRenderer.color.MMAlpha(setAlpha);
+			BoundSpriteRenderer.color = BoundSpriteRenderer.color.MMAlpha(newAlpha);
 		}
         
 		/// <summary>

@@ -220,10 +220,6 @@ namespace MoreMountains.Tools
 		public virtual void ShowBar(bool state)
 		{
 			_progressBar.gameObject.SetActive(state);
-			if (!state)
-			{
-				_showBar = false;	
-			}
 		}
 
 		/// <summary>

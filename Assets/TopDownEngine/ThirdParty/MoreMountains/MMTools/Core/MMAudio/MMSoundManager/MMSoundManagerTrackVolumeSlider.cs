@@ -119,7 +119,6 @@ namespace MoreMountains.Tools
 			}
 			float newVolume = MMMaths.Remap(newValue, 0f, 1f, MinVolume, MaxVolume);
 			MMSoundManagerTrackEvent.Trigger(MMSoundManagerTrackEventTypes.SetVolumeTrack, Track, newVolume);
-			MMSoundManagerEvent.Trigger(MMSoundManagerEventTypes.SaveSettings);
 		}
 
 		/// <summary>
