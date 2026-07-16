@@ -120,8 +120,8 @@ public partial class EntitySpawner : SystemBase {
         Entity entity = em.CreateEntity();
 
         // Add components
-        em.AddComponentData(entity, new Position { Value = float3.zero });
-        em.AddComponentData(entity, new Velocity { Value = new float3(1, 0, 0) });
+        em.AddComponent(entity, new Position { Value = float3.zero });
+        em.AddComponent(entity, new Velocity { Value = new float3(1, 0, 0) });
     }
 }
 ```

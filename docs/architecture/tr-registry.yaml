@@ -25,32 +25,568 @@
 # STATUS VALUES: active | deprecated | superseded-by: TR-[system]-NNN
 
 version: 1
-last_updated: ""
+last_updated: "2026-07-15"
 
-requirements: []
+requirements:
 
-# --- EXAMPLE ENTRIES (remove when first real entries are added) ---
-#
-# - id: TR-combat-001
-#   system: combat
-#   gdd: design/gdd/combat-system.md
-#   requirement: "Player takes damage from enemies based on attack power minus defence"
-#   created: 2026-03-10
-#   revised: ""
-#   status: active
-#
-# - id: TR-combat-002
-#   system: combat
-#   gdd: design/gdd/combat-system.md
-#   requirement: "Combo window timing is 0.4 seconds between hits"
-#   created: 2026-03-10
-#   revised: "2026-04-01"
-#   status: active
-#
-# - id: TR-combat-003
-#   system: combat
-#   gdd: design/gdd/combat-system.md
-#   requirement: "Old damage formula using raw stats"
-#   created: 2026-03-10
-#   revised: ""
-#   status: superseded-by: TR-combat-001
+  # ── concept (design/gdd/game-concept.md) ──────────────────────────────────
+
+  - id: TR-concept-001
+    system: concept
+    gdd: design/gdd/game-concept.md
+    requirement: "DSP clock precision for beat-synchronized combat (帧量化误差 < 16.7ms)"
+    created: 2026-07-15
+    revised: ""
+    status: active
+
+  - id: TR-concept-002
+    system: concept
+    gdd: design/gdd/game-concept.md
+    requirement: "Multi-platform input support (keyboard/mouse, gamepad, touch)"
+    created: 2026-07-15
+    revised: ""
+    status: active
+
+  - id: TR-concept-003
+    system: concept
+    gdd: design/gdd/game-concept.md
+    requirement: "60fps target framerate with 16.6ms frame budget (PC/Console)"
+    created: 2026-07-15
+    revised: ""
+    status: active
+
+  - id: TR-concept-004
+    system: concept
+    gdd: design/gdd/game-concept.md
+    requirement: "Animancer BPM-adaptive animation speed scaling for attack clips"
+    created: 2026-07-15
+    revised: ""
+    status: active
+
+  - id: TR-concept-005
+    system: concept
+    gdd: design/gdd/game-concept.md
+    requirement: "FMOD Studio recommended as audio middleware for DSP precision"
+    created: 2026-07-15
+    revised: ""
+    status: active
+
+  - id: TR-concept-006
+    system: concept
+    gdd: design/gdd/game-concept.md
+    requirement: "Half-beat grid snap for attack input quantization (hybrid model)"
+    created: 2026-07-15
+    revised: ""
+    status: active
+
+  - id: TR-concept-007
+    system: concept
+    gdd: design/gdd/game-concept.md
+    requirement: "Rating system (Perfect/Good/Miss) with damage multipliers (1.0/0.75/0.5)"
+    created: 2026-07-15
+    revised: ""
+    status: active
+
+  - id: TR-concept-008
+    system: concept
+    gdd: design/gdd/game-concept.md
+    requirement: "Perfect kinetics effects: freeze frame, hitstun ×1.3, audio resonance, camera micro-cut"
+    created: 2026-07-15
+    revised: ""
+    status: active
+
+  - id: TR-concept-009
+    system: concept
+    gdd: design/gdd/game-concept.md
+    requirement: "Enemy beat-lock: all enemy attacks forced on-beat with beat-unit windups"
+    created: 2026-07-15
+    revised: ""
+    status: active
+
+  - id: TR-concept-010
+    system: concept
+    gdd: design/gdd/game-concept.md
+    requirement: "Perk design space containment: 3 constraints on rating merge/combo/cancel"
+    created: 2026-07-15
+    revised: ""
+    status: active
+
+  - id: TR-concept-011
+    system: concept
+    gdd: design/gdd/game-concept.md
+    requirement: "Delay calibration system for wireless headphone latency compensation"
+    created: 2026-07-15
+    revised: ""
+    status: active
+
+  - id: TR-concept-012
+    system: concept
+    gdd: design/gdd/game-concept.md
+    requirement: "ScriptableObject data-driven design for all gameplay values"
+    created: 2026-07-15
+    revised: ""
+    status: active
+
+  - id: TR-concept-013
+    system: concept
+    gdd: design/gdd/game-concept.md
+    requirement: "Roguelike per-run perk cloning with session-scoped lifecycle"
+    created: 2026-07-15
+    revised: ""
+    status: active
+
+  - id: TR-concept-014
+    system: concept
+    gdd: design/gdd/game-concept.md
+    requirement: "Multiple weapon types (MiaoDao/Spear/Sword) with ComboGraph data"
+    created: 2026-07-15
+    revised: ""
+    status: active
+
+  # ── beatclock (design/gdd/audio-beat-clock.md) ────────────────────────────
+
+  - id: TR-beatclock-001
+    system: beatclock
+    gdd: design/gdd/audio-beat-clock.md
+    requirement: "MonoBehaviour singleton BeatClock on DontDestroyOnLoad GameObject"
+    created: 2026-07-15
+    revised: ""
+    status: active
+
+  - id: TR-beatclock-002
+    system: beatclock
+    gdd: design/gdd/audio-beat-clock.md
+    requirement: "DSP clock timestamp accuracy < 0.1ms (anchored formula, no iterative accumulation)"
+    created: 2026-07-15
+    revised: ""
+    status: active
+
+  - id: TR-beatclock-003
+    system: beatclock
+    gdd: design/gdd/audio-beat-clock.md
+    requirement: "Full grid broadcast: every beat and half-beat event, mode-agnostic"
+    created: 2026-07-15
+    revised: ""
+    status: active
+
+  - id: TR-beatclock-004
+    system: beatclock
+    gdd: design/gdd/audio-beat-clock.md
+    requirement: "Dual interface: event subscription (async push) + BeatStateSnapshot query (sync pull)"
+    created: 2026-07-15
+    revised: ""
+    status: active
+
+  - id: TR-beatclock-005
+    system: beatclock
+    gdd: design/gdd/audio-beat-clock.md
+    requirement: "Lookahead events with configurable lead time (default 100ms, clamped by BPM)"
+    created: 2026-07-15
+    revised: ""
+    status: active
+
+  - id: TR-beatclock-006
+    system: beatclock
+    gdd: design/gdd/audio-beat-clock.md
+    requirement: "BPM/time signature change deferred to measure boundary"
+    created: 2026-07-15
+    revised: ""
+    status: active
+
+  - id: TR-beatclock-007
+    system: beatclock
+    gdd: design/gdd/audio-beat-clock.md
+    requirement: "Player latency offset internalized into all broadcast timestamps (adjusted_beat_time)"
+    created: 2026-07-15
+    revised: ""
+    status: active
+
+  - id: TR-beatclock-008
+    system: beatclock
+    gdd: design/gdd/audio-beat-clock.md
+    requirement: "Pause/resume with DSP reanchor preserving fractional beat progress"
+    created: 2026-07-15
+    revised: ""
+    status: active
+
+  - id: TR-beatclock-009
+    system: beatclock
+    gdd: design/gdd/audio-beat-clock.md
+    requirement: "BPM=0 fallback to 120 BPM + audio unavailable degradation sequence"
+    created: 2026-07-15
+    revised: ""
+    status: active
+
+  - id: TR-beatclock-010
+    system: beatclock
+    gdd: design/gdd/audio-beat-clock.md
+    requirement: "Thread safety: audio thread events queued to main thread via ConcurrentQueue"
+    created: 2026-07-15
+    revised: ""
+    status: active
+
+  - id: TR-beatclock-011
+    system: beatclock
+    gdd: design/gdd/audio-beat-clock.md
+    requirement: "IDSPClock and IAudioPlayer dependency injection for testability"
+    created: 2026-07-15
+    revised: ""
+    status: active
+
+  - id: TR-beatclock-012
+    system: beatclock
+    gdd: design/gdd/audio-beat-clock.md
+    requirement: "Subscriber lifecycle contract: mandatory unsubscribe on OnDestroy"
+    created: 2026-07-15
+    revised: ""
+    status: active
+
+  - id: TR-beatclock-013
+    system: beatclock
+    gdd: design/gdd/audio-beat-clock.md
+    requirement: "F6 three-step DSP start confirmation protocol (optimistic pre-anchor + actual correction)"
+    created: 2026-07-15
+    revised: ""
+    status: active
+
+  - id: TR-beatclock-014
+    system: beatclock
+    gdd: design/gdd/audio-beat-clock.md
+    requirement: "5/8 time signature support with eighth-note redefinition (Post-MVP)"
+    created: 2026-07-15
+    revised: ""
+    status: active
+
+  - id: TR-beatclock-015
+    system: beatclock
+    gdd: design/gdd/audio-beat-clock.md
+    requirement: "BeatStateSnapshot readonly struct with zero-state values for Stopped state"
+    created: 2026-07-15
+    revised: ""
+    status: active
+
+  - id: TR-beatclock-016
+    system: beatclock
+    gdd: design/gdd/audio-beat-clock.md
+    requirement: "BeatEventData as readonly struct for zero GC allocation"
+    created: 2026-07-15
+    revised: ""
+    status: active
+
+  - id: TR-beatclock-017
+    system: beatclock
+    gdd: design/gdd/audio-beat-clock.md
+    requirement: "Mobile suspend/resume DSP discontinuity detection and full reanchor"
+    created: 2026-07-15
+    revised: ""
+    status: active
+
+  # ── input (design/gdd/input-event-system.md) ──────────────────────────────
+
+  - id: TR-input-001
+    system: input
+    gdd: design/gdd/input-event-system.md
+    requirement: "Unity Input System Package as sole input interface; legacy Input Manager forbidden"
+    created: 2026-07-15
+    revised: ""
+    status: active
+
+  - id: TR-input-002
+    system: input
+    gdd: design/gdd/input-event-system.md
+    requirement: "Dual-read strategy: IDSPClock.GetDspTime() + ctx.time for all discrete inputs"
+    created: 2026-07-15
+    revised: ""
+    status: active
+
+  - id: TR-input-003
+    system: input
+    gdd: design/gdd/input-event-system.md
+    requirement: "InputEventBus MonoBehaviour singleton on DontDestroyOnLoad"
+    created: 2026-07-15
+    revised: ""
+    status: active
+
+  - id: TR-input-004
+    system: input
+    gdd: design/gdd/input-event-system.md
+    requirement: "Two Action Maps (Gameplay + UI) with mutual exclusion state machine"
+    created: 2026-07-15
+    revised: ""
+    status: active
+
+  - id: TR-input-005
+    system: input
+    gdd: design/gdd/input-event-system.md
+    requirement: "AttackInputEvent with chargeStartDspTime for charged attack intent timing"
+    created: 2026-07-15
+    revised: ""
+    status: active
+
+  - id: TR-input-006
+    system: input
+    gdd: design/gdd/input-event-system.md
+    requirement: "Zero GC allocation: readonly struct events + method group subscriptions (IL2CPP compliant)"
+    created: 2026-07-15
+    revised: ""
+    status: active
+
+  - id: TR-input-007
+    system: input
+    gdd: design/gdd/input-event-system.md
+    requirement: "Multi-device concurrent support with deviceType/deviceId per event"
+    created: 2026-07-15
+    revised: ""
+    status: active
+
+  - id: TR-input-008
+    system: input
+    gdd: design/gdd/input-event-system.md
+    requirement: "Runtime key rebinding with JSON serialization via F5 persistence"
+    created: 2026-07-15
+    revised: ""
+    status: active
+
+  - id: TR-input-009
+    system: input
+    gdd: design/gdd/input-event-system.md
+    requirement: "Subscriber lifecycle contract: unsubscribe on OnDestroy"
+    created: 2026-07-15
+    revised: ""
+    status: active
+
+  - id: TR-input-010
+    system: input
+    gdd: design/gdd/input-event-system.md
+    requirement: "TDE InputSystemManagerEventsBased Action Map conflict resolution (E8 → F6 GDD blocker)"
+    created: 2026-07-15
+    revised: ""
+    status: active
+
+  - id: TR-input-011
+    system: input
+    gdd: design/gdd/input-event-system.md
+    requirement: "ChargedAttack Hold interaction state machine (E3/E3a/E3b three-way check)"
+    created: 2026-07-15
+    revised: ""
+    status: active
+
+  - id: TR-input-012
+    system: input
+    gdd: design/gdd/input-event-system.md
+    requirement: "IDSPClock shared interface with F2 (same implementation required)"
+    created: 2026-07-15
+    revised: ""
+    status: active
+
+  - id: TR-input-013
+    system: input
+    gdd: design/gdd/input-event-system.md
+    requirement: "Platform-specific timing constraints: Android DSP granularity 23-46ms affects C1 windows"
+    created: 2026-07-15
+    revised: ""
+    status: active
+
+  - id: TR-input-014
+    system: input
+    gdd: design/gdd/input-event-system.md
+    requirement: "AllDisabled initial state on Awake; F6 authorizes input via EnableGameplayInput()"
+    created: 2026-07-15
+    revised: ""
+    status: active
+
+  # ── datalayer (design/gdd/so-data-layer.md) ───────────────────────────────
+
+  - id: TR-datalayer-001
+    system: datalayer
+    gdd: design/gdd/so-data-layer.md
+    requirement: "7 core SO types: AttackNodeSO, ComboGraphSO, PerkSO, WeaponSO, EnemyInfoSO, LevelConfigSO, PlayerInfoSO"
+    created: 2026-07-15
+    revised: ""
+    status: active
+
+  - id: TR-datalayer-002
+    system: datalayer
+    gdd: design/gdd/so-data-layer.md
+    requirement: "Read-only asset principle: no runtime mutation of SO assets"
+    created: 2026-07-15
+    revised: ""
+    status: active
+
+  - id: TR-datalayer-003
+    system: datalayer
+    gdd: design/gdd/so-data-layer.md
+    requirement: "PerkSO runtime cloning via Instantiate() with session-scoped lifecycle"
+    created: 2026-07-15
+    revised: ""
+    status: active
+
+  - id: TR-datalayer-004
+    system: datalayer
+    gdd: design/gdd/so-data-layer.md
+    requirement: "Schema change propagation contract to downstream GDDs"
+    created: 2026-07-15
+    revised: ""
+    status: active
+
+  - id: TR-datalayer-005
+    system: datalayer
+    gdd: design/gdd/so-data-layer.md
+    requirement: "Odin Inspector/Validator dual validation: Attribute UX (A) + RegisterValidator CI gate (B)"
+    created: 2026-07-15
+    revised: ""
+    status: active
+
+  - id: TR-datalayer-006
+    system: datalayer
+    gdd: design/gdd/so-data-layer.md
+    requirement: "AssetReferenceT<T> for AnimationClip/AudioClip/Sprite lazy loading"
+    created: 2026-07-15
+    revised: ""
+    status: active
+
+  - id: TR-datalayer-007
+    system: datalayer
+    gdd: design/gdd/so-data-layer.md
+    requirement: "PerkParameter as [Serializable] struct ensuring deep copy on Instantiate"
+    created: 2026-07-15
+    revised: ""
+    status: active
+
+  - id: TR-datalayer-008
+    system: datalayer
+    gdd: design/gdd/so-data-layer.md
+    requirement: "ComboEdge index validation via RegisterValidator (prevent IndexOutOfRange)"
+    created: 2026-07-15
+    revised: ""
+    status: active
+
+  - id: TR-datalayer-009
+    system: datalayer
+    gdd: design/gdd/so-data-layer.md
+    requirement: "PlayerInfoSO ↔ F5 DTO field mapping with [NonSerialized] runtime cache fields"
+    created: 2026-07-15
+    revised: ""
+    status: active
+
+  - id: TR-datalayer-010
+    system: datalayer
+    gdd: design/gdd/so-data-layer.md
+    requirement: "[NonSerialized] field initialization timing constraint (wait for F5 load completion)"
+    created: 2026-07-15
+    revised: ""
+    status: active
+
+  - id: TR-datalayer-011
+    system: datalayer
+    gdd: design/gdd/so-data-layer.md
+    requirement: "SO id uniqueness enforcement across all 7 types via RegisterValidator"
+    created: 2026-07-15
+    revised: ""
+    status: active
+
+  # ── save (design/gdd/save-persistence.md) ─────────────────────────────────
+
+  - id: TR-save-001
+    system: save
+    gdd: design/gdd/save-persistence.md
+    requirement: "SaveService MonoBehaviour singleton gateway on DontDestroyOnLoad"
+    created: 2026-07-15
+    revised: ""
+    status: active
+
+  - id: TR-save-002
+    system: save
+    gdd: design/gdd/save-persistence.md
+    requirement: "Data domain separation: SlotData (per-slot) vs GlobalData (device-level)"
+    created: 2026-07-15
+    revised: ""
+    status: active
+
+  - id: TR-save-003
+    system: save
+    gdd: design/gdd/save-persistence.md
+    requirement: "3-slot system with active slot management (index 0-2, -1 for unselected)"
+    created: 2026-07-15
+    revised: ""
+    status: active
+
+  - id: TR-save-004
+    system: save
+    gdd: design/gdd/save-persistence.md
+    requirement: "Mixed save trigger: auto on session end, immediate on settings change"
+    created: 2026-07-15
+    revised: ""
+    status: active
+
+  - id: TR-save-005
+    system: save
+    gdd: design/gdd/save-persistence.md
+    requirement: "DTO pattern: SO → DTO extraction, DTO → SO population, no SO serialization"
+    created: 2026-07-15
+    revised: ""
+    status: active
+
+  - id: TR-save-006
+    system: save
+    gdd: design/gdd/save-persistence.md
+    requirement: "Main thread constraint: all IFileStorage operations on main thread only"
+    created: 2026-07-15
+    revised: ""
+    status: active
+
+  - id: TR-save-007
+    system: save
+    gdd: design/gdd/save-persistence.md
+    requirement: "Per-DTO save_version with chain migration (V_old → V_new) and high-version rejection"
+    created: 2026-07-15
+    revised: ""
+    status: active
+
+  - id: TR-save-008
+    system: save
+    gdd: design/gdd/save-persistence.md
+    requirement: "IFileStorage interface abstraction for middleware-agnostic persistence"
+    created: 2026-07-15
+    revised: ""
+    status: active
+
+  - id: TR-save-009
+    system: save
+    gdd: design/gdd/save-persistence.md
+    requirement: "Domain Reload static reset via [RuntimeInitializeOnLoadMethod]"
+    created: 2026-07-15
+    revised: ""
+    status: active
+
+  - id: TR-save-010
+    system: save
+    gdd: design/gdd/save-persistence.md
+    requirement: "Awake/Initialize separation for test injection window"
+    created: 2026-07-15
+    revised: ""
+    status: active
+
+  - id: TR-save-011
+    system: save
+    gdd: design/gdd/save-persistence.md
+    requirement: "OnSaveError event contract with SaveErrorType enum and UI delegation spec"
+    created: 2026-07-15
+    revised: ""
+    status: active
+
+  - id: TR-save-012
+    system: save
+    gdd: design/gdd/save-persistence.md
+    requirement: "Two-level error model: slot-level Corrupted (stays Idle) vs system-level Error"
+    created: 2026-07-15
+    revised: ""
+    status: active
+
+  - id: TR-save-013
+    system: save
+    gdd: design/gdd/save-persistence.md
+    requirement: "Corrupted file backup via .corrupt rename (no auto-delete)"
+    created: 2026-07-15
+    revised: ""
+    status: active

@@ -415,7 +415,7 @@ final_damage = base_damage × rating_multiplier × combo_multiplier × perk_mult
 
 | 变量 | 定义 | 范围 | 来源 |
 | ---- | ---- | ---- | ---- |
-| `base_damage` | 武器基础伤害 | TBD（rhythm-core GDD） | 武器 ScriptableObject |
+| `base_damage` | 武器基础伤害 | [1.0, 100.0]（F4 WeaponSO.baseDamage） | 武器 ScriptableObject |
 | `rating_multiplier` | Perfect=1.0 / Good=0.75 / Miss=0.5 | [0.5, 1.0] | 评级系统 |
 | `combo_multiplier` | 连击数驱动的乘数 | TBD（combo GDD） | 连招图系统 |
 | `perk_multiplier` | 心法叠加倍率 | TBD（perk GDD） | 心法系统 |
@@ -449,8 +449,9 @@ calibrated_input_time = raw_input_time − player_latency_offset_ms
 | **无线耳机延迟 > 校准范围** | 校准界面注明「检测到高延迟，建议使用有线耳机」；允许手动输入偏移值 |
 | **Miss 时连击为 0** | 连击保持 0，不出现负数；Miss 伤害正常结算（50%） |
 | **Boss 阶段切换时拍号改变** | 新拍号生效时，进行中的攻击动画按原拍号完成；新判定窗口从下一拍起算 |
-| **心法改变节奏规则（如"Miss 也算 Good"）** | 心法参数覆盖评级合约表格对应行；冲突心法以最后生效的为准 |
-| **BPM 为 0 或音频静音** | 节拍系统回退为固定 120 BPM 内部时钟；视觉节拍指示器继续工作 |
+| **心法修改评级维度（如"Miss 伤害提升至 60%"）** | 心法参数覆盖评级合约表格中指定维度（单维度覆盖，不可整行合并——见 Anti-Pillar Rule 1）；冲突心法以最后生效的为准 |
+| **BPM 为 0（关卡配置缺失或错误）** | 节拍系统回退为固定 120 BPM 内部时钟，正常运行；HUD 节奏指示器继续工作；记录 Warning 日志 |
+| **音频设备不可用（静音/设备断开）** | 立即暂停游戏（1 帧内），节奏判定暂停；发出 UI 提示通知玩家；启动视觉节拍指示器作为备用参考；玩家恢复音频后从暂停位置续播（详见 F2 Core Rule 9） |
 
 ---
 

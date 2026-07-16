@@ -2,7 +2,7 @@
 
 > **Status**: Under Review
 > **Created**: 2026-07-13
-> **Last Updated**: 2026-07-13
+> **Last Updated**: 2026-07-15
 > **Source Concept**: design/gdd/game-concept.md
 
 ---
@@ -20,21 +20,24 @@
 | # | 系统 | 层级 | 里程碑 | 状态 | 设计文档 | 依赖 |
 |---|------|------|--------|------|---------|------|
 | F1 | Game Concept | Foundation | — | **Approved** | `design/gdd/game-concept.md` | — |
-| F2 | 音频/拍点时钟系统 | Foundation | **MVP** | Not Started | `design/gdd/audio-beat-clock.md` | — |
-| F3 | Input 事件系统（推断） | Foundation | **MVP** | Not Started | `design/gdd/input-event-system.md` | — |
-| F4 | ScriptableObject 数据层（推断） | Foundation | **MVP** | Not Started | `design/gdd/so-data-layer.md` | — |
-| F5 | 存档/持久化系统 | Foundation | **MVP** | Not Started | `design/gdd/save-persistence.md` | — |
+| F2 | 音频/拍点时钟系统 | Foundation | **MVP** | **Approved** | `design/gdd/audio-beat-clock.md` | — |
+| F3 | Input 事件系统 | Foundation | **MVP** | **Approved** | `design/gdd/input-event-system.md` | — |
+| F4 | ScriptableObject 数据层（推断） | Foundation | **MVP** | **In Review** | `design/gdd/so-data-layer.md` | — |
+| F5 | 存档/持久化系统 | Foundation | **MVP** | **Approved** | `design/gdd/save-persistence.md` | — |
 | F6 | TopDownEngine & Animancer 集成层（推断） | Foundation | **MVP** | Not Started | `design/gdd/tde-integration.md` | — |
 | C1 | 节奏量化攻击系统 | Core | **MVP** | Not Started | `design/gdd/rhythm-core.md` | F2, F3 |
 | C2 | 连招图系统 | Core | **MVP** | Not Started | `design/gdd/combo-system.md` | F4, C1 |
 | C3 | 心法构筑系统 | Core | **MVP** | Not Started | `design/gdd/perk-system.md` | F4, C1 |
 | C4 | 战斗导演 | Core | **MVP** | Not Started | `design/gdd/combat-director.md` | F2 |
 | C5 | 武器系统（推断） | Core | **MVP** | Not Started | `design/gdd/weapon-system.md` | F4, C2 |
+| C6 | Hitbox/受击判定系统（推断） | Core | **MVP** | Not Started | `design/gdd/hitbox-system.md` | C2, F6 |
 | FE3 | 延迟校准系统 | Feature | **MVP** | Not Started | `design/gdd/latency-calibration.md` | F2, F5 |
 | FE1 | 敌人 AI 系统 | Feature | **MVP** | Not Started | `design/gdd/enemy-ai.md` | C4, F4 |
 | FE4 | Boss 战系统 | Feature | **MVP** | Not Started | `design/gdd/boss-battle.md` | FE1, C4, F2 |
 | FE2 | 房间系统（推断） | Feature | **MVP** | Not Started | `design/gdd/room-system.md` | F6, FE1, C3 |
 | FE5 | 局外成长系统 | Feature | **MVP** | Not Started | `design/gdd/meta-progression.md` | F5, C3, C5 |
+| FE7 | 游戏设置系统（推断） | Feature | **MVP** | Not Started | `design/gdd/settings-system.md` | F5 |
+| PL1 | 相机系统（推断） | Feature | **MVP** | Not Started | `design/gdd/camera-system.md` | C1, F6 |
 | P6 | 延迟校准 UI（推断） | Presentation | **MVP** | Not Started | `design/gdd/ui-latency-calibration.md` | FE3 |
 | P1 | HUD | Presentation | **MVP** | Not Started | `design/gdd/ui-hud.md` | C1, C3, C2, F2 |
 | P5 | 暂停菜单 | Presentation | **MVP** | Not Started | `design/gdd/ui-pause-menu.md` | F6 |
@@ -42,7 +45,7 @@
 | P2 | 心法选择 UI（推断） | Presentation | **MVP** | Not Started | `design/gdd/ui-perk-selection.md` | C3, FE2 |
 | P3 | 局结算界面 | Presentation | **MVP** | Not Started | `design/gdd/ui-run-settlement.md` | FE5 |
 | P4 | 局外成长菜单（推断） | Presentation | **MVP** | Not Started | `design/gdd/ui-meta-menu.md` | FE5 |
-| PL1 | 相机系统（推断） | Polish | **MVP** | Not Started | `design/gdd/camera-system.md` | C1, F6 |
+| P8 | 设置菜单（推断） | Presentation | **MVP** | Not Started | `design/gdd/ui-settings.md` | FE7 |
 | PL2 | VFX 与节奏反馈（推断） | Polish | **MVP** | Not Started | `design/gdd/vfx-rhythm-feedback.md` | C1, F6 |
 | PL3 | 教程/引导系统（推断） | Polish | **Vertical Slice** | Not Started | `design/gdd/tutorial-onboarding.md` | FE2, P1 |
 | FE6 | 程序化房间生成（推断） | Feature | **Alpha** | Not Started | `design/gdd/procedural-room-gen.md` | FE2 |
@@ -57,10 +60,10 @@
 | 层级 | 描述 | 本项目系统 |
 |------|------|-----------|
 | **Foundation** | 无依赖的技术地基，所有其他系统的底层假设 | 音频时钟、Input 事件、SO 数据层、存档、TDE 集成 |
-| **Core** | 定义核心玩法体验的系统，构成 30 秒循环 | 节奏量化、连招图、心法、战斗导演、武器系统 |
-| **Feature** | 构成完整单局游戏流程的系统 | 敌人 AI、房间系统、校准、Boss 战、局外成长、程序化生成 |
-| **Presentation** | 玩家感知和交互的界面层 | HUD、心法选择、结算、升级菜单、暂停、校准 UI、主菜单 |
-| **Polish** | 强化感官体验、保证质量的系统 | 相机、VFX/节奏反馈、教程引导、无障碍设置 |
+| **Core** | 定义核心玩法体验的系统，构成 30 秒循环 | 节奏量化、连招图、心法、战斗导演、武器系统、Hitbox 判定 |
+| **Feature** | 构成完整单局游戏流程的系统 | 敌人 AI、房间系统、校准、Boss 战、局外成长、设置系统、相机系统、程序化生成 |
+| **Presentation** | 玩家感知和交互的界面层 | HUD、心法选择、结算、升级菜单、暂停、校准 UI、主菜单、设置菜单 |
+| **Polish** | 强化感官体验、保证质量的系统 | VFX/节奏反馈、教程引导、无障碍设置 |
 
 ---
 
@@ -92,15 +95,18 @@
 3. **C2 连招图系统** — 依赖：F4（AttackNodeSO/ComboGraphSO schema）+ C1（评级控制取消窗）
 4. **C3 心法构筑系统** — 依赖：F4（PerkSO schema）+ C1（心法修改节奏规则）
 5. **C5 武器系统** — 依赖：F4（WeaponSO schema）+ C2（连招图运行时容器）
+6. **C6 Hitbox/受击判定系统** — 依赖：C2（连招图攻击帧，定义 hitbox 激活时机）+ F6（TDE 碰撞检测基础）
 
 ### Feature Layer（依赖 Core）
 
 1. **FE3 延迟校准系统** — 依赖：F2（音频时钟测量）+ F5（偏移量存档）
-2. **FE1 敌人 AI 系统** — 依赖：C4（beat-locked 攻击令牌）+ F4（EnemyInfoSO）
-3. **FE4 Boss 战系统** — 依赖：FE1（AI 扩展）+ C4（导演拍号切换）+ F2（阶段切换时序）
-4. **FE2 房间系统** — 依赖：F6（TDE LevelManager）+ FE1（房间内有敌人）+ C3（心法奖励分发）
-5. **FE5 局外成长系统** — 依赖：F5（存档）+ C3（心法池扩展）+ C5（武器解锁）
-6. **FE6 程序化房间生成** — 依赖：FE2（房间系统，Alpha+ 引入）
+2. **FE7 游戏设置系统** — 依赖：F5（设置数据持久化；音量/键位/视觉辅助）
+3. **PL1 相机系统** — 依赖：C1（Perfect 触发 camera micro-cut 事件）+ F6（Cinemachine 虚拟相机基础）
+4. **FE1 敌人 AI 系统** — 依赖：C4（beat-locked 攻击令牌）+ F4（EnemyInfoSO）
+5. **FE4 Boss 战系统** — 依赖：FE1（AI 扩展）+ C4（导演拍号切换）+ F2（阶段切换时序）
+6. **FE2 房间系统** — 依赖：F6（TDE LevelManager）+ FE1（房间内有敌人）+ C3（心法奖励分发）
+7. **FE5 局外成长系统** — 依赖：F5（存档）+ C3（心法池扩展）+ C5（武器解锁）
+8. **FE6 程序化房间生成** — 依赖：FE2（房间系统，Alpha+ 引入）
 
 ### Presentation Layer（依赖对应游戏系统）
 
@@ -111,13 +117,13 @@
 5. **P2 心法选择 UI** — 依赖：C3（心法数据）+ FE2（房间奖励触发）
 6. **P3 局结算界面** — 依赖：FE5（功勋结算）
 7. **P4 局外成长菜单** — 依赖：FE5（升级数据）
+8. **P8 设置菜单** — 依赖：FE7（设置系统数据与操作接口）
 
 ### Polish Layer（依赖 Presentation + 游戏系统）
 
-1. **PL1 相机系统** — 依赖：C1（Perfect 触发 micro-cut）+ F6（Cinemachine 基础）
-2. **PL2 VFX 与节奏反馈** — 依赖：C1（评级事件）+ F6（MMFeedbacks/Feel 基础）
-3. **PL3 教程/引导系统** — 依赖：FE2（房间系统）+ P1（HUD 引导提示）
-4. **PL4 无障碍设置** — 依赖：F5（设置持久化）
+1. **PL2 VFX 与节奏反馈** — 依赖：C1（评级事件）+ F6（MMFeedbacks/Feel 基础）
+2. **PL3 教程/引导系统** — 依赖：FE2（房间系统）+ P1（HUD 引导提示）
+3. **PL4 无障碍设置** — 依赖：F5（设置持久化）
 
 ---
 
@@ -134,24 +140,27 @@
 | 7 | **C4** 战斗导演 | MVP | Core | C1（可并行） | M |
 | 8 | **C2** 连招图系统 | MVP | Core | C3（可并行） | L |
 | 9 | **C3** 心法构筑系统 | MVP | Core | C2（可并行） | M |
-| 10 | **C5** 武器系统 | MVP | Core | — | S |
-| 11 | **FE3** 延迟校准系统 | MVP | Feature | FE1（可并行） | S |
-| 12 | **FE1** 敌人 AI 系统 | MVP | Feature | FE3（可并行） | L |
-| 13 | **FE4** Boss 战系统 | MVP | Feature | — | L |
-| 14 | **FE2** 房间系统 | MVP | Feature | FE5（可并行） | M |
-| 15 | **FE5** 局外成长系统 | MVP | Feature | FE2（可并行） | M |
-| 16 | **P6** 延迟校准 UI | MVP | Presentation | P1、P5（可并行） | S |
-| 17 | **P1** HUD | MVP | Presentation | P5、P6（可并行） | M |
-| 18 | **P5** 暂停菜单 | MVP | Presentation | P6、P1（可并行） | S |
-| 19 | **P7** 主菜单 | MVP | Presentation | P2（可并行） | S |
-| 20 | **P2** 心法选择 UI | MVP | Presentation | P7（可并行） | S |
-| 21 | **P3** 局结算界面 | MVP | Presentation | P4（可并行） | S |
-| 22 | **P4** 局外成长菜单 | MVP | Presentation | P3（可并行） | S |
-| 23 | **PL1** 相机系统 | MVP | Polish | PL2（可并行） | S |
-| 24 | **PL2** VFX 与节奏反馈 | MVP | Polish | PL1（可并行） | M |
-| 25 | **PL3** 教程/引导系统 | Vertical Slice | Polish | — | M |
-| 26 | **FE6** 程序化房间生成 | Alpha | Feature | — | L |
-| 27 | **PL4** 无障碍设置 | Full Vision | Polish | — | S |
+| 10 | **C5** 武器系统 | MVP | Core | C6、PL1（可并行） | S |
+| 11 | **C6** Hitbox/受击判定系统 | MVP | Core | C5、PL1（可并行） | S |
+| 12 | **PL1** 相机系统 | MVP | Feature | C5、C6（可并行） | S |
+| 13 | **FE3** 延迟校准系统 | MVP | Feature | FE7、FE1、FE5（可并行） | S |
+| 14 | **FE7** 游戏设置系统 | MVP | Feature | FE3、FE1、FE5（可并行） | S |
+| 15 | **FE1** 敌人 AI 系统 | MVP | Feature | FE3、FE7、FE5（可并行） | L |
+| 16 | **FE5** 局外成长系统 | MVP | Feature | FE3、FE7（可并行） | M |
+| 17 | **FE4** Boss 战系统 | MVP | Feature | — | L |
+| 18 | **FE2** 房间系统 | MVP | Feature | — | M |
+| 19 | **P6** 延迟校准 UI | MVP | Presentation | P1、P5、P7（可并行） | S |
+| 20 | **P1** HUD | MVP | Presentation | P6、P5、P7（可并行） | M |
+| 21 | **P5** 暂停菜单 | MVP | Presentation | P6、P1、P7（可并行） | S |
+| 22 | **P7** 主菜单 | MVP | Presentation | P6、P1、P5（可并行） | S |
+| 23 | **P2** 心法选择 UI | MVP | Presentation | P3、P4、P8（可并行） | S |
+| 24 | **P3** 局结算界面 | MVP | Presentation | P2、P4、P8（可并行） | S |
+| 25 | **P4** 局外成长菜单 | MVP | Presentation | P2、P3、P8（可并行） | S |
+| 26 | **P8** 设置菜单 | MVP | Presentation | P2、P3、P4（可并行） | S |
+| 27 | **PL2** VFX 与节奏反馈 | MVP | Polish | — | M |
+| 28 | **PL3** 教程/引导系统 | Vertical Slice | Polish | — | M |
+| 29 | **FE6** 程序化房间生成 | Alpha | Feature | — | L |
+| 30 | **PL4** 无障碍设置 | Full Vision | Polish | — | S |
 
 > *投入估算：S = 1 次 session，M = 2-3 次 session，L = 4+ 次 session*
 
@@ -163,8 +172,10 @@
 
 检查记录：
 - C2（连招图）→ C5（武器）：单向，C5 依赖 C2，C2 不依赖 C5
+- C2（连招图）→ C6（Hitbox）：单向，C6 依赖 C2，C2 不依赖 C6
 - FE1（AI）→ FE2（房间）：单向，FE2 依赖 FE1，FE1 不依赖 FE2
 - C3（心法）→ FE2（房间）：单向，FE2 依赖 C3，C3 不依赖 FE2
+- FE7（设置）→ P8（设置菜单）：单向，P8 依赖 FE7，FE7 不依赖 P8
 
 ---
 
@@ -184,11 +195,11 @@
 
 | 指标 | 数量 |
 |------|------|
-| 识别的系统总数 | 28 |
-| 设计文档已开始 | 1 |
-| 设计文档已审查 | 1 |
-| 设计文档已 Approved | 1 |
-| MVP 系统已设计 | 1 / 24 |
+| 识别的系统总数 | 31 |
+| 设计文档已开始 | 5 |
+| 设计文档已审查 | 5 |
+| 设计文档已 Approved | 2 |
+| MVP 系统已设计 | 5 / 27 |
 | Vertical Slice 系统已设计 | 0 / 1 |
 | Alpha 系统已设计 | 0 / 1 |
 | Full Vision 系统已设计 | 0 / 1 |

@@ -44,7 +44,7 @@ Many API names and components changed.
 - Blends between virtual cameras
 - Applies virtual camera settings to Unity Camera
 
-### 3. **Priorit**ies**
+### 3. **Priorities**
 - Virtual cameras have priority values
 - Highest priority camera is active
 - Blends smoothly when priority changes
@@ -344,5 +344,5 @@ vcam.Follow = target; // Cleaner API
 ---
 
 ## Sources
-- https://docs.unity3d.com/Packages/com.unity.cinemachine@3.0/manual/index.html
+- https://docs.unity3d.com/Packages/com.unity.cinemachine@3.1/manual/index.html
 - https://learn.unity.com/tutorial/cinemachine

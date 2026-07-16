@@ -37,7 +37,7 @@
 #   Each entry: name, status, source, referenced_by[], attributes{}, added, revised
 
 version: 1
-last_updated: ""
+last_updated: "2026-07-14"
 
 # ─── ENTITIES ────────────────────────────────────────────────────────────────
 # Named game-world objects: enemies, NPCs, characters, factions, bosses.
@@ -139,7 +139,56 @@ formulas: []
 #
 # Required fields: name, status, source, referenced_by, value, unit, added
 
-constants: []
+constants:
+  - name: latency_calibration_offset_ms
+    status: active
+    source: design/gdd/so-data-layer.md   # PlayerInfoSO.latencyCalibrationOffsetMs 由 F4 定义
+    referenced_by:
+      - design/gdd/so-data-layer.md
+      - design/gdd/audio-beat-clock.md    # F2 以 latency_offset_ms 名称消费此值，范围须一致
+      - design/gdd/save-persistence.md    # F5 LatencyCalibrationDTO.latencyOffsetMs [-200.0, 200.0]；F5 第 330 行已核验一致
+    value_range: [-200, 200]
+    unit: ms
+    notes: "F4 PlayerInfoSO 字段；F2 BeatClock 通过 F5 存档读取后注入。三文件（F4/F2/F5）范围均已校验一致。"
+    added: 2026-07-14
+    revised: "2026-07-15"
+
+  - name: weapon_base_damage
+    status: active
+    source: design/gdd/so-data-layer.md   # WeaponSO.baseDamage 由 F4 定义
+    referenced_by:
+      - design/gdd/so-data-layer.md
+      # C2 GDD 编写时须在此追加：design/gdd/combo-system.md
+    value_range: [1.0, 100.0]
+    unit: damage_units
+    notes: "WeaponSO.baseDamage；C2 final_damage 公式的 base_damage 变量来源。MVP 苗刀参考值 25.0。"
+    added: 2026-07-14
+    revised: ""
+
+  - name: enemy_attack_windup_beats
+    status: active
+    source: design/gdd/so-data-layer.md   # EnemyInfoSO.attackWindupBeats 由 F4 定义
+    referenced_by:
+      - design/gdd/so-data-layer.md
+      # C4 GDD 编写时须在此追加：design/gdd/combat-director.md
+    value_range: [0.5, 8.0]              # 旧值 [1, 4]；2026-07-14 F4 GDD 修订后更新（0.5 拍支持 Elite/Boss 极限压迫感）
+    unit: beats
+    notes: "EnemyInfoSO.attackWindupBeats；C4 战斗导演的 Beat-Locked 令牌分配使用此值判断敌人攻击前摇拍数。\
+      schema 最大范围 [0.5, 8.0]；MVP 阶段普通敌人设计范围 [1.0, 4.0]（见 F4 Tuning Knobs）。"
+    added: 2026-07-14
+    revised: "2026-07-14"
+
+  - name: bpm_range
+    status: active
+    source: design/gdd/audio-beat-clock.md   # BPM 范围由 F2 BeatClock 定义（硬限）
+    referenced_by:
+      - design/gdd/audio-beat-clock.md
+      - design/gdd/so-data-layer.md          # F4 LevelConfigSO.bpm 字段范围与此对齐
+    value_range: [80, 240]
+    unit: bpm
+    notes: "F2 BeatClock 的 BPM clamp 硬限制。F4 LevelConfigSO.bpm 字段的 Odin [MinValue(80)][MaxValue(240)] 与此同步。"
+    added: 2026-07-14
+    revised: ""
 
 # Example:
 #

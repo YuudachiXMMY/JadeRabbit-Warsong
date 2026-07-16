@@ -45,7 +45,7 @@ Animator Component
 ```csharp
 // BeatClock 提供当前 BPM，AttackNode 包含动画 Clip 引用
 var state = _animancer.Play(attackNode.Clip, fadeDuration);
-state.Speed = BeatClock.NormalizedBpmScale(attackNode.BaseBeats);
+state.Speed = BeatClock.NormalizedBpmScale(attackNode.BaseBeats); // [Pro-Only] 属性
 // NormalizedBpmScale = currentBpm / attackNode.ReferenceBpm
 ```
 

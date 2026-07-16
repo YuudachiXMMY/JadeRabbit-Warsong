@@ -88,6 +88,30 @@
 - **Odin Validator** (Sirenix, Asset Store) — 项目资源合规性验证，确保 SO 数据字段完整性。
   配合 Odin Inspector 使用；同样仅限 Editor，禁止在 Runtime 代码路径中触发验证逻辑。
 
+- **Feel / MMFeedbacks** (More Mountains, Asset Store) — 反馈系统基础设施（视觉、音效、触感反馈序列）。
+  作为 TopDownEngine 捆绑包的一部分引入，但版本独立管理。
+  **用途**: 所有 Perfect/Good/Miss 反馈序列通过 MMFeedbacks 触发；CombatCore 发布评级事件，Feel 订阅播放。
+  **约束**: Feel 3.x 废弃了 `MMFeedback` 基类，改用 `Feedback` 抽象类；确认版本后统一命名空间。
+  **仅通过事件订阅使用**，不在 CombatCore 中直接 using Feel 命名空间（保持边界隔离）。
+
+- **EasySave 3** (Moodkie, Asset Store) — 存档与持久化系统（F5）。
+  用于 PlayerInfoSO 序列化（功勋、武器解锁、设置、延迟校准偏移量）。
+  **约束**: 禁止直接序列化 MonoBehaviour 引用；只序列化纯数据结构（struct / class，无 Unity Object 引用）。
+  ES3 的云备份功能（ES3Cloud）本项目不启用。
+  ADR-D7 将正式选定 EasySave 3 vs 自定义 JSON 方案。
+
+- **DOTween** (Demigiant, Asset Store — Pro) — UI 动画与补间工具。
+  **用途范围**: UI 过渡动画（非节奏关键帧动画）。节奏反馈动画统一使用 Feel/MMFeedbacks，
+  不得与 DOTween 在同一 Transform 上双重驱动。
+  **约束**: 游戏启动时须调用 `DOTween.Init()` 并设置容量，避免运行时 GC（见 DOTween 最佳实践）。
+  禁止在 Update/FixedUpdate 中每帧创建新 Tween（应复用或 Sequence 管理）。
+
+- **Hot Reload** (CodeFloof, Asset Store) — C# 代码热重载（Editor 开发期提速工具）。
+  **仅限开发期 Editor 使用**，不影响任何 Runtime 行为，不打包进构建产物。
+  **约束**: 不支持 DOTS/Burst 代码热重载；静态字段在热重载后须手动重置（运行时单例须注意）。
+  与 Odin Inspector 同时使用时须注意序列化检视面板刷新时机。
+  CI 构建和 Player 构建中完全忽略此插件。
+
 ## Architecture Decisions Log
 
 <!-- Quick reference linking to full ADRs in docs/architecture/ -->

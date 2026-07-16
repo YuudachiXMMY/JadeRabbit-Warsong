@@ -30,7 +30,7 @@
 #   Superseded entries:     Grep pattern="status: superseded"
 
 version: 1
-last_updated: ""
+last_updated: "2026-07-15"
 
 # ─── STATE OWNERSHIP ─────────────────────────────────────────────────────────
 # Who is the authoritative owner of each piece of shared game state.
@@ -43,7 +43,29 @@ last_updated: ""
 # interface: how other systems access this state (read-only property, method call,
 #   signal, shared resource, etc.) — this is the contract other ADRs depend on.
 
-state_ownership: []
+state_ownership:
+  - state: action_map_state
+    status: active
+    owner_system: f3-input-event-bus
+    adr: docs/architecture/adr-d1-tde-integration.md
+    interface: "InputEventBus.EnableGameplayInput() / EnableUIInput() / DisableAllInput() — exclusive method calls; JadeRabbitInputManager delegates TDE lifecycle changes through these methods"
+    write_access: f3-input-event-bus-only
+    referenced_by:
+      - docs/architecture/adr-d1-tde-integration.md
+    added: 2026-07-15
+    revised: ""
+
+  - state: beat_clock_lifecycle
+    status: active
+    owner_system: f2-beat-clock
+    adr: docs/architecture/adr-d1-tde-integration.md
+    interface: "BeatClock.Play() / Stop() / Pause() / Resume() — exclusive lifecycle control by TDELifecycleAdapter (F6); other systems may only read state via BeatStateSnapshot"
+    write_access: f6-tde-lifecycle-adapter-only
+    referenced_by:
+      - docs/architecture/adr-d1-tde-integration.md
+      - docs/architecture/adr-d6-audio-middleware.md
+    added: 2026-07-15
+    revised: ""
 
 # Example:
 #
@@ -71,7 +93,33 @@ state_ownership: []
 #
 # pattern options: signal | direct_call | event_bus | shared_resource | rpc | none
 
-interfaces: []
+interfaces:
+  - contract: tde_to_f3_action_map_bridge
+    status: active
+    pattern: method_call
+    producer: f6-jade-rabbit-input-manager
+    consumers:
+      - f3-input-event-bus
+    adr: docs/architecture/adr-d1-tde-integration.md
+    signal_signature: "JadeRabbitInputManager overrides InputSystemManagerEventsBased Action Map Enable/Disable → delegates to InputEventBus.EnableGameplayInput() / EnableUIInput() / DisableAllInput()"
+    referenced_by:
+      - docs/architecture/adr-d1-tde-integration.md
+    added: 2026-07-15
+    revised: ""
+
+  - contract: f6_to_f2_lifecycle_control
+    status: active
+    pattern: method_call
+    producer: f6-tde-lifecycle-adapter
+    consumers:
+      - f2-beat-clock
+    adr: docs/architecture/adr-d1-tde-integration.md
+    signal_signature: "TDELifecycleAdapter exclusively calls BeatClock.Play(bgmRef, bpm, timeSig) / Stop() / Pause() / Resume() in response to TDE lifecycle events (scene load, pause, death, respawn)"
+    referenced_by:
+      - docs/architecture/adr-d1-tde-integration.md
+      - docs/architecture/adr-d6-audio-middleware.md
+    added: 2026-07-15
+    revised: ""
 
 # Example:
 #
@@ -100,7 +148,17 @@ interfaces: []
 # Register a budget when an ADR explicitly claims a frame time allocation.
 # The registry lets /architecture-review verify the total doesn't exceed the target.
 
-performance_budgets: []
+performance_budgets:
+  - system: beat-clock
+    status: active
+    budget_ms: 0.2
+    platform: All
+    adr: docs/architecture/adr-d6-audio-middleware.md
+    notes: "Includes FMOD RuntimeManager.Update() (~0.05ms) + BeatClock.Update() DSP clock read (~0.01ms) + event dispatch overhead. Main thread only."
+    referenced_by:
+      - docs/architecture/adr-d6-audio-middleware.md
+    added: 2026-07-14
+    revised: ""
 
 # Example:
 #
@@ -131,7 +189,40 @@ performance_budgets: []
 # Register an API decision when the choice is non-obvious and other ADRs might
 # make a different choice for the same purpose without knowing this was decided.
 
-api_decisions: []
+api_decisions:
+  - purpose: audio_middleware
+    status: active
+    api: "FMOD Studio 2.x via FMODUnity RuntimeManager package"
+    not: "Unity AudioSource / AudioSettings.dspTime as rhythm-critical audio middleware"
+    adr: docs/architecture/adr-d6-audio-middleware.md
+    reason: "FMOD getDSPClock() provides sample-level precision (~0.02ms @ 48kHz) vs Unity Native buffer-boundary quantization (23-46ms on Android). Satisfies F2's <0.1ms timestamp accuracy requirement with 5x margin."
+    referenced_by:
+      - docs/architecture/adr-d6-audio-middleware.md
+      - design/gdd/audio-beat-clock.md
+    added: 2026-07-14
+    revised: ""
+
+  - purpose: bgm_dsp_scheduling
+    status: active
+    api: "FMOD.Channel.setDelay(startDSPClock, 0, false) with absolute system DSP clock"
+    not: "FMOD.Studio.EventInstance for BGM; FMOD.Channel.setPosition(FMOD.TIMEUNIT.DSP)"
+    adr: docs/architecture/adr-d6-audio-middleware.md
+    reason: "EventInstance has no sample-accurate scheduling API; setPosition(DSP) is deprecated. setDelay() with system getDSPClock() is the only FMOD mechanism for sample-accurate scheduled playback."
+    referenced_by:
+      - docs/architecture/adr-d6-audio-middleware.md
+    added: 2026-07-14
+    revised: ""
+
+  - purpose: tde_input_manager_strategy
+    status: active
+    api: "JadeRabbitInputManager : InputSystemManagerEventsBased (subclass override)"
+    not: "Removing InputSystemManagerEventsBased entirely from character prefabs"
+    adr: docs/architecture/adr-d1-tde-integration.md
+    reason: "Removing InputSystemManagerEventsBased breaks TDE AbilityInputAuthorization. Subclassing preserves the authorization pipeline while redirecting Action Map control to F3 InputEventBus."
+    referenced_by:
+      - docs/architecture/adr-d1-tde-integration.md
+    added: 2026-07-15
+    revised: ""
 
 # Example:
 #
@@ -157,7 +248,34 @@ api_decisions: []
 # Register a pattern when an ADR explicitly bans it AND other ADRs might
 # unknowingly use it (i.e., it's a tempting but wrong approach for this project).
 
-forbidden_patterns: []
+forbidden_patterns:
+  - pattern: fmod_eventinstance_bgm_scheduling
+    status: active
+    description: "Do not use FMOD.Studio.EventInstance to play or schedule rhythm-critical BGM. Use FMOD Core API (FMOD.Sound + FMOD.Channel.setDelay()) instead."
+    why: "EventInstance.start() fires on the next FMOD update tick, not at a specified DSP clock. This introduces 5-20ms scheduling jitter that invalidates BeatClock's DSP start anchor."
+    adr: docs/architecture/adr-d6-audio-middleware.md
+    added: 2026-07-14
+
+  - pattern: unity_samplerate_in_fmod_dsp_clock
+    status: active
+    description: "Do not use AudioSettings.outputSampleRate as the divisor when converting FMOD DSP clock (ulong samples) to seconds. Always call coreSystem.getSoftwareFormat(out int sampleRate, ...) and use FMOD's own sample rate."
+    why: "FMOD and Unity Audio initialize as independent audio systems and may run at different sample rates. Using AudioSettings.outputSampleRate as the divisor produces a DSP clock that silently drifts from wall clock time, corrupting all beat timestamps."
+    adr: docs/architecture/adr-d6-audio-middleware.md
+    added: 2026-07-14
+
+  - pattern: direct_action_map_enable_disable
+    status: active
+    description: "Do not call InputActionMap.Enable() or InputActionMap.Disable() from any code outside F3 InputEventBus or JadeRabbitInputManager. All Action Map state changes must go through F3's public API (EnableGameplayInput / EnableUIInput / DisableAllInput)."
+    why: "F3's _isSwitchingMaps guard must wrap every gameplayMap.Disable() call to prevent ghost LightAttack events from charged input interruptions (E3 edge case). Direct calls bypass this guard."
+    adr: docs/architecture/adr-d1-tde-integration.md
+    added: 2026-07-15
+
+  - pattern: beatclock_lifecycle_bypass
+    status: active
+    description: "Do not call BeatClock.Play() / Stop() / Pause() / Resume() from any system other than TDELifecycleAdapter (F6). Other systems may only read BeatClock state via BeatStateSnapshot or subscribe to C# beat events."
+    why: "Split lifecycle control causes audio-rhythm desync. TDELifecycleAdapter coordinates BeatClock and InputEventBus atomically in the same frame; bypassing it breaks this coordination."
+    adr: docs/architecture/adr-d1-tde-integration.md
+    added: 2026-07-15
 
 # Example:
 #

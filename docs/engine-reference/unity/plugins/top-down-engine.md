@@ -32,8 +32,8 @@ TopDownEngine 在《玉兔：破阵》中作为 **F6 TDE & Animancer 集成层**
 
 ### 允许
 - ✅ 继承 TDE 类（如 `class PlayerCharacter : Character`）
-- ✅ 订阅 TDE 事件（`MMEventManager.AddListener<MMGameEvent>()`）
-- ✅ 实现 TDE 接口（`IDamageable`、`IPickable` 等）
+- ✅ 订阅 TDE 事件（实现 `MMEventListener<T>` 接口，调用 `this.MMEventStartListening<T>()` / `this.MMEventStopListening<T>()`）
+- ✅ 触发 TDE 事件（`MMGameEvent.Trigger("EventName")`）
 - ✅ 在 TDE 的 `Ability` 系统内添加自定义 Ability（`CharacterAbility` 子类）
 
 ### 禁止
@@ -58,6 +58,14 @@ TopDownEngine 在《玉兔：破阵》中作为 **F6 TDE & Animancer 集成层**
 生命值管理和死亡事件。CombatCore 的 DamageCalculator 通过 `health.Damage()` 扣血，
 不直接修改 `health.CurrentHealth`。
 
+`Health.Damage()` 完整签名：
+
+```csharp
+virtual void Damage(float damage, GameObject instigator, float flickerDuration,
+                    float invincibilityDuration, Vector3 damageDirection,
+                    List<TypedDamage> typedDamages = null)
+```
+
 ### LevelManager
 关卡加载、房间切换、死亡重置。F6 GDD 需定义与 LevelManager 的场景管理协议。
 
@@ -72,8 +80,9 @@ TopDownEngine 在《玉兔：破阵》中作为 **F6 TDE & Animancer 集成层**
 1. **Animancer 冲突风险**: TDE 使用 `Animator` 组件管理角色基础动画；
    Animancer 接管攻击动画层。两者共存时须分层（Layer Index 隔离），见 Animancer 插件文档。
 
-2. **MMInput 与 Unity Input System**: TDE 3.x 支持新 Input System，但配置须通过
-   TDE 的 InputManager 适配器。不得绕过 TDE InputManager 直接读取 Input Action——
+2. **MMInput 与 Unity Input System**: TDE 4.x 支持新 Input System，须将默认的
+   `InputManager` 替换为 `InputSystemManagerEventsBased`（推荐，尤其多人模式）。
+   不得绕过 TDE Input 管理器直接读取 Input Action——
    否则 TDE 的 AbilityInputAuthorization 系统会失效。
 
 3. **LevelManager 单例**: TDE LevelManager 是单例，不可在同一场景中存在两个实例。

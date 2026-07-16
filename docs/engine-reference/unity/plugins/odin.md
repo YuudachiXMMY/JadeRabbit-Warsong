@@ -100,8 +100,9 @@ public List<AttackNodeSO> ComboChain;
    仅在确实需要序列化字典/接口时引入 `[OdinSerialize]`。
 
 2. **Unity 6.3 LTS 中的 `[SerializeField]` 行为变更**:
-   Unity 6.3 LTS 强制执行 `SerializeField` 字段必须显式标注（不再序列化公共字段）。
-   Odin Validator 的某些自动检测规则可能与此冲突，首次配置时须验证。
+   Unity 6.3 LTS 将 `[SerializeField]` 应用于类/类型声明时升级为**编译错误**（此前仅为警告或静默忽略）。
+   **公共字段的自动序列化行为未变更**——`MonoBehaviour` 和 `ScriptableObject` 的 public 字段仍会自动序列化，
+   无需显式标注 `[SerializeField]`。Odin Validator 的检测规则不受此变更影响。
 
 3. **Odin Validator 误报**:
    Validator 对未赋值的 Optional 字段可能误报警告。须在 Validator 配置中将

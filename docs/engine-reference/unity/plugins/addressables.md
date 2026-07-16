@@ -68,7 +68,11 @@ with async loading, remote content delivery, and better memory control.
 using UnityEditor.AddressableAssets;
 using UnityEditor.AddressableAssets.Settings;
 
-AddressableAssetSettings.AddAssetEntry(guid, "MyAssetKey", "Default Local Group");
+var settings = AddressableAssetSettingsDefaultObject.Settings;
+var group = settings.FindGroup("Default Local Group") ?? settings.DefaultGroup;
+var entry = settings.CreateOrMoveEntry(guid, group);
+entry.address = "MyAssetKey";
+settings.SetDirty(AddressableAssetSettings.ModificationEvent.EntryMoved, entry, true);
 #endif
 ```
 
