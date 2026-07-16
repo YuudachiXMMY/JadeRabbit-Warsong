@@ -39,6 +39,8 @@ MonoBehaviour:
     - Assembly-CSharp-firstpass
     - DOTween.Modules
     - DOTweenPro.Scripts
+    - FMODUnity
+    - FMODUnityResonance
     - Kybernetik.Animancer
     - Kybernetik.Animancer.FSM
     - Lofelt.NiceVibrations
