@@ -1,7 +1,7 @@
 # ADR-D1: TopDownEngine Integration Architecture
 
 ## Status
-Proposed
+Accepted
 
 ## Date
 2026-07-15
@@ -12,10 +12,10 @@ Proposed
 |-------|-------|
 | **Engine** | Unity 6.3 LTS (6000.3.19f1) |
 | **Domain** | Core / Integration |
-| **Knowledge Risk** | HIGH — TDE 4.x + Unity 6.3 LTS new Input System is post-LLM-cutoff; TDE version compatibility unverified at ADR authoring time |
+| **Knowledge Risk** | MEDIUM — TDE 4.5 compiled successfully in Unity 6.3 LTS (verified M0 Spike 2026-07-16); remaining risk is FMOD native plugin compatibility |
 | **References Consulted** | `docs/engine-reference/unity/VERSION.md`, `docs/engine-reference/unity/plugins/top-down-engine.md`, `docs/architecture/adr-d6-audio-middleware.md` |
-| **Post-Cutoff APIs Used** | `MMEventListener<T>` (TDE event subscription); `TopDownEngineEvent` / `MMGameEvent` (TDE event types); `InputSystemManagerEventsBased` (TDE input manager — subclassed, not modified) |
-| **Verification Required** | 1. Confirm TDE 4.x package compiles in Unity 6.3 LTS (HIGH — `[SerializeField]` fields-only change may break TDE editor scripts). 2. Verify `MMEventListener<T>` generic subscription API signatures in TDE 4.x (`MMEventStartListening<T>()` / `MMEventStopListening<T>()`). 3. Verify `MMGameEvent.EventName` string values for pause: are they `"Pause"` / `"UnPause"` or a different convention? 4. Verify `TopDownEngineEventTypes.PlayerDeath` and `.Respawn` enum members exist in TDE 4.x. 5. Verify `InputSystemManagerEventsBased` has virtual/overridable methods for Action Map Enable/Disable that can be redirected to F3 without breaking `AbilityInputAuthorization`. 6. Confirm FMOD for Unity RuntimeManager script execution order vs TDELifecycleAdapter. |
+| **Post-Cutoff APIs Used** | `MMEventListener<T>` (TDE event subscription — verified M0 Spike); `TopDownEngineEvent` (TDE typed lifecycle events — verified); `InputSystemManagerEventsBased` (TDE input manager — subclassed via `BindButton` override) |
+| **Verification Required** | 1. ~~Confirm TDE 4.x compiles in Unity 6.3 LTS~~ ✅ VERIFIED (M0 Spike 2026-07-16). 2. ~~Verify `MMEventListener<T>` API signatures~~ ✅ VERIFIED. 3. ~~Verify pause event mechanism~~ ✅ VERIFIED — TDE uses `TopDownEngineEvent` with `TopDownEngineEventTypes.Pause/UnPause` (NOT `MMGameEvent` string). 4. ~~Verify `TopDownEngineEventTypes` enum members~~ ✅ VERIFIED — `.PlayerDeath` exists; `.Respawn` does NOT exist → use `.RespawnComplete`. 5. ~~Verify `InputSystemManagerEventsBased` virtual methods~~ ✅ VERIFIED — only `BindButton` is virtual; `SetInputEnabled` does NOT exist → use `BindButton` override as input gate. 6. Confirm FMOD for Unity RuntimeManager script execution order vs TDELifecycleAdapter (PENDING — FMOD not yet imported). |
 
 ## ADR Dependencies
 
@@ -53,9 +53,8 @@ F6 (the TDE Integration Layer) must mediate between TDE's lifecycle and the Foun
 - Define a single Action Map authority that eliminates F3 ↔ TDE race condition (TR-input-010)
 - Define boot sequence: `AllDisabled` → `GameplayActive` after scene load (TR-input-014)
 - Provide pause/resume signal path from TDE → BeatClock (TR-beatclock-008)
-- Establish LevelConfigSO → BeatClock injection via F6 (TR-datalayer-010)
-- Enforce FMOD async init mode at boot (TR-input-011)
-- Enable F6 GDD authoring with defined component structure (TR-beatclock-012)
+- Establish LevelConfigSO → BeatClock injection via F6 (TR-datalayer-012)
+- Enforce FMOD async init mode at boot (TR-input-015)
 - Preserve TDE `AbilityInputAuthorization` functionality
 
 ## Decision
@@ -74,7 +73,7 @@ F6 consists of **two components** working in concert:
 - TDE's `AbilityInputAuthorization` continues to function because the subclass preserves the authorization pipeline
 - No race condition: F3's state machine is the single source of truth
 
-> **M0 Spike Required**: The specific TDE 4.x methods to override in `JadeRabbitInputManager` depend on TDE source review. If `InputSystemManagerEventsBased` does not expose virtual/overridable methods for Action Map management, the fallback is: keep the component but disable its auto-management via TDE configuration API (e.g., `HandleInput = false`), and have `TDELifecycleAdapter` call F3 directly. This fallback must be verified during M0 Spike.
+> **M0 Spike Result (2026-07-16)**: `InputSystemManagerEventsBased` exposes only one virtual method: `BindButton(InputAction.CallbackContext, MMInput.IMButton)` at line 42. `SetInputEnabled` does not exist; `HandleInput` does not exist. The adopted approach is: override `BindButton` to gate input through F3's state machine (`CurrentState != GameplayActive` → drop input). F3 directly calls `InputActionMap.Enable()/Disable()` — not through TDE's input manager. TDE's `AbilityInputAuthorization` is preserved because `JadeRabbitInputManager` inherits the full ability pipeline; only the button callback entry point is gated.
 
 ### BeatClock Lifecycle Authority
 
@@ -103,16 +102,16 @@ SceneManager.sceneLoaded (LoadSceneMode.Single only — additive loads are filte
 ### Pause / Resume
 
 ```
-TDE MMGameEvent("Pause")   ──→  TDELifecycleAdapter
+TDE TopDownEngineEvent(Pause)   ──→  TDELifecycleAdapter
     └→ BeatClock.Pause()              ← F2: Playing → Paused  (same frame)
        InputEventBus.EnableUIInput()  ← F3: GameplayActive → UIActive (same frame)
 
-TDE MMGameEvent("UnPause") ──→  TDELifecycleAdapter
+TDE TopDownEngineEvent(UnPause) ──→  TDELifecycleAdapter
     └→ BeatClock.Resume()                  ← F2: Paused → Playing  (same frame)
        InputEventBus.EnableGameplayInput() ← F3: UIActive → GameplayActive (same frame)
 ```
 
-> **⚠ TDE event name verification required**: `"Pause"` / `"UnPause"` are assumed string values. TDE 4.x may use different strings, enum values, or a different event type entirely. This must be verified from TDE 4.x source during M0 Spike.
+> **M0 Spike Verified (2026-07-16)**: TDE 4.5 uses `TopDownEngineEvent` with `TopDownEngineEventTypes.Pause` / `.UnPause` enum values (GameManager.cs:516-520). NOT string-based `MMGameEvent`. `TDELifecycleAdapter` implements only `MMEventListener<TopDownEngineEvent>`.
 
 ### Death / Respawn
 
@@ -121,9 +120,9 @@ TDE TopDownEngineEvent(PlayerDeath) ──→  TDELifecycleAdapter
     └→ BeatClock.Stop()                ← F2: → Stopped
        InputEventBus.DisableAllInput() ← F3: → AllDisabled
 
-TDE TopDownEngineEvent(Respawn) ──→  TDELifecycleAdapter
-    └→ BeatClock.Play(bgmRef, bpm, timeSig) ← F2: → Playing (restart)
-       InputEventBus.EnableGameplayInput()   ← F3: → GameplayActive
+TDE TopDownEngineEvent(RespawnComplete) ──→  TDELifecycleAdapter
+    └→ BeatClock.Play(bgmRef, bpm, timeSig)    ← F2: → Playing (restart)
+       InputEventBus.EnableGameplayInput()      ← F3: → GameplayActive
 ```
 
 ### Architecture Diagram
@@ -134,7 +133,6 @@ TDE TopDownEngineEvent(Respawn) ──→  TDELifecycleAdapter
           ▼
 [F6: TDELifecycleAdapter : MonoBehaviour]  ── DontDestroyOnLoad Manager
   ┌───────┴───────────────────────────────────────────────────────┐
-  │  implements MMEventListener<MMGameEvent>                      │
   │  implements MMEventListener<TopDownEngineEvent>               │
   │                                                               │
   │  [Inspector refs]                                             │
@@ -146,17 +144,17 @@ TDE TopDownEngineEvent(Respawn) ──→  TDELifecycleAdapter
           ├── OnSceneLoaded ────────► BeatClock.Play(bpm, timeSig, bgmRef)
           │                           InputEventBus.EnableGameplayInput()
           │
-          ├── MMGameEvent("Pause") ──► BeatClock.Pause()
-          │                            InputEventBus.EnableUIInput()
+          ├── TopDownEngineEvent     ► BeatClock.Pause()
+          │   (Pause)                  InputEventBus.EnableUIInput()
           │
-          ├── MMGameEvent("UnPause")─► BeatClock.Resume()
-          │                            InputEventBus.EnableGameplayInput()
+          ├── TopDownEngineEvent     ► BeatClock.Resume()
+          │   (UnPause)                InputEventBus.EnableGameplayInput()
           │
           ├── TopDownEngineEvent     ► BeatClock.Stop()
           │   (PlayerDeath)            InputEventBus.DisableAllInput()
           │
           └── TopDownEngineEvent     ► BeatClock.Play(bgmRef, bpm, timeSig)
-              (Respawn)                InputEventBus.EnableGameplayInput()
+              (RespawnComplete)        InputEventBus.EnableGameplayInput()
 
 
 [Character Prefab — Modified]
@@ -164,7 +162,7 @@ TDE TopDownEngineEvent(Respawn) ──→  TDELifecycleAdapter
   ├── CharacterMovement                  (TDE — untouched)
   ├── [JadeRabbitInputManager]           ← REPLACES InputSystemManagerEventsBased
   │     └── : InputSystemManagerEventsBased (inherits; preserves AbilityInputAuth)
-  │           └── Action Map Enable/Disable → delegated to F3.InputEventBus
+  │           └── BindButton override → gates input through F3.InputEventBus state
   └── CharacterAbilities                 (TDE — untouched)
 
 
@@ -183,28 +181,33 @@ TDE TopDownEngineEvent(Respawn) ──→  TDELifecycleAdapter
 // ═══════════════════════════════════════════════════════════════
 
 /// <summary>
-/// Subclass of TDE's InputSystemManagerEventsBased that redirects all
-/// Action Map Enable/Disable operations to F3's InputEventBus, while
-/// preserving TDE's AbilityInputAuthorization pipeline through inheritance.
+/// Subclass of TDE's InputSystemManagerEventsBased that gates all button
+/// input through F3's InputEventBus state. When F3 is in AllDisabled state,
+/// all button callbacks are silently dropped. This preserves TDE's
+/// AbilityInputAuthorization pipeline through inheritance while giving F3
+/// exclusive authority over input flow.
 /// </summary>
 /// <remarks>
-/// M0 SPIKE REQUIRED: The specific override methods below are derived from
-/// TDE 2.x training data. TDE 4.x method signatures must be verified from
-/// source before implementation. If the methods are not virtual/overridable,
-/// the fallback approach is to use TDE's HandleInput property.
+/// M0 SPIKE VERIFIED (2026-07-16): InputSystemManagerEventsBased has only
+/// one virtual method: BindButton(). SetInputEnabled does NOT exist in TDE 4.5.
+/// OnJump/OnPause/etc are non-virtual public callbacks — cannot be overridden.
+/// Strategy: override BindButton as universal input gate; F3 manages
+/// InputActionMap.Enable()/Disable() directly (not through TDE).
 /// </remarks>
 public class JadeRabbitInputManager : InputSystemManagerEventsBased
 {
     [SerializeField] private InputEventBus _inputEventBus;  // F3
 
-    // Override: redirect Action Map enabling to F3
-    // (exact method name TBD after TDE 4.x source review)
-    protected override void SetInputEnabled(bool enabled)
+    // Override the sole virtual method in InputSystemManagerEventsBased
+    // Source: InputSystemManagerEventsBased.cs:42
+    protected override void BindButton(InputAction.CallbackContext context,
+                                       MMInput.IMButton imButton)
     {
-        if (enabled)
-            _inputEventBus.EnableGameplayInput();
-        else
-            _inputEventBus.DisableAllInput();
+        // F3 state gate: block all button input when AllDisabled or UIActive
+        if (_inputEventBus.CurrentState != InputState.GameplayActive)
+            return;
+
+        base.BindButton(context, imButton);
     }
 }
 
@@ -220,9 +223,14 @@ public class JadeRabbitInputManager : InputSystemManagerEventsBased
 /// and the project's Foundation systems (BeatClock F2, InputEventBus F3).
 /// Exclusive controller of BeatClock.Play/Stop/Pause/Resume.
 /// </summary>
+/// <remarks>
+/// M0 SPIKE VERIFIED (2026-07-16): TDE 4.5 sends ALL lifecycle events
+/// (including pause/unpause) as TopDownEngineEvent with typed enum — NOT as
+/// MMGameEvent with string comparison. Only MMEventListener&lt;TopDownEngineEvent&gt;
+/// is needed. TopDownEngineEventTypes.Respawn does NOT exist; use RespawnComplete.
+/// </remarks>
 public sealed class TDELifecycleAdapter : MonoBehaviour,
-    MMEventListener<MMGameEvent>,
-    MMEventListener<TopDownEngineEvent>
+    MMEventListener<TopDownEngineEvent>  // single interface — all lifecycle events
 {
     [SerializeField] private InputEventBus _inputEventBus;  // F3
     [SerializeField] private BeatClock     _beatClock;      // F2
@@ -244,14 +252,12 @@ public sealed class TDELifecycleAdapter : MonoBehaviour,
 
     private void OnEnable()
     {
-        this.MMEventStartListening<MMGameEvent>();
         this.MMEventStartListening<TopDownEngineEvent>();
         SceneManager.sceneLoaded += OnSceneLoaded;
     }
 
     private void OnDisable()
     {
-        this.MMEventStopListening<MMGameEvent>();
         this.MMEventStopListening<TopDownEngineEvent>();
         SceneManager.sceneLoaded -= OnSceneLoaded;
     }
@@ -269,32 +275,26 @@ public sealed class TDELifecycleAdapter : MonoBehaviour,
         _inputEventBus.EnableGameplayInput();
     }
 
-    // ⚠ Event name strings ("Pause"/"UnPause") require M0 Spike verification
-    // against TDE 4.x source — these are derived from TDE 2.x training data.
-    public void OnMMEvent(MMGameEvent gameEvent)
-    {
-        switch (gameEvent.EventName)
-        {
-            case "Pause":
-                _beatClock.Pause();
-                _inputEventBus.EnableUIInput();
-                break;
-            case "UnPause":
-                _beatClock.Resume();
-                _inputEventBus.EnableGameplayInput();
-                break;
-        }
-    }
-
+    // M0 Spike verified: TDE 4.5 uses TopDownEngineEvent for ALL lifecycle
+    // events including pause (GameManager.cs:516-520). Enum values confirmed
+    // from GameManager.cs:27-47.
     public void OnMMEvent(TopDownEngineEvent topDownEvent)
     {
         switch (topDownEvent.EventType)
         {
+            case TopDownEngineEventTypes.Pause:
+                _beatClock.Pause();
+                _inputEventBus.EnableUIInput();
+                break;
+            case TopDownEngineEventTypes.UnPause:
+                _beatClock.Resume();
+                _inputEventBus.EnableGameplayInput();
+                break;
             case TopDownEngineEventTypes.PlayerDeath:
                 _beatClock.Stop();
                 _inputEventBus.DisableAllInput();
                 break;
-            case TopDownEngineEventTypes.Respawn:
+            case TopDownEngineEventTypes.RespawnComplete:
                 _beatClock.Play(
                     _levelConfig.BgmAssetReference,
                     _levelConfig.Bpm,
@@ -344,9 +344,9 @@ public sealed class TDELifecycleAdapter : MonoBehaviour,
 - FMOD init assertion in `Start()` produces a confusing failure mode during development if FMOD is misconfigured. Requires explicit error messages.
 
 ### Risks
-- **HIGH: TDE 4.x compatibility with Unity 6.3 LTS.** TDE may not support Unity 6.3 LTS. The `[SerializeField]` fields-only change may break TDE editor scripts. **Mitigation**: M0 Spike first task — import TDE, compile, verify zero errors. If TDE doesn't compile, entire F6 architecture is blocked.
-- **HIGH: `InputSystemManagerEventsBased` override API unknown.** The subclass approach depends on TDE 4.x exposing virtual/overridable methods for Action Map Enable/Disable. If these methods are non-virtual, the subclass cannot intercept them. **Mitigation**: M0 Spike — read TDE 4.x `InputSystemManagerEventsBased.cs` source; if non-virtual, fallback to `HandleInput = false` + direct F3 calls from TDELifecycleAdapter (effectively Alternative 1 + manual AbilityInputAuthorization reimplementation).
-- **HIGH: TDE event name strings.** `"Pause"` / `"UnPause"` are assumed from TDE 2.x training data. TDE 4.x may use different strings, typed enums, or a separate event type. **Mitigation**: M0 Spike — verify pause event names from TDE 4.x source or documentation. Extract string constants into a static helper class to centralize breakage.
+- ~~**HIGH: TDE 4.x compatibility with Unity 6.3 LTS.**~~ ✅ RESOLVED (M0 Spike 2026-07-16): TDE 4.5 compiles with zero errors in Unity 6.3 LTS.
+- ~~**HIGH: `InputSystemManagerEventsBased` override API unknown.**~~ ✅ RESOLVED (M0 Spike 2026-07-16): Only `BindButton` is virtual. Adopted approach: override `BindButton` as input gate; F3 manages InputActionMap directly. `SetInputEnabled` and `HandleInput` do not exist in TDE 4.5.
+- ~~**HIGH: TDE event name strings.**~~ ✅ RESOLVED (M0 Spike 2026-07-16): TDE 4.5 uses `TopDownEngineEvent` with typed enum `TopDownEngineEventTypes.Pause/UnPause` (GameManager.cs:516-520). No string comparison needed. `Respawn` → `RespawnComplete` (GameManager.cs:38).
 - **MEDIUM: FMOD RuntimeManager init timing.** `RuntimeManager.IsInitialized` may be `false` during `Start()` on the first scene load if FMOD initializes asynchronously. **Mitigation**: Add `RuntimeManager` to Script Execution Order before `TDELifecycleAdapter`, or use a `WaitUntil(RuntimeManager.IsInitialized)` coroutine in the boot sequence.
 - **MEDIUM: Additive scene load double-fire.** `SceneManager.sceneLoaded` fires for every scene load including additive. TDE's `LevelManager` may use additive loading for room management. **Mitigation**: ADR specifies `LoadSceneMode.Single` guard in `OnSceneLoaded()`. Room-level BPM changes (if needed) use `BeatClock.RequestBPMChange()` instead of re-calling `Play()`.
 - **LOW: `MMGameEvent` string key fragility.** String comparison for event routing can break silently. **Mitigation**: F6 implementation should use extracted constants verified against TDE source, not inline string literals.
@@ -358,9 +358,9 @@ public sealed class TDELifecycleAdapter : MonoBehaviour,
 | input-event-system.md (F3) | E8: TDE `InputSystemManagerEventsBased` Action Map state conflict | `JadeRabbitInputManager` subclass overrides Action Map management to delegate to F3; F3 is sole authority |
 | input-event-system.md (F3) | AC-F3-20: `InputEventBus.Awake()` initial state `AllDisabled`; F6 enables on scene load | Boot sequence: `OnSceneLoaded()` calls `EnableGameplayInput()` after `BeatClock.Play()` |
 | audio-beat-clock.md (F2) | Pause/resume signal from TDE | `TDELifecycleAdapter.OnMMEvent(Pause)` calls `BeatClock.Pause()` in same frame as `EnableUIInput()` |
-| audio-beat-clock.md (F2) | F6 → F2: BGM AudioSource ref; pause/resume signals | F6 calls `BeatClock.Play/Pause/Resume/Stop` exclusively; 3-step BGM protocol internal to BeatClock |
+| audio-beat-clock.md (F2) | F6 → F2: BGM FMOD asset ref; pause/resume signals | F6 calls `BeatClock.Play/Pause/Resume/Stop` exclusively; 3-step BGM protocol internal to BeatClock |
 | audio-beat-clock.md (F2) | Core Rule 11: subscriber lifecycle; F6 pre-signal for room unload | F6 can broadcast room-unload pre-signal before `BeatClock.Stop()`; subscribers unsubscribe in `OnDestroy()` |
-| so-data-layer.md (F4) | TR-datalayer-010: LevelConfigSO BPM/time-sig consumed by F2 | TDELifecycleAdapter reads `LevelConfigSO` and passes `.Bpm`, `.TimeSignature`, `.BgmAssetReference` to `BeatClock.Play()` |
+| so-data-layer.md (F4) | TR-datalayer-012: LevelConfigSO BPM/time-sig consumed by F2 | TDELifecycleAdapter reads `LevelConfigSO` and passes `.Bpm`, `.TimeSignature`, `.BgmAssetReference` to `BeatClock.Play()` |
 | input-event-system.md (F3) | E6 / DeferredAC-F3-16: FMOD async mode (`FMOD_INIT_NORMAL`) | `TDELifecycleAdapter.Start()` asserts FMOD RuntimeManager initialized; async mode enforcement deferred to F6 GDD detail |
 | game-concept.md (F1) | Enemy AI beat-locked attacks require TDE character lifecycle | F6 lifecycle hooks (death/respawn) defined; CombatDirector token integration deferred to ADR-D2 |
 

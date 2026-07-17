@@ -1,10 +1,10 @@
-# Session State — 2026-07-15
+# Session State — 2026-07-16
 
 ## Current Focus
 
 - **Epic**: Pre-Production
-- **Feature**: Architecture Review
-- **Task**: ADR-D1 TDE Integration Architecture — Proposed 已写入；下一步：ADR-D5 Animation Pipeline → F6 GDD
+- **Feature**: M0 Spike — TDE + FMOD + EasySave 3 兼容性验证
+- **Task**: M0 Spike API 验证全部完成；5 BLOCKER（D1×3 已修复 + D7×1 已修复 + D6×1 已修复）；FMOD 编译需 Editor 确认
 
 ---
 
@@ -66,10 +66,13 @@
 
 ## Open Blockers
 
-- [ ] **M0 Spike 未完成**: 判定窗口数据 → 阻塞 C1 GDD Formulas 节
-- [x] **ADR-D6 Accepted（FMOD Studio 2.x）**: F2 实现阻塞已解除（14 Engine Findings 待修复）
-- [x] **ADR-D7 Accepted（EasySave 3）**: F5 实现阻塞已解除（6 Engine Findings 待修复）
-- [x] **ADR-D1 Proposed（TDE Integration）**: 已写入 `docs/architecture/adr-d1-tde-integration.md`；注册表已更新 7 条新 stances
+- [x] **M0 Spike 完成（部分）**: TDE 4.5 + EasySave 3 源码验证完毕；4 BLOCKER 发现（ADR-D1 ×3 + ADR-D7 ×1）
+- [x] **M0 Spike FMOD 已完成**: FMOD 2.02.35 已导入 + API 源码验证完毕；发现 B5（getDSPClock 路径）已修复；编译需 Editor 确认
+- [ ] **ADR-D1 BLOCKER ×3**: B1 SetInputEnabled 不存在 / B2 暂停事件类型错误 / B3 Respawn 枚举不存在 → 须修复后 Accept
+- [ ] **ADR-D7 BLOCKER ×1**: B4 ES3.Load<T> 参数顺序不匹配（编译错误风险）
+- [x] **ADR-D6 Accepted（FMOD Studio 2.x）**: F2 实现阻塞已解除（API 待 FMOD 导入后验证）
+- [x] **ADR-D7 Accepted（EasySave 3）**: F5 实现阻塞已解除（B4 参数顺序 + W1 RenameFile 简化待修复）
+- [x] **ADR-D1 Proposed（TDE Integration）**: 已写入；M0 Spike 发现 3 BLOCKER 须修复后方可 Accept
 - [ ] **BeatAccentMap（5/8 分组）**: 待 C4 GDD 确认需求
 - [ ] **F6 GDD 未开始**: ConfirmDSPStart 三步协议须先有 F6 GDD
 
@@ -113,8 +116,37 @@
 - Recommended next: 修复 4 个 Quick Fix → F6 GDD → C1 GDD
 - Report: design/gdd/reviews/gdd-cross-review-2026-07-15.md (Rev.2 覆盖)
 
+## Session Extract — M0 Spike 2026-07-16
+- Verdict: CONCERNS (5 BLOCKER / 2 WARNING — 全部已修复于 ADR)
+- TDE 4.5: 编译 ✅ | B1(SetInputEnabled→BindButton) ✅修复 | B2(MMGameEvent→TopDownEngineEvent) ✅修复 | B3(Respawn→RespawnComplete) ✅修复
+- EasySave 3: 编译 ✅ | B4(Load<T> 参数顺序) ✅修复 | W1(RenameFile 简化) ✅修复
+- FMOD 2.02.35: 已导入 ✅ | B5(getDSPClock 不在 System 上→改用 MasterChannelGroup) ✅修复 | W2(uint→ulong) ✅修复
+- 编译需 Unity Editor 手动确认
+- Report: docs/architecture/m0-spike-report.md (Rev.2)
+- Recommended next: Unity Editor 编译确认 → ADR-D1 Accept → F6 GDD → C1 GDD
+
+## Session Extract — /architecture-review ADR-D1 2026-07-16
+- Verdict: **CONCERNS → PASS (post-fix)**
+- 修复 B1: 3 个 TR-ID 错配（datalayer-010→012, input-011→015, beatclock-012 移除）
+- 修复 W1: F2 GDD 依赖表 "AudioSource" → "FMOD asset"
+- 修复 W2: TDE 插件参考 ADR 表 D3→D1, D4→D5
+- W3 PENDING: FMOD init timing 需 Editor 运行时验证
+- TR registry: 新增 TR-datalayer-012, TR-input-015（总计 71 条）
+- 0 Cross-ADR Conflicts, 1 minor GDD revision flag (resolved)
+- Report: docs/architecture/architecture-review-2026-07-16.md
+- Recommended next: **Accept ADR-D1** → F6 GDD → ADR-D5 → ADR-D2
+
+## Session Extract — ADR-D1 Accepted + W4/W5 Fixes 2026-07-16
+- **ADR-D1 Status: Proposed → Accepted** ✅
+- **W4 FIXED**: F2 GDD body text 4 处 "AudioSource" → "FMOD asset"（依赖详情段落）
+- **W5 FIXED**: F4 GDD `bgmClip` → `bgmAssetRef`，类型 `AssetReferenceT<AudioClip>` → `string`（4 处）
+- Review report Rev.2 written: docs/architecture/architecture-review-2026-07-16.md
+- **Verdict upgraded: PASS**
+- Remaining non-blocking: W3 FMOD init timing; F2 edge cases (lines 392/398/408) minor cleanup
+- Recommended next: **F6 GDD** → ADR-D5 → ADR-D2
+
 <!-- STATUS -->
 Epic: Pre-Production
 Feature: Architecture Review
-Task: /architecture-review full (v2) 完成；下一步：M0 Spike → ADR-D1 Accept → ADR-D5 → F6 GDD
+Task: ADR-D1 Accepted; Review PASS; W4/W5 fixed; 下一步：F6 GDD
 <!-- /STATUS -->

@@ -97,8 +97,8 @@ virtual void Damage(float damage, GameObject instigator, float flickerDuration,
 
 | ADR | 涉及 TDE 的决策 |
 |-----|----------------|
-| D3（待创建） | TDE 集成边界合约的正式 ADR |
-| D4（待创建） | Animancer 与 TDE Animator 层冲突解决方案 |
+| ADR-D1 | TDE 集成边界合约：JadeRabbitInputManager + TDELifecycleAdapter（F6 层） |
+| ADR-D5（待创建） | Animancer 与 TDE Animator 层冲突解决方案 |
 
 ---
 

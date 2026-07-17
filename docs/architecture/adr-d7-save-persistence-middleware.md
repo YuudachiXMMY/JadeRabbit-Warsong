@@ -152,7 +152,9 @@ public class ES3Storage : IFileStorage
         => ES3.Save(key, value, path, _settings);
 
     public T Load<T>(string path, string key, T defaultValue)
-        => ES3.Load<T>(key, defaultValue, path, _settings);
+        => ES3.Load<T>(key, path, defaultValue, _settings);
+        // M0 Spike fix (2026-07-16): ES3.cs:501 signature is
+        // Load<T>(string key, string filePath, T defaultValue, ES3Settings settings)
 
     public bool KeyExists(string path, string key)
         => ES3.KeyExists(key, path, _settings);
@@ -169,11 +171,9 @@ public class ES3Storage : IFileStorage
 
     public void RenameFile(string srcPath, string dstPath)
     {
-        // EasySave 3 无原生 Rename；通过 Load-All + Save-All + Delete 实现
-        // 注意：此操作非原子性（两步 I/O）——仅用于 .corrupt 备份，非关键路径
-        var data = ES3.LoadRawBytes(srcPath, _settings);
-        ES3.SaveRaw(data, dstPath, _settings);
-        ES3.DeleteFile(srcPath, _settings);
+        // M0 Spike fix (2026-07-16): ES3.RenameFile exists natively (ES3.cs:1142)
+        ES3.RenameFile(new ES3Settings(srcPath, _settings),
+                       new ES3Settings(dstPath, _settings));
     }
 
     private readonly ES3Settings _settings = new ES3Settings
@@ -191,7 +191,7 @@ public class ES3Storage : IFileStorage
 2. **`SaveService` 放置路径**：`Assets/Scripts/Core/Persistence/SaveService.cs`
 3. **IFileStorage 放置路径**：`Assets/Scripts/Core/Persistence/IFileStorage.cs`
 4. **禁止在 `ES3Storage` 之外的任何运行时代码引用 `ES3.*`**——Odin Validator 可配置 namespace 禁用规则强制此约束
-5. **`RenameFile` 的非原子性警告**：EasySave 3 无原生重命名 API；上述实现为"读旧文件 → 写新文件 → 删旧文件"三步操作，中途断电理论上可能导致两份文件同时存在。由于此操作仅用于 `.corrupt` 备份（非关键数据路径），风险可接受；如需原子性，升级为 `System.IO.File.Move()`（需放弃 EasySave 3 的加密包装）
+5. **`RenameFile`**：~~EasySave 3 无原生重命名 API~~ M0 Spike (2026-07-16) 发现 `ES3.RenameFile()` 原生存在（ES3.cs:1142），已改用原生 API
 6. **版本迁移**：版本号写入 DTO 内部字段（`save_version: int`），由 `SaveService` 的 `MigrateIfNeeded<T>()` 方法处理；不使用 EasySave 3 的版本机制（与 `IFileStorage` 接口解耦）
 7. **ES3Cloud 禁用**：`ES3Settings.location` 保持默认（`File`），不设置 `ES3CloudSettings`
 
@@ -230,7 +230,7 @@ public class ES3Storage : IFileStorage
 ### Negative
 
 - **Asset Store 依赖**：EasySave 3 非 UPM 包，须手动跟踪版本（`Assets/Plugins/EasySave3/`）；Unity 版本升级时须重新验证兼容性
-- **`RenameFile` 非原子性**：EasySave 3 无原生重命名 API；`.corrupt` 备份路径为三步 I/O——理论上断电可导致双份文件（可接受，非关键路径）
+- ~~**`RenameFile` 非原子性**~~：M0 Spike (2026-07-16) 发现 `ES3.RenameFile()` 原生存在（ES3.cs:1142），已改用原生 API，消除三步 I/O 非原子性风险
 - **AES 密钥明文**：MVP 阶段使用硬编码或 `ProjectSettings` 中的密钥，不提供真正的存档安全性（对成本分析：本游戏存档数据无安全价值，加密仅防意外损坏；可接受）
 - **ES3Cloud 功能浪费**：购买的功能（云备份）在本项目中不使用
 - **调试时文件不可读**：加密二进制格式无法直接查看存档内容；须在 `MockFileStorage` 测试环境中调试，或临时切换 `ES3Settings.encryptionType = None`（不提交）

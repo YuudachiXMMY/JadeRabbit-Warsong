@@ -46,7 +46,7 @@ F4 定义以下 7 类核心 ScriptableObject，每类对应一个明确的数据
 | `PerkSO` | 心法：效果类型枚举、效果参数集合、稀有度、UI 描述与图标引用 | C3（心法构筑系统） | **是**（每局开始前克隆） |
 | `WeaponSO` | 武器：武器类型枚举、`ComboGraphSO` 引用、基础伤害、动画层配置引用 | C5、FE5（局外成长） | 否（只读引用） |
 | `EnemyInfoSO` | 敌人：基础属性、行为档案类型、Beat-Locked 攻击模式描述 | FE1（敌人 AI 系统） | 否（只读引用） |
-| `LevelConfigSO` | 关卡/房间：BGM AudioClip 引用、BPM、拍号、房间类型标签 | F2（音频时钟）、FE2（房间系统） | 否（只读引用） |
+| `LevelConfigSO` | 关卡/房间：BGM FMOD asset 引用、BPM、拍号、房间类型标签 | F2（音频时钟）、FE2（房间系统） | 否（只读引用） |
 | `PlayerInfoSO` | 玩家持久化数据：功勋余额、解锁武器列表、局外升级状态、延迟校准偏移量 | F5（存档系统）、FE5 | 否（不克隆；直接序列化/反序列化） |
 
 **规则 2：只读资产原则**
@@ -76,7 +76,7 @@ F4 使用两种互补（而非互替）的 Odin 验证机制：
 
 **规则 6：Addressables 引用策略（已定）**
 
-所有 SO 资产须归入 Addressable Group，通过 Addressables API 按需加载，不使用 `Resources/` 目录直接加载。**大型 Unity Object 引用字段（`AnimationClip`、`AudioClip`、`Sprite`）须使用 `AssetReferenceT<T>` 延迟引用**——直接引用会将资产锁入同一 Bundle，在 ScriptableObject 加载时触发隐式全量拉取（单个 ComboGraphSO 加载时可隐式拉取 20 个 AnimationClip）。`AttackNodeSO.animationClip`、`LevelConfigSO.bgmClip`、`PerkSO.iconSprite` 均已采用 `AssetReferenceT<T>`。`List<AttackNodeSO>`（小型元数据 SO）保留直接引用。具体 Bundle 分组策略、加载时机和 Handle 释放规则由 F6 GDD 定义。
+所有 SO 资产须归入 Addressable Group，通过 Addressables API 按需加载，不使用 `Resources/` 目录直接加载。**大型 Unity Object 引用字段（`AnimationClip`、`AudioClip`、`Sprite`）须使用 `AssetReferenceT<T>` 延迟引用**——直接引用会将资产锁入同一 Bundle，在 ScriptableObject 加载时触发隐式全量拉取（单个 ComboGraphSO 加载时可隐式拉取 20 个 AnimationClip）。`AttackNodeSO.animationClip`、`PerkSO.iconSprite` 均已采用 `AssetReferenceT<T>`；`LevelConfigSO.bgmAssetRef` 为 `string`（FMOD Core API 资产路径，非 Addressables 托管——见 ADR-D6）。`List<AttackNodeSO>`（小型元数据 SO）保留直接引用。具体 Bundle 分组策略、加载时机和 Handle 释放规则由 F6 GDD 定义。
 
 ---
 
@@ -237,7 +237,7 @@ F4 不包含计算公式，但定义了每种 SO 类型的**字段规格**——
 |------|------|----------|------|------|
 | `id` | `string` | 非空，项目内唯一 | 是 | 关卡/房间 ID |
 | `roomType` | `RoomType` | `{Entrance, Combat, Elite, Boss, Reward}` | 是 | 房间类型，FE2 路由房间流程 |
-| `bgmClip` | `AssetReferenceT<AudioClip>` | 非 null | 是 | 注入 F2 BeatClock 的 BGM（Addressables 延迟引用；BGM AudioClip 可达 3–15 MB，直接引用会在 LevelConfigSO 加载时隐式拉取全量音频数据；由 F6 在房间进入时调用 `LoadAssetAsync` 解析）|
+| `bgmAssetRef` | `string`（StreamingAssets 相对路径）| 非 null | 是 | 注入 F2 BeatClock 的 BGM 音频文件路径（ADR-D6：FMOD Core API 以 `FMOD_CREATESAMPLE` 全量加载；BGM 音频文件 3–15 MB，F6 在房间进入时通过 FMOD `System.createSound()` 加载；具体引用类型由 F6 GDD 定案，可能替换为 FMOD 原生引用类型）|
 | `bpm` | `float` | [80, 240] | 是 | 房间 BPM；F2 clamp 规则在 F2 GDD 中定义 |
 | `timeSignatureNumerator` | `int` | `{3, 4, 5}` | 是 | 拍号分子 |
 | `timeSignatureDenominator` | `int` | `{4, 8}` | 是 | 拍号分母（5 分子时必须为 8） |
@@ -568,7 +568,7 @@ F4 的验收标准按 **BLOCKING**（须自动化测试通过，Done 前必须�
 
 - **`WeaponSO.animatorLayerName` 命名规范**：Animancer 层名称格式须 F6（TDE 集成层）GDD 与 C5（武器系统）GDD 联合定义，F4 只持有字段不规定命名格式。F6/C5 GDD 锁定命名规范后，须在 F4 的 RegisterValidator 外部验证类中新增 `[ValidateInput]` 规则检查字段值是否符合约定格式（否则该字段为无验证的自由字符串，运行时静默失效风险）。
 
-- **Addressables Group 分组策略**：7 类 SO 的 Bundle 分组（按系统分组 vs 按加载时机分组）由 F6 GDD 决定。F4 已明确：大型资产引用（`animationClip`、`bgmClip`、`iconSprite`）使用 `AssetReferenceT<T>` 延迟引用（见规则 6）；`List<AttackNodeSO>` 保留直接引用（元数据小型 SO）。F6 在分组时须考虑这一 Bundle 拓扑。
+- **Addressables Group 分组策略**：7 类 SO 的 Bundle 分组（按系统分组 vs 按加载时机分组）由 F6 GDD 决定。F4 已明确：大型资产引用（`animationClip`、`iconSprite`）使用 `AssetReferenceT<T>` 延迟引用，`bgmAssetRef` 为 FMOD 资产路径（见规则 6、ADR-D6）；`List<AttackNodeSO>` 保留直接引用（元数据小型 SO）。F6 在分组时须考虑这一 Bundle 拓扑。
 
 - **`EnemyBehaviorProfile` 枚举扩展性**：当前候选值 `{Melee_Simple, Ranged_Simple, Elite, Boss}` 是否足够 MVP？FE1 GDD 设计期间若需新增档案类型，须同步更新 F4-S5 并触发 Rule 4 变更传播。
 

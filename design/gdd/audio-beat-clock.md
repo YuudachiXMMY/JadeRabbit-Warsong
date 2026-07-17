@@ -99,7 +99,7 @@ F2 音频/拍点时钟系统是《玉兔：破阵》节奏战斗体系的时序�
 | F2 **→** FE3 | 延迟校准系统 | `GetCurrentDSPTime()`（double，秒） | 同步查询接口 |
 | F2 **→** P1 | HUD | `OnBeatExact` + `BeatProgress`（0–1，帧查询） | 事件订阅 + 帧查询 |
 | F2 **→** PL2 | VFX 节奏反馈 | `OnBeatLookahead` / `OnHalfBeatLookahead` | 事件订阅 |
-| F6 **→** F2 | TDE 集成层 | 暂停/恢复信号；BGM AudioSource 引用及 DSP 起始时间；实际播放确认时间 | 方法调用（`Play` / `Pause` / `Resume` / `Stop` / `ConfirmDSPStart`） |
+| F6 **→** F2 | TDE 集成层 | 暂停/恢复信号；BGM FMOD asset 引用及 DSP 起始时间；实际播放确认时间 | 方法调用（`Play` / `Pause` / `Resume` / `Stop` / `ConfirmDSPStart`） |
 
 ---
 
@@ -441,19 +441,19 @@ F2 是 Foundation 层系统，**编译期无上游依赖**（不 `using` 其他�
 
 ### 与 F6（TDE 集成层）的特殊关系
 
-F6 不是 F2 的正式上游依赖，但 F2 的 `Play(bgm, bpm, timeSig)` 接口需要 F6 提供 BGM AudioSource 引用和 DSP 起始时间：
+F6 不是 F2 的正式上游依赖，但 F2 的 `Play(bgm, bpm, timeSig)` 接口需要 F6 提供 BGM FMOD asset 引用和 DSP 起始时间：
 
-- **F6 → F2**：BGM AudioSource 引用；暂停/恢复信号
+- **F6 → F2**：BGM FMOD asset 引用；暂停/恢复信号
 - **F2 不调用 F6 接口**（单向）
 
 F2 的实例化必须在 F6 完成 BGM 加载之后。F6 GDD 须在接口合约中明确此启动顺序。
 
 **Boss 阶段中途 BPM / 拍号切换的 BGM 处理合约**
 
-`RequestBPMChange()` / `RequestTimeSignatureChange()` 仅负责时钟层节拍计算切换，F2 **不**处理 BGM AudioSource 的音频内容过渡。BGM 过渡策略由 F6 GDD 定义，须遵守以下约束：
+`RequestBPMChange()` / `RequestTimeSignatureChange()` 仅负责时钟层节拍计算切换，F2 **不**处理 BGM 的音频内容过渡。BGM 过渡策略由 F6 GDD 定义，须遵守以下约束：
 
-- **禁止**通过 `AudioSource.pitch` 实现 BPM 切换——变速会使编钟等中国传统乐器失调，违反支柱三（华风沉浸）
-- 推荐模型：F6 订阅 F2 的 BPM 切换接受事件（或在调用 `RequestBPMChange()` 后立即预加载目标 BPM 的 BGM Clip），在小节边界（`OnBeatExact` 触发时 `beat_index_in_measure == numerator-1`）通过 `AudioSource.PlayScheduled()` 精确对齐执行无缝换片或 Crossfade
+- **禁止**通过音频播放器 pitch 属性（FMOD `Channel.setPitch()` 等）实现 BPM 切换——变速会使编钟等中国传统乐器失调，违反支柱三（华风沉浸）
+- 推荐模型：F6 订阅 F2 的 BPM 切换接受事件（或在调用 `RequestBPMChange()` 后立即预加载目标 BPM 的 BGM 音频资产），在小节边界（`OnBeatExact` 触发时 `beat_index_in_measure == numerator-1`）通过 `IAudioPlayer.PlayScheduled()` 精确对齐执行无缝换片或 Crossfade
 - F2 不持有、不感知 BGM Clip 的切换——时钟层（F2）与音频内容层（F6）职责严格分离
 
 ---
@@ -465,7 +465,7 @@ F2 的实例化必须在 F6 完成 BGM 加载之后。F6 GDD 须在接口合约�
 - **C1 GDD**：须引用 F2-F2（半拍间隔约束）作为判定窗口上界
 - **FE3 GDD**：须与 F2-F5 的 `latency_offset` 符号约定对齐（正值 = 玩家听到音频有延迟，如无线耳机；调整后时间戳 = raw + offset/1000）
 - **F5 GDD**：已声明 F2 在 `Start()` 中主动调用 `LoadLatencyCalibration()` ✅（F5 Dependencies 节已列出 F2 为下游消费方）
-- **F6 GDD**：须在接口合约中说明向 F2 提供 BGM AudioSource 的责任及启动顺序
+- **F6 GDD**：须在接口合约中说明向 F2 提供 BGM FMOD asset 的责任及启动顺序
 
 ---
 

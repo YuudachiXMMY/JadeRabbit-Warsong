@@ -14,7 +14,7 @@ Accepted
 | **Domain** | Audio |
 | **Knowledge Risk** | MEDIUM — Post-LLM-cutoff; audio APIs verified against engine-reference docs and unity-specialist review |
 | **References Consulted** | `docs/engine-reference/unity/modules/audio.md`, `docs/engine-reference/unity/breaking-changes.md`, `docs/engine-reference/unity/deprecated-apis.md` |
-| **Post-Cutoff APIs Used** | `FMOD.System.getDSPClock()`, `FMOD.Channel.setDelay()` — FMOD for Unity 2.x APIs; validated by unity-specialist |
+| **Post-Cutoff APIs Used** | `FMOD.ChannelGroup.getDSPClock()` (via master channel group), `FMOD.Channel.setDelay()` — FMOD for Unity 2.02.35; M0 Spike 源码验证 ✅ |
 | **Verification Required** | 1. Confirm FMOD for Unity package explicitly lists Unity 6000.3.x as tested version before import. 2. Verify FMOD native plugin binaries built against Unity 6.3 LTS plugin API headers (HIGH-RISK — Unity 6.3 changed native plugin validation pipeline). 3. Confirm `coreSystem.getSoftwareFormat()` sample rate on all target platforms during M0 Spike. |
 
 ## ADR Dependencies
@@ -68,7 +68,7 @@ BeatClock (F2) will use **FMOD Studio 2.x** as the audio middleware, replacing U
    │  — exposes CoreSystem: FMOD.System
    ▼
 [FMOD Core: FMOD.System] ─────────────────── FMOD Audio Thread (internal)
-   │ coreSystem.getDSPClock() → ulong samples (sample-level precision)
+   │ coreSystem.getMasterChannelGroup() → master.getDSPClock() → ulong samples
    │ coreSystem.playSound(sound, paused=true) → Channel
    │ channel.setDelay(startDSPClock, 0, false)  ← absolute SYSTEM DSP clock
    │ channel.setPaused(false)                   ← arm for scheduled start
@@ -89,10 +89,13 @@ BeatClock (F2) will use **FMOD Studio 2.x** as the audio middleware, replacing U
 ```csharp
 // IDSPClock — FMOD production implementation
 // Reads FMOD core DSP clock; converts ulong samples → double seconds
+// NOTE: getDSPClock is on IChannelControl (Channel/ChannelGroup), NOT on FMOD.System
+// Must read from master channel group — its dspclock IS the system DSP clock
 public class FMODDSPClockImpl : IDSPClock {
     public double GetCurrentTime() {
-        // NOTE: use CoreSystem from RuntimeManager, not a separate low-level instance
-        FMODUnity.RuntimeManager.CoreSystem.getDSPClock(out ulong dspClock, out uint hi);
+        // getDSPClock lives on ChannelGroup, not System — use master channel group
+        FMODUnity.RuntimeManager.CoreSystem.getMasterChannelGroup(out FMOD.ChannelGroup masterGroup);
+        masterGroup.getDSPClock(out ulong dspClock, out ulong parentClock);
         // NOTE: use FMOD sample rate, NOT AudioSettings.outputSampleRate (they can differ)
         FMODUnity.RuntimeManager.CoreSystem.getSoftwareFormat(out int sampleRate, out _, out _);
         return (double)dspClock / sampleRate;

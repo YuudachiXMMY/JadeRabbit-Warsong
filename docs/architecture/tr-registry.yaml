@@ -395,6 +395,14 @@ requirements:
     revised: ""
     status: active
 
+  - id: TR-input-015
+    system: input
+    gdd: design/gdd/input-event-system.md
+    requirement: "FMOD async init mode enforcement at boot (F6 TDELifecycleAdapter Start() guard)"
+    created: 2026-07-16
+    revised: ""
+    status: active
+
   # ── datalayer (design/gdd/so-data-layer.md) ───────────────────────────────
 
   - id: TR-datalayer-001
@@ -482,6 +490,14 @@ requirements:
     gdd: design/gdd/so-data-layer.md
     requirement: "SO id uniqueness enforcement across all 7 types via RegisterValidator"
     created: 2026-07-15
+    revised: ""
+    status: active
+
+  - id: TR-datalayer-012
+    system: datalayer
+    gdd: design/gdd/so-data-layer.md
+    requirement: "LevelConfigSO BPM/time-sig/BgmAssetReference injection to F2 via F6 TDELifecycleAdapter"
+    created: 2026-07-16
     revised: ""
     status: active
 
