@@ -41,7 +41,7 @@ F4 定义以下 7 类核心 ScriptableObject，每类对应一个明确的数据
 
 | SO 类型 | 数据域 | 主要消费系统 | 运行时克隆 |
 |---------|--------|------------|-----------|
-| `AttackNodeSO` | 单个攻击节点：动画 Clip 引用、Hitbox 激活时机、取消窗口类型、量化偏好 | C2（连招图系统） | 否（只读引用） |
+| `AttackNodeSO` | 单个攻击节点：动画 Clip 引用、Hitbox 激活时机、取消窗口类型、量化偏好、BPM 参考值（ADR-D5） | C2（连招图系统） | 否（只读引用） |
 | `ComboGraphSO` | 连招图：节点集合（`List<AttackNodeSO>`）+ 边表（`List<ComboEdge>`，定义输入驱动的分支转换规则）+ 根节点引用 + 武器类型归属 | C2、C5（武器系统） | 否（只读引用） |
 | `PerkSO` | 心法：效果类型枚举、效果参数集合、稀有度、UI 描述与图标引用 | C3（心法构筑系统） | **是**（每局开始前克隆） |
 | `WeaponSO` | 武器：武器类型枚举、`ComboGraphSO` 引用、基础伤害、动画层配置引用 | C5、FE5（局外成长） | 否（只读引用） |
@@ -144,8 +144,9 @@ F4 不包含计算公式，但定义了每种 SO 类型的**字段规格**——
 | `cancelWindowType` | `CancelWindowType` | `{None, Standard, Advanced}` | 是 | 取消窗口类型：None = 无取消；Standard = 普通取消；Advanced = 仅 Perfect 解锁 |
 | `cancelWeight` | `float` | [0.0, 1.0] | 是 | 取消窗口开启的归一化时间点：取消窗口从 `cancelWeight` 处开始，延伸至动画结束（1.0）。`cancelWeight=0.0` = 从动画第 0 帧即可取消；`cancelWeight=0.6` = 前 60% 动画锁定，60% 处取消窗口开启；`cancelWeight=1.0` = 窗口永不开启（等效于 `cancelWindowType=None`）。**注**：当 `cancelWindowType=None` 时，`cancelWeight` 字段的值被 C2 忽略（无论设为何值均无取消窗口）；Odin Validator 在 `cancelWindowType=None` 且 `cancelWeight < 1.0` 时报告 Warning 以提示设计师。 |
 | `quantizationHint` | `QuantizationHint` | `{FullBeat, HalfBeat, Free}` | 否 | 本节点在连招树中的量化对齐偏好；C1 参考此值但最终量化由 C1 决定 |
+| `authoredBpm` | `float` | [60, 240]，默认 120 | 是 | 动画师创作此 Clip 时使用的参考 BPM。运行时 Animancer 攻击层根据 `state.Speed = BeatClock.CurrentBpm / authoredBpm` 动态缩放动画时长，确保攻击与节拍网格对齐（ADR-D5 定义）。**禁止为 0**（除零异常）；Odin Validator `[MinValue(1f)]` 阻止此配置错误 |
 
-**示例**：苗刀一段轻击 → `hitboxStartNormalizedTime=0.13, hitboxDurationNormalized=0.07, cancelWindowType=Standard, cancelWeight=0.6`（原 @60fps 帧数换算：8/60 ≈ 0.13，4/60 ≈ 0.07）
+**示例**：苗刀一段轻击 → `hitboxStartNormalizedTime=0.13, hitboxDurationNormalized=0.07, cancelWindowType=Standard, cancelWeight=0.6, authoredBpm=120`（原 @60fps 帧数换算：8/60 ≈ 0.13，4/60 ≈ 0.07；BPM=120 下创作）
 
 ---
 
@@ -458,9 +459,9 @@ F4 的验收标准按 **BLOCKING**（须自动化测试通过，Done 前必须�
 - Then 全部 7 类 SO 资产均归属至少一个 Addressable Group；`Assets/Resources/` 中无任何 F4 SO 资产
 
 **AC-F4-10 AttackNodeSO 字段约束**
-- Given `id`=""、`animationClip`=null、`hitboxStartNormalizedTime`=1.1（超过上限 1.0）、`cancelWeight`=1.5（超过上限 1.0）
+- Given `id`=""、`animationClip`=null、`hitboxStartNormalizedTime`=1.1（超过上限 1.0）、`cancelWeight`=1.5（超过上限 1.0）、`authoredBpm`=0（除零风险，ADR-D5）
 - When Odin Validator 扫描
-- Then 报告 4 条 Error；构建阻止
+- Then 报告 5 条 Error；构建阻止
 
 **AC-F4-11 ComboGraphSO.nodes 为空时阻止构建**
 - Given `nodes` 为空列表（长度 = 0）

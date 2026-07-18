@@ -30,7 +30,7 @@
 #   Superseded entries:     Grep pattern="status: superseded"
 
 version: 1
-last_updated: "2026-07-15"
+last_updated: "2026-07-18"
 
 # ─── STATE OWNERSHIP ─────────────────────────────────────────────────────────
 # Who is the authoritative owner of each piece of shared game state.
@@ -64,6 +64,7 @@ state_ownership:
     referenced_by:
       - docs/architecture/adr-d1-tde-integration.md
       - docs/architecture/adr-d6-audio-middleware.md
+      - docs/architecture/adr-d5-animation-pipeline.md
     added: 2026-07-15
     revised: ""
 
@@ -119,6 +120,19 @@ interfaces:
       - docs/architecture/adr-d1-tde-integration.md
       - docs/architecture/adr-d6-audio-middleware.md
     added: 2026-07-15
+    revised: ""
+
+  - contract: combat_director_attack_token
+    status: active
+    pattern: direct_call
+    producer: fe1-enemy-ai (CombatDirectorTokenTask BD Action Task)
+    consumers:
+      - c4-combat-director
+    adr: docs/architecture/adr-d2-enemy-ai-framework.md
+    signal_signature: "CombatDirectorTokenTask calls CombatDirector.RequestAttackToken(enemy) and blocks (returns Running) until OnTokenGranted() callback or TimeoutBeats elapses. No enemy attack CharacterAbility fires without a token grant."
+    referenced_by:
+      - docs/architecture/adr-d2-enemy-ai-framework.md
+    added: 2026-07-18
     revised: ""
 
 # Example:
@@ -224,6 +238,39 @@ api_decisions:
     added: 2026-07-15
     revised: ""
 
+  - purpose: ai_beat_state_injection
+    status: active
+    api: "BD Blackboard (SharedVariable) written by BeatClockBridge.HandleBeatSnapshot() via BehaviorTree.SetVariableValue()"
+    not: "AI tasks reading BeatClock directly; AI tasks subscribing to BeatStateSnapshot events themselves"
+    adr: docs/architecture/adr-d2-enemy-ai-framework.md
+    reason: "beatclock_lifecycle_bypass forbidden pattern and beat_clock_lifecycle state ownership (TDELifecycleAdapter) prohibit AI from coupling directly to BeatClock. BeatClockBridge is the single Blackboard writer, decoupling all AI tasks from the rhythm subsystem."
+    referenced_by:
+      - docs/architecture/adr-d2-enemy-ai-framework.md
+    added: 2026-07-18
+    revised: ""
+
+  - purpose: enemy_movement_api
+    status: active
+    api: "CharacterMovement.SetMovement(Vector2) — TDE CharacterAbility layer"
+    not: "TopDownController.SetMovement(Vector3) called directly from BD Action Tasks with a Vector2 argument"
+    adr: docs/architecture/adr-d2-enemy-ai-framework.md
+    reason: "TopDownController.SetMovement() takes Vector3; Vector2→Vector3 implicit conversion sets z=0, which in TopDownController2D's z→y remapping causes y-axis movement to always be 0 (up/down movement broken in 2D). CharacterMovement.SetMovement(Vector2) handles 2D/3D coordinate mapping internally and is the correct public API for BD tasks to use. Verified: CharacterMovement.cs line 200."
+    referenced_by:
+      - docs/architecture/adr-d2-enemy-ai-framework.md
+    added: 2026-07-18
+    revised: ""
+
+  - purpose: animation_attack_pipeline
+    status: active
+    api: "HybridAnimancerComponent (Animancer 8.4.0) with state-level Speed scaling for BPM adaptation"
+    not: "AnimancerComponent (lacks KeepChildrenConnected); AnimatorOverrideController (per-BPM clip variants); raw Animator state machine for attack layer"
+    adr: docs/architecture/adr-d5-animation-pipeline.md
+    reason: "HybridAnimancerComponent is Animancer 8.4.0's first-class API for coexisting with an existing Animator Controller (TDE locomotion). It sets KeepChildrenConnected=true on the PlayableGraph, preventing AnimatorControllerPlayable disconnection. Plain AnimancerComponent triggers OptionalWarning.NativeControllerHumanoid and does not set KeepChildrenConnected."
+    referenced_by:
+      - docs/architecture/adr-d5-animation-pipeline.md
+    added: 2026-07-18
+    revised: ""
+
 # Example:
 #
 # api_decisions:
@@ -276,6 +323,27 @@ forbidden_patterns:
     why: "Split lifecycle control causes audio-rhythm desync. TDELifecycleAdapter coordinates BeatClock and InputEventBus atomically in the same frame; bypassing it breaks this coordination."
     adr: docs/architecture/adr-d1-tde-integration.md
     added: 2026-07-15
+
+  - pattern: tde_aibrain_on_bd_enemies
+    status: active
+    description: "Enemy prefabs that use Behavior Designer BehaviorTree as the AI controller must NOT include TDE AIBrain, AIAction, or AIDecision components. The two AI systems must not coexist on the same enemy character."
+    why: "TDE AIAction and AIDecision components depend on AIBrain.PerformActions() loop to execute. If AIBrain is absent, these components are inert — they produce no behavior but add confusion and potential initialization errors. BD BehaviorTree is the sole high-level AI driver on enemies; mixing both systems creates split authority over AI behavior."
+    adr: docs/architecture/adr-d2-enemy-ai-framework.md
+    added: 2026-07-18
+
+  - pattern: animancer_stop_for_controller_handoff
+    status: active
+    description: "Do not call HybridAnimancerComponent.Stop() to return control to TDE's Animator Controller. Use PlayController() instead."
+    why: "Stop() calls _Graph.Stop() which pauses the entire PlayableGraph — including TDE's AnimatorControllerPlayable. This freezes locomotion and death animations. PlayController() correctly fades back to the Animator Controller layer without stopping the graph."
+    adr: docs/architecture/adr-d5-animation-pipeline.md
+    added: 2026-07-18
+
+  - pattern: animancer_layer_speed_for_bpm
+    status: active
+    description: "Do not modify the Animancer layer's Speed property for BPM scaling. BPM adaptation must use AnimancerState.Speed on the individual attack state only."
+    why: "Layer Speed affects all states on that layer, including transition blending. If a future slow-motion system also sets layer Speed, the two multipliers stack unpredictably. State-level Speed is local to the attack clip and composes cleanly: state.Speed = currentBpm / authoredBpm."
+    adr: docs/architecture/adr-d5-animation-pipeline.md
+    added: 2026-07-18
 
 # Example:
 #

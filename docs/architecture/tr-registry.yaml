@@ -25,7 +25,7 @@
 # STATUS VALUES: active | deprecated | superseded-by: TR-[system]-NNN
 
 version: 1
-last_updated: "2026-07-15"
+last_updated: "2026-07-18"
 
 requirements:
 
@@ -604,5 +604,71 @@ requirements:
     gdd: design/gdd/save-persistence.md
     requirement: "Corrupted file backup via .corrupt rename (no auto-delete)"
     created: 2026-07-15
+    revised: ""
+    status: active
+
+  # ── tde (design/gdd/tde-integration.md) ─────────────────────────────────────
+
+  - id: TR-tde-001
+    system: tde
+    gdd: design/gdd/tde-integration.md
+    requirement: "Two-component architecture: JadeRabbitInputManager (InputSystemManagerEventsBased subclass) + TDELifecycleAdapter (DontDestroyOnLoad MonoBehaviour)"
+    created: 2026-07-18
+    revised: ""
+    status: active
+
+  - id: TR-tde-002
+    system: tde
+    gdd: design/gdd/tde-integration.md
+    requirement: "TDE source code MUST NOT be modified — extension only via inheritance, events, or TDE ability system"
+    created: 2026-07-18
+    revised: ""
+    status: active
+
+  - id: TR-tde-003
+    system: tde
+    gdd: design/gdd/tde-integration.md
+    requirement: "Boot sequence: OnSceneLoaded → LevelConfigSO → BeatClock.Play → EnableGameplayInput (strict order)"
+    created: 2026-07-18
+    revised: ""
+    status: active
+
+  - id: TR-tde-004
+    system: tde
+    gdd: design/gdd/tde-integration.md
+    requirement: "Animancer attack layer coexists with TDE Animator Controller via HybridAnimancerComponent (KeepChildrenConnected=true)"
+    created: 2026-07-18
+    revised: ""
+    status: active
+
+  - id: TR-tde-005
+    system: tde
+    gdd: design/gdd/tde-integration.md
+    requirement: "Attack animation speed scaled by BPM: attackAnimSpeed = clamp(currentBPM / nominalBPM, 0.5, 2.5)"
+    created: 2026-07-18
+    revised: ""
+    status: active
+
+  - id: TR-tde-006
+    system: tde
+    gdd: design/gdd/tde-integration.md
+    requirement: "TDELifecycleAdapter is the exclusive caller of BeatClock.Play/Stop/Pause/Resume — no other system may call lifecycle methods"
+    created: 2026-07-18
+    revised: ""
+    status: active
+
+  - id: TR-tde-007
+    system: tde
+    gdd: design/gdd/tde-integration.md
+    requirement: "Pause/Resume coordination: BeatClock and InputEventBus state changes must occur in the same frame to prevent desync"
+    created: 2026-07-18
+    revised: ""
+    status: active
+
+  - id: TR-tde-008
+    system: tde
+    gdd: design/gdd/tde-integration.md
+    requirement: "Enemy AI uses Behavior Designer (not TDE AIBrain) — BD BehaviorTree is sole high-level AI driver; no coexistence with TDE AIBrain/AIAction/AIDecision on same prefab"
+    created: 2026-07-18
     revised: ""
     status: active

@@ -184,10 +184,22 @@ constants:
     referenced_by:
       - design/gdd/audio-beat-clock.md
       - design/gdd/so-data-layer.md          # F4 LevelConfigSO.bpm 字段范围与此对齐
+      - design/gdd/tde-integration.md        # F6 attackAnimSpeed 公式的 currentBPM 输入范围
     value_range: [80, 240]
     unit: bpm
-    notes: "F2 BeatClock 的 BPM clamp 硬限制。F4 LevelConfigSO.bpm 字段的 Odin [MinValue(80)][MaxValue(240)] 与此同步。"
+    notes: "F2 BeatClock 的 BPM clamp 硬限制。F4 LevelConfigSO.bpm 字段的 Odin [MinValue(80)][MaxValue(240)] 与此同步。F6 攻击动画速度公式的正常输入范围。"
     added: 2026-07-14
+    revised: "2026-07-18"
+
+  - name: nominal_attack_bpm
+    status: active
+    source: design/gdd/tde-integration.md   # 攻击动画制作参照 BPM，由 F6 定义
+    referenced_by:
+      - design/gdd/tde-integration.md
+    value: 120
+    unit: bpm
+    notes: "所有攻击 Clip 的制作参照 BPM。F6-FORMULA-01 分母：attackAnimSpeed = clamp(currentBPM / 120, 0.5, 2.5)。代码中以 F6Constants.NOMINAL_BPM = 120f 定义。若变更须同步重新制作所有攻击 Clip。"
+    added: 2026-07-18
     revised: ""
 
 # Example:

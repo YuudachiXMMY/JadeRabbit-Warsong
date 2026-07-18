@@ -4,7 +4,7 @@
 
 - **Epic**: Pre-Production
 - **Feature**: M0 Spike — TDE + FMOD + EasySave 3 兼容性验证
-- **Task**: M0 Spike API 验证全部完成；5 BLOCKER（D1×3 已修复 + D7×1 已修复 + D6×1 已修复）；FMOD 编译需 Editor 确认
+- **Task**: Designing F6 TDE & Animancer Integration Layer GDD — 骨架已创建，进行中 Section A (Overview)
 
 ---
 
@@ -145,8 +145,50 @@
 - Remaining non-blocking: W3 FMOD init timing; F2 edge cases (lines 392/398/408) minor cleanup
 - Recommended next: **F6 GDD** → ADR-D5 → ADR-D2
 
+## Session Extract — ADR-D2 Written 2026-07-18
+- **ADR-D2 Enemy AI Framework: Written (Proposed)** ✅
+- Decision: Behavior Designer (Opsive) — 已购入，成熟 BT+Blackboard，替代 TDE AIBrain
+- Engine Specialist 验证: 2 HIGH 修复（`[SharedVariable]` MonoBehaviour 误用 → `SetVariableValue()`；`CharacterMovement.SetMovement(Vector2)` 替代 `TopDownController.SetMovement(Vector3)`）
+- BLOCKING before Accept: BD M0 Spike（导入 BD → 验证 SharedVariable API + Unity 6.3 LTS 编译）
+- Registry: +1 interface contract (combat_director_attack_token) / +2 api_decisions (ai_beat_state_injection, enemy_movement_api) / +1 forbidden_pattern (tde_aibrain_on_bd_enemies)
+- File: docs/architecture/adr-d2-enemy-ai-framework.md
+- Remaining architecture-level gaps: ADR-D5 (P1 Animation Pipeline) / ADR-D3 (P3 Rhythm Core)
+
+## Session Extract — ADR-D5 Written 2026-07-18
+- **ADR-D5 Animation Pipeline — Animancer BPM-Adaptive Attack Layer: Written (Proposed)** ✅
+- Decision: HybridAnimancerComponent (Animancer 8.4.0) + state-level Speed scaling (state.Speed = currentBpm / authoredBpm)
+- Engine Specialist 验证: 2 修复（M1: AnimancerComponent → HybridAnimancerComponent；M2: Stop() → PlayController()）
+- GDD Sync: so-data-layer.md 新增 authoredBpm 字段 + AC-F4-10 更新
+- Registry: +1 api_decision (animation_attack_pipeline) / +2 forbidden_patterns (animancer_stop_for_controller_handoff, animancer_layer_speed_for_bpm) / beat_clock_lifecycle referenced_by 补充
+- File: docs/architecture/adr-d5-animation-pipeline.md
+- Remaining architecture-level gaps: ADR-D3 (P3 Rhythm Core)
+
+## Session Extract — Architecture Review v3 2026-07-18
+- **`/architecture-review full` (v3) — 完成** ✅
+- Verdict: **CONCERNS** (不是 FAIL：Foundation 良好覆盖；不是 PASS：Core 层零 ADR)
+- 5 ADRs reviewed: D1 (Accepted), D2 (Proposed), D5 (Proposed), D6 (Accepted), D7 (Accepted)
+- Traceability: 79 TRs total — 22 Covered (27.8%) / 8 Partial (10.1%) / 49 Gap (62.0%)
+- Delta from v2: +7.5pp coverage (20.3% → 27.8%)
+- Engine Specialist: D2 SharedVariable HIGH risk confirmed (M0 Spike must inspect source)
+- Cross-ADR Conflicts: 0 blocking, 2 minor (BPM clamp range, IsPlaying edge case)
+- GDD Revision Flags: None
+- TR Registry: +8 new entries (TR-tde-001 through TR-tde-008), total 79
+- Files written: architecture-review-2026-07-18.md, traceability-index.md (Rev.3), tr-registry.yaml
+- **Next priorities**: (1) Complete F6 GDD, (2) BD M0 Spike, (3) ADR-D3 Rhythm Core
+
+## Session Extract — F6 GDD Complete 2026-07-18
+- **F6 GDD 全部 8 节完成，Status: In Review** ✅
+- 两个组件架构：`JadeRabbitInputManager`（角色 Prefab）+ `TDELifecycleAdapter`（DontDestroyOnLoad Manager）
+- 核心规则 10 条：TDE 源码禁改、F3 Action Map 唯一权威、BeatClock 唯一控制者、FMOD 前置验证、Additive 过滤、Animancer Layer 1 边界合约、nominalBPM=120、Root Motion 禁用、订阅者生命周期
+- F6-FORMULA-01: `attackAnimSpeed = clamp(currentBPM / 120, 0.5, 2.5)`，Option A 实时更新
+- 7 个 Edge Cases、6+6 双向依赖表、5 个 Tuning Knobs、18 条 AC（10 PlayMode 自动化 / 1 EditMode / 5 依赖 C2 / 2 手动）
+- Registry: +1 constant (nominal_attack_bpm=120) / bpm_range referenced_by 补充
+- systems-index.md: F6 → In Review
+- Files: design/gdd/tde-integration.md (Status: In Review), design/registry/entities.yaml, design/gdd/systems-index.md
+- 下一步推荐：(1) BD M0 Spike（ADR-D2 Accept 阻断），(2) ADR-D3 Rhythm Core，(3) C1 GDD
+
 <!-- STATUS -->
 Epic: Pre-Production
-Feature: Architecture Review
-Task: ADR-D1 Accepted; Review PASS; W4/W5 fixed; 下一步：F6 GDD
+Feature: F6 GDD
+Task: F6 GDD 完成（In Review）；下一步：BD M0 Spike / ADR-D3 / C1 GDD
 <!-- /STATUS -->
