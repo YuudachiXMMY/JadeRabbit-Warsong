@@ -2,6 +2,15 @@
 
 ---
 
+## Review — 2026-07-18 (Ninth Review) — Verdict: APPROVED
+Scope signal: M
+Specialists: game-designer, systems-designer, unity-specialist, qa-lead, creative-director
+Blocking items: 3（session 内全部修复）| Recommended: 1（M0 spike 自然覆盖）
+Summary: 第九轮全量对抗性审查（F6 GDD 今日创建触发——F6 解决了 F3 的 E8 开放问题，文档存在事实滞后）。三项真实阻塞：BLOCK-R9-01 E8 节 Action Map 权威归属仍标注为开放问题，已更新为 F6 GDD Option A 决策（TDELifecycleAdapter 为三个状态切换方法的唯一外部调用者，ADR-D1 Accepted 背书）；BLOCK-R9-02 缺少 UIActive→GameplayActive 方向的 AC（对称覆盖缺口），已新增 AC-F3-21（5 步 PlayMode 测试，暂停恢复场景）；BLOCK-R9-03 AC-F3-03 缺少 chargeStartDspTime 哨兵值守卫断言，已补充 ① chargeStartDspTime > -1.0 前置条件及级联失效说明。附加修复：删除过期 Lean 模式免责注释（文档已完成 8 轮全量审查，此注释已无效且误导）。一项推荐修订（R9-REC-01）：ActionMap.Disable() 同步 canceled 回调行为未经 Unity 6.3 LTS Input System 1.8.x 验证——creative-director 降级为 RECOMMENDED，将由 M0 spike 自然覆盖，不阻塞 F3 文档审批。九轮审查历史：F3 设计稳定，无回归，无设计变更，纯文档同步与 AC 精度修复。
+Prior verdict resolved: Yes — 第八轮 4 项阻塞全部落地确认
+
+---
+
 ## Review — 2026-07-15 (Eighth Review) — Verdict: APPROVED
 Scope signal: M
 Specialists: game-designer, systems-designer, unity-specialist, qa-lead, gameplay-programmer, creative-director

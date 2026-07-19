@@ -157,8 +157,6 @@ MoveChangedEvent:
   // 注意：MoveChangedEvent 不携带 DSP 时间戳——移动输入不参与节奏判定，无需 DSP 域精度
 ```
 
-*专家代理未参与 — Lean 模式。正式生产前建议人工复查此节。*
-
 ## Formulas
 
 ### F3-F1: 同帧双读时间戳精度约束
@@ -304,7 +302,7 @@ FMOD Studio 2.x 在独立音频线程运行，DSP 时钟与 Unity 的 `AudioList
 **E8. TDE `InputSystemManagerEventsBased` Action Map 状态冲突**
 TopDownEngine 4.x 通过 `InputSystemManagerEventsBased` 在角色死亡/重生等生命周期事件中自行调用 `InputActionMap.Enable()`/`Disable()`，与 F3 的状态机独立运作，可能导致 F3 内部状态与实际 Action Map 状态失同步。
 
-**解决方案（须在 F6 GDD 中明确）**：F6 GDD 必须定义 Action Map 的唯一权威管理者。两种可选方案：（A）F3 为唯一管理者，F6 通过 TDE 事件回调通知 F3 进行状态切换，TDE 的 `InputSystemManagerEventsBased` 的自动 Enable/Disable 逻辑被禁用或绕过；（B）TDE 为管理者，F3 被动监听 Action Map 的 `Enable`/`Disable` 事件以同步内部状态。在 F6 GDD 确定方案前，此问题应记录为 F6 的 P0 阻塞项。
+**✅ 已解决（2026-07-18，F6 GDD Core Rule 3）**：F6 GDD 选定**方案 A**——F3（`InputEventBus`）是所有 Action Map 状态变更的唯一权威。`JadeRabbitInputManager`（F6 对 TDE `InputSystemManagerEventsBased` 的继承子类）不直接调用 `InputActionMap.Enable()/Disable()`，而是通过 `JadeRabbitInputManager.BindButton()` 将所有输入请求代理给 F3 状态机门控，保留 TDE 的 `AbilityInputAuthorization` 管线。`TDELifecycleAdapter`（F6 生命周期适配器）在场景加载完成后调用 `F3.EnableGameplayInput()`，在暂停/死亡/过场时调用 `F3.EnableUIInput()` / `F3.DisableAllInput()`——这三个方法是唯一允许的外部调用者（见 F6 GDD Core Rule 3，ADR-D1 Accepted）。
 
 ## Dependencies
 
@@ -318,7 +316,7 @@ TopDownEngine 4.x 通过 `InputSystemManagerEventsBased` 在角色死亡/重生�
 |---------|-----------|------|
 | C1 节奏量化攻击系统 | `AttackInputEvent`（attackType, inputDspTime, **chargeStartDspTime**）；C1 须应用 latency_offset_s 修正（见 F3-F2 公式） | 订阅 `OnAttackInput` |
 | C2 连招图系统 | `AttackInputEvent`（attackType, inputDspTime，用于时序排序）+ `DashInputEvent`（direction, inputDspTime） | 订阅 `OnAttackInput` + `OnDashInput` |
-| F6 TDE 集成层 | `DashInputEvent`；`GetCurrentMoveInput()` 持续查询；`MoveChangedEvent`（direction, isStarted）；**Action Map 管理权归属须在 F6 GDD 中定案（见 E8）** | 订阅 + 同步查询 |
+| F6 TDE 集成层 | `DashInputEvent`；`GetCurrentMoveInput()` 持续查询；`MoveChangedEvent`（direction, isStarted）；`EnableGameplayInput()` / `EnableUIInput()` / `DisableAllInput()`（`TDELifecycleAdapter` 为唯一外部调用者，见 E8）| 订阅 + 同步查询 + 状态控制 |
 | FE7 游戏设置系统 | `SaveBindingOverridesAsJson()` / `LoadBindingOverridesFromJson(json)` | 方法调用（FE7 主动调用 F3） |
 | UI 系统（P1/P2/P5 等） | UI Action 事件（Navigate, Submit, Cancel） | 订阅 UI Action Map 事件 |
 
@@ -334,7 +332,7 @@ FMOD DSP 时钟不受 `AudioListener.pause` 影响（见 E6）。F3 的时间戳
 
 **⚠ ADR-D6 阻塞说明**：F3 的 `IDSPClock` 实现选型依赖 ADR-D6（FMOD vs Unity Audio）。ADR-D6 必须在 F3 进入实现 sprint 之前完成定案。设计层无需等待 ADR-D6，但实现层时钟源必须与 F2 保持一致。
 
-**⚠ F6 GDD 阻塞说明（E8）**：Action Map 权威管理者必须在 F6 GDD 中定案，才能安全实现 F3 的状态机。F3 实现可先于 F6 GDD 完成骨架，但状态切换逻辑的最终形态取决于 F6 的架构决策。
+**✅ F6 GDD 决策（E8 已解决）**：F6 GDD（2026-07-18，Core Rule 3）已定案 Option A：F3 为唯一 Action Map 权威，`TDELifecycleAdapter` 是 `EnableGameplayInput()` / `EnableUIInput()` / `DisableAllInput()` 的唯一外部调用者。F3 状态机实现可直接依据此合约。
 
 ## Tuning Knobs
 
@@ -374,7 +372,7 @@ F3 通过 UI Action Map 广播 Navigate/Submit/Cancel 事件，UI 系统负责�
 > 精度上限（架构约束，非可测项）：F3 时间戳误差上限由帧率决定——60fps 时 ≤ 16.7ms，30fps 时 ≤ 33ms（Android 另叠加 DSP 缓冲粒度）。此约束由 F3-F1 公式记录，不以自动化测试验证（真实硬件时刻不可观测）；C1 调参时须在判定窗口中为此误差留余量。
 
 **AC-F3-03: AttackInputEvent 广播完整性**
-Attack1/Attack2 的 `performed` 回调触发时，`OnAttackInput` 必须广播 `AttackInputEvent`（`attackType` 正确、`inputDspTime` = 按下时刻、`inputGameTime` 正确、`deviceType`/`deviceId` 正确、`chargeStartDspTime == -1.0`（哨兵值））。ChargedAttack 的 `Hold.performed` 回调触发时，广播的 `AttackInputEvent` 必须同时包含 `inputDspTime`（充能完成时刻）和 `chargeStartDspTime`（`Hold.started` 缓存的充能开始时刻），且满足 `chargeStartDspTime ≤ inputDspTime`（若两者相等，表明 Hold 在同一 `InputSystem.Update()` 周期内完成，属正常边界情况——FMOD DSP 粒度在 Android 最坏情况 46ms 内可能使两次采样返回相同值）。验证方法：单元测试，分别模拟三种攻击类型输入，断言各字段值正确。
+Attack1/Attack2 的 `performed` 回调触发时，`OnAttackInput` 必须广播 `AttackInputEvent`（`attackType` 正确、`inputDspTime` = 按下时刻、`inputGameTime` 正确、`deviceType`/`deviceId` 正确、`chargeStartDspTime == -1.0`（哨兵值））。ChargedAttack 的 `Hold.performed` 回调触发时，广播的 `AttackInputEvent` 必须同时包含 `inputDspTime`（充能完成时刻）和 `chargeStartDspTime`（`Hold.started` 缓存的充能开始时刻），且满足：① `chargeStartDspTime > -1.0`（**哨兵值守卫**——确认 `Hold.started` 时确实调用了 `GetDspTime()`，未保留哨兵值；若此断言失败，则 C1 的 guard table 将静默路由至错误分支，导致节拍判定系统性崩溃）；② `chargeStartDspTime ≤ inputDspTime`（若两者相等，表明 Hold 在同一 `InputSystem.Update()` 周期内完成，属正常边界情况——FMOD DSP 粒度在 Android 最坏情况 46ms 内可能使两次采样返回相同值）。验证方法：单元测试，分别模拟三种攻击类型输入，断言各字段值正确（含上述两个 ChargedAttack 专属断言）。
 
 **AC-F3-04: DashInputEvent 广播完整性**
 Dash 的 `performed` 回调触发时，`OnDashInput` 事件必须广播一个 `DashInputEvent`，`direction` 取自当前 Move 值。验证方法：单元测试，设置 Move 值后触发 Dash，断言 `direction` 与 Move 值一致。
@@ -393,6 +391,9 @@ Move Action 的 `started` 回调广播 `MoveChangedEvent`（`isStarted = true`�
 
 **AC-F3-09: Action Map 状态机——AllDisabled → GameplayActive**
 调用 `EnableGameplayInput()` 后，Gameplay Map 启用、UI Map 禁用。攻击/移动/闪避输入恢复广播。验证方法：PlayMode 测试，从 AllDisabled 恢复后发送攻击输入，断言事件广播。
+
+**AC-F3-21: Action Map 状态机——UIActive → GameplayActive（暂停恢复流程）**
+从 `UIActive` 状态调用 `EnableGameplayInput()` 后，Gameplay Map 启用、UI Map 禁用；攻击/移动/闪避输入恢复广播，UI 导航输入不再产生事件。验证方法：PlayMode 测试，(1) 先调用 `EnableUIInput()` 进入 `UIActive`；(2) 发送攻击输入，断言 `OnAttackInput` 未触发；(3) 调用 `EnableGameplayInput()`；(4) 再次发送攻击输入，断言 `OnAttackInput` 触发；(5) 发送 UI Navigate 输入，断言 `OnUINavigate` 未触发。此测试覆盖最高频的状态转换路径（暂停→恢复），与 AC-F3-07（GameplayActive→UIActive）形成对称覆盖。
 
 **AC-F3-10: 重绑定 JSON 往返**
 `SaveBindingOverridesAsJson()` 返回的 JSON 传入 `LoadBindingOverridesFromJson()` 后，所有绑定覆盖恢复原状。验证方法：单元测试，修改一个绑定，保存 JSON，重新加载，断言绑定一致。
