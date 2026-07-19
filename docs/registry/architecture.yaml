@@ -65,7 +65,19 @@ state_ownership:
       - docs/architecture/adr-d1-tde-integration.md
       - docs/architecture/adr-d6-audio-middleware.md
       - docs/architecture/adr-d5-animation-pipeline.md
+      - docs/architecture/adr-d3-rhythm-quantization-core.md
     added: 2026-07-15
+    revised: ""
+
+  - state: rhythm_judgment_combo
+    status: active
+    owner_system: c1-rhythm-judger
+    adr: docs/architecture/adr-d3-rhythm-quantization-core.md
+    interface: "RhythmJudger.CurrentCombo (read-only int property); reset on Miss or death; incremented on Perfect/Good"
+    write_access: c1-rhythm-judger-only
+    referenced_by:
+      - docs/architecture/adr-d3-rhythm-quantization-core.md
+    added: 2026-07-18
     revised: ""
 
 # Example:
@@ -134,6 +146,21 @@ interfaces:
       - docs/architecture/adr-d2-enemy-ai-framework.md
     added: 2026-07-18
     revised: "2026-07-18"  # ADR-D2 revised: BD CombatDirectorTokenTask → Unity Behavior CombatDirectorTokenAction
+
+  - contract: rhythm_judgment_event
+    status: active
+    pattern: event_bus
+    producer: c1-rhythm-judger
+    consumers:
+      - c2-combo-graph       # reads Rating + ComboCountBefore to advance combo state
+      - p1-hud               # reads Rating + OffsetMs to display judgment UI
+      - pl2-vfx-feedback     # reads Rating to trigger Perfect/Good/Miss MMFeedbacks sequence
+    adr: docs/architecture/adr-d3-rhythm-quantization-core.md
+    signal_signature: "RhythmJudger.OnRhythmJudgment (C# event Action<RhythmJudgmentEvent>); payload: readonly struct RhythmJudgmentEvent { AttackType, Rating, OffsetMs, BeatDspTime, Mode, ComboCountBefore }"
+    referenced_by:
+      - docs/architecture/adr-d3-rhythm-quantization-core.md
+    added: 2026-07-18
+    revised: ""
 
 # Example:
 #
@@ -268,6 +295,7 @@ api_decisions:
     reason: "HybridAnimancerComponent is Animancer 8.4.0's first-class API for coexisting with an existing Animator Controller (TDE locomotion). It sets KeepChildrenConnected=true on the PlayableGraph, preventing AnimatorControllerPlayable disconnection. Plain AnimancerComponent triggers OptionalWarning.NativeControllerHumanoid and does not set KeepChildrenConnected."
     referenced_by:
       - docs/architecture/adr-d5-animation-pipeline.md
+      - docs/architecture/adr-d3-rhythm-quantization-core.md
     added: 2026-07-18
     revised: ""
 
@@ -279,6 +307,17 @@ api_decisions:
     reason: "M0 Spike (2026-07-18) PASS — 0 BLOCKERs, 2 warnings in Unity 6.3 LTS. First-party Unity package: no additional vendor dependency vs Behavior Designer. API-equivalent: BehaviorGraphAgent replaces BehaviorTree, BlackboardVariable<T> replaces SharedVariable<T>, EventChannel<T> provides native event bus, RunSubgraphDynamic supports Boss phase transitions. Custom BT ruled out: redundant effort given Unity Behavior is available at zero cost."
     referenced_by:
       - docs/architecture/adr-d2-enemy-ai-framework.md
+    added: 2026-07-18
+    revised: ""
+
+  - purpose: rhythm_evaluation_trigger
+    status: active
+    api: "Beat-anchored + pre-beat buffer evaluation: store input in _pendingInput on OnAttackInput; evaluate in OnHalfBeatLookahead (100ms before beat) or in OnAttackInput when _lateWindowActive (post-beat late window)"
+    not: "Input-anchored immediate evaluation: evaluating beat_offset against BeatStateSnapshot.nearest_half_beat at the moment input arrives"
+    adr: docs/architecture/adr-d3-rhythm-quantization-core.md
+    reason: "Input-anchored evaluation snaps pre-beat inputs to the previous half-beat, producing a large positive OffsetMs that falsely reads as late. Beat-anchored evaluation holds the pending input until the correct beat reference (OnHalfBeatLookahead) is known, giving the correct signed offset."
+    referenced_by:
+      - docs/architecture/adr-d3-rhythm-quantization-core.md
     added: 2026-07-18
     revised: ""
 
@@ -355,6 +394,13 @@ forbidden_patterns:
     description: "Do not modify the Animancer layer's Speed property for BPM scaling. BPM adaptation must use AnimancerState.Speed on the individual attack state only."
     why: "Layer Speed affects all states on that layer, including transition blending. If a future slow-motion system also sets layer Speed, the two multipliers stack unpredictably. State-level Speed is local to the attack clip and composes cleanly: state.Speed = currentBpm / authoredBpm."
     adr: docs/architecture/adr-d5-animation-pipeline.md
+    added: 2026-07-18
+
+  - pattern: direct_beat_offset_at_input_time
+    status: active
+    description: "Do not evaluate beat_offset_ms using BeatStateSnapshot.nearest_half_beat or any BeatClock snapshot query at the moment input arrives. All offset calculation must occur in TryEvaluateEarly() / TryEvaluateLate(), using _currentBeatDspTime set by OnHalfBeatLookahead."
+    why: "Evaluating offset at input time introduces two errors: (1) pre-beat inputs reference the previous half-beat, producing a falsely large positive offset; (2) BeatStateSnapshot.nearest_half_beat interpolates from system time, not FMOD DSP clock, introducing the very latency error that F3's beat_offset_ms formula is designed to remove."
+    adr: docs/architecture/adr-d3-rhythm-quantization-core.md
     added: 2026-07-18
 
 # Example:

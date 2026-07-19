@@ -255,8 +255,28 @@
 - TR registry: 79 entries unchanged
 - **下一步**: (1) ADR-D3 Rhythm Quantization Core (P1), (2) ADR-D4 SO Data Layer (P2), (3) C1 GDD
 
+## Session Extract — ADR-D3 Rhythm Quantization Core 2026-07-18
+- **ADR-D3 Rhythm Quantization Core — 草稿写入 (Status: Proposed)** ✅
+- 路径: `docs/architecture/adr-d3-rhythm-quantization-core.md`
+- 核心决策: 节拍锚点 + 预缓冲评估（OnHalfBeatLookahead 触发 TryEvaluateEarly；LateWindow 机制处理后缓 OnAttackInput）
+- 关键结构: `RhythmJudger : MonoBehaviour`（玩家 Prefab 上），`RhythmJudgmentEvent`（readonly struct，零 GC），`RhythmConfigSO`（SO 可调参数）
+- 量化模式: `QuantizationMode` 枚举（Off / HalfBeat / Beat），由 FE7 运行时注入
+- 接口 M3 缺口: `IBeatClock` / `IInputEventBus` / `IAnimancerAttackPlayer` 尚未在 Accepted ADR 中声明 → C1 GDD 实现 sprint 前必须解决
+- SEO 风险: `OnBeatClockPaused` 必须直接绑定到 BeatClock 事件，禁止 Update 轮询（TDELifecycleAdapter 竞态）
+- 引擎专家审查: 3 项 MINOR NOTES（SEO、DelayedCall 替代 Update 过期检查、QuantizationMode.Off 不变量文档）
+- 已覆盖 TR: TR-concept-006/007/008, TR-input-013, TR-beatclock-003/004（估计 +6 Covered）
+- 架构注册表更新完成:
+  - referenced_by: beat_clock_lifecycle ✅, animation_attack_pipeline ✅
+  - 新增状态: rhythm_judgment_combo ✅
+  - 新增接口: rhythm_judgment_event ✅
+  - 新增 API 决定: rhythm_evaluation_trigger ✅
+  - 新增禁用模式: direct_beat_offset_at_input_time ✅
+- Depends On: ADR-D6, ADR-D1, ADR-D5 (全部 Accepted) ✅
+- Blocks: C1 GDD 实现 sprint, C2 GDD, P1 HUD, PL2 VFX
+- **下一步**: (1) ADR-D4 SO Data Layer (P2), (2) C1 GDD
+
 <!-- STATUS -->
 Epic: Pre-Production
-Feature: Architecture Review v5 Complete — 5/5 ADRs Accepted, 35.4% coverage
-Task: 下一步：ADR-D3 Rhythm Quantization Core (P1)
+Feature: ADR-D3 Rhythm Quantization Core (Proposed) — 6/6 Foundation ADRs drafted
+Task: 下一步：ADR-D4 SO Data Layer (P2) 或 C1 GDD
 <!-- /STATUS -->
