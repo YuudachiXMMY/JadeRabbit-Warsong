@@ -1,8 +1,8 @@
 # F6: TopDownEngine & Animancer 集成层 (TDE Integration Layer)
 
-> **Status**: In Review
+> **Status**: Approved
 > **Author**: Jadyn Wu + Claude Code Agents
-> **Last Updated**: 2026-07-18 (Full draft complete)
+> **Last Updated**: 2026-07-19 (R3 — 4 blockers resolved: authoredBpm guard, FMOD coroutine reentrancy, LevelConfigSO path, AC testability batch)
 > **Implements Pillar**: 支柱二：武侠手感不可妥协 (Wuxia Feel First)
 > **System ID**: F6
 > **Layer**: Foundation | **Milestone**: MVP | **Design Order**: 5
@@ -53,8 +53,10 @@ F6 的玩家幻想是**天衣无缝的动作应噬**——每一次出招、侧�
 5. **FMOD 初始化前置验证**
    `TDELifecycleAdapter.Start()`（非 `Awake()`，避免与 `FMODUnity.RuntimeManager` 脚本执行顺序竞争）验证 FMOD RuntimeManager 已初始化。检查失败时记录 fatal 错误并停止——场景保持冻结，不触发 BeatClock 启动。
 
-6. **Additive 加载过滤**
+6. **Additive 加载过滤与 LevelConfigSO 获取**
    `TDELifecycleAdapter.OnSceneLoaded()` 仅响应 `LoadSceneMode.Single`（整场景切换），忽略 `LoadSceneMode.Additive`（TDE LevelManager 用于房间拼接）。房间内 BPM 变化通过 `BeatClock.RequestBPMChange()` 处理，不重新调用 `Play()`。
+
+   **LevelConfigSO 获取路径（强制）**：`OnSceneLoaded(Single)` 回调提供 `Scene scene` 参数，通过 `scene.GetRootGameObjects()` 遍历该场景根节点，搜索持有 `LevelConfigSO` 的 `LevelBootstrap`（或等效持有组件）；**禁止使用 `FindObjectOfType<LevelBootstrap>()`**——`TDELifecycleAdapter` 是 DontDestroyOnLoad 对象，`FindObjectOfType` 在此上下文的场景边界行为不稳定，可能返回旧场景残留对象。若 `scene.GetRootGameObjects()` 未找到有效 `LevelConfigSO`，记录 fatal 错误 `[F6-FATAL] LevelConfigSO not found in scene — BeatClock start blocked` 并中止启动序列。
 
 7. **Animancer 攻击层边界合约（ADR-D5 PlayController 模型）**
    采用 `HybridAnimancerComponent`（非普通 `AnimancerComponent`）与 TDE Animator Controller 共存：
@@ -67,8 +69,12 @@ F6 的玩家幻想是**天衣无缝的动作应噬**——每一次出招、侧�
 8. **攻击动画制作 BPM 标准（AuthoredBpm per AttackNodeSO）**
    每个攻击 Clip 以其 `AttackNodeSO.AuthoredBpm`（默认 120 BPM）为制作参照 BPM。运行时速度 = `currentBPM / attackNode.AuthoredBpm`。速度缩放公式见 Formulas 节。
 
+   **运行时零值防护（强制）**：`AnimancerAttackPlayer.PlayAttack()` 首先检查 `attackNode.AuthoredBpm <= 0`；若成立，抛出 `InvalidOperationException` 并中止本次攻击播放，不写入任何 `AnimancerState.Speed`。Odin Validator 仅在 Editor 阶段生效，不覆盖构建产物中未经验证的 SO 资产——故须运行时强制保护，防止 `currentBPM / 0 = Infinity` 产生无声失效。
+
 9. **Root Motion 禁用**
    在 Character Prefab 的 `Animator` 组件上禁用 **Apply Root Motion**（Inspector 取消勾选），或在 `AnimancerAttackPlayer.Awake()` 中通过 `_animancer.Animator.applyRootMotion = false` 一次性设置。TDE 的 `CharacterMovement` 基于 Rigidbody 物理控制位移，Root Motion 会产生位置漂移冲突。
+
+   **Animancer 8.4 优先级说明**：`HybridAnimancerComponent` 遵从 `Animator.applyRootMotion` 属性，无独立的 Root Motion 覆盖开关；在 Inspector 或 `Awake()` 中设置 `Animator.applyRootMotion = false` 即可统一控制。
 
 10. **订阅者生命周期**
     `TDELifecycleAdapter` 在 `OnEnable()` 注册 `MMEventListener<TopDownEngineEvent>` 和 `SceneManager.sceneLoaded`；在 `OnDisable()` 取消注册，防止重复注册。
@@ -83,14 +89,16 @@ F6 的玩家幻想是**天衣无缝的动作应噬**——每一次出招、侧�
 
 12. **FMOD 异步模式强制要求（F3 接口合约）**
     `TDELifecycleAdapter.Start()` 验证 FMOD RuntimeManager 已初始化后，通过**协程**（非同帧二次读取）额外确认 FMOD 以 `FMOD_INIT_NORMAL`（默认异步）模式运行：
-    - `Start()` 读取 `_beatClock.DSPClock.GetDspTime()` 为 `t1`，启动协程 `StartCoroutine(VerifyFMODAsyncMode())`。
+    - `Start()` 读取 `_beatClock.DSPClock.GetDspTime()` 为 `t1`，置 `_isVerifyingFMOD = true`，启动协程 `StartCoroutine(VerifyFMODAsyncMode())`。
     - 协程执行 `yield return null`（等待一帧进入下一 Player Loop），再次读取 `GetDspTime()` 为 `t2`。
-    - 若 `t2 > t1`：验证通过，协程内执行正常启动序列（调用待执行的 `BeatClock.Play()` + `EnableGameplayInput()`）。
-    - 若 `t2 <= t1`：记录 fatal 错误 `[F6-FATAL] FMOD running in sync mode — BeatClock start blocked`，不调用 `Play()`，游戏保持冻结。
+    - 若 `t2 - t1 > DSP_DELTA_EPSILON`（`const float DSP_DELTA_EPSILON = 0.0001f`）：验证通过，协程内执行正常启动序列（调用待执行的 `BeatClock.Play()` + `EnableGameplayInput()`），置 `_isVerifyingFMOD = false`。
+    - 若 `t2 - t1 <= DSP_DELTA_EPSILON`：记录 fatal 错误 `[F6-FATAL] FMOD running in sync mode — BeatClock start blocked`，不调用 `Play()`，游戏保持冻结，置 `_isVerifyingFMOD = false`。
+
+    > `DSP_DELTA_EPSILON = 0.0001f` 防止高帧率（144Hz PC）或低帧率（移动初始帧）设备上 DSP 步进量接近零导致的伪阳性误判。
 
     **IDSPClock 访问路径**：通过 `_beatClock.DSPClock`（BeatClock 暴露的只读属性）获取，无需额外 Inspector 序列化字段。
 
-    **启动序列调整**：`OnSceneLoaded(Single)` 检测到待执行的启动请求后，将参数缓存（`bgmRef`、`bpm`、`timeSig`）并标记 `_pendingSceneStart = true`；协程验证通过后执行缓存的启动序列。若协程尚未完成而 `OnSceneLoaded` 已触发，协程负责在验证通过后执行已缓存的序列。
+    **防重入保护（BeatClock.Play() 双调用竞态）**：`_isVerifyingFMOD` 标志保护协程执行区间——`OnSceneLoaded(Single)` 在 `_isVerifyingFMOD == true` 时**将启动参数缓存到 `_pendingSceneStart`，不执行 `BeatClock.Play()`**；协程验证完成（无论通过或失败）后清除标志；若通过，协程负责处理 `_pendingSceneStart` 中的缓存参数。此机制防止快速场景重载导致 `BeatClock.Play()` 被双调用。
 
     同步模式下 F3 的 DSP 时间戳将在无 `RuntimeManager.Update()` 的帧内停滞，C1 节拍判定将产生系统性误差。
 
@@ -186,6 +194,8 @@ attackAnimSpeed = clamp(currentBPM / authoredBpm, SPEED_MIN, SPEED_MAX)
 
 ⚠ **ADR-D5 对齐说明**：ADR-D5 当前描述「MVP 中不在攻击中途更新速度」；本 GDD 选择 Option A（中途更新），须向 ADR-D5 提交修订，明确 `UpdateBpm()` 方法在 MVP 路径中亦被调用。在修订完成前，`UpdateBpm()` 已在 ADR-D5 中定义为合法 API，使用不违反接口合约。
 
+**Option B 定义（备选，未选用）**：`UpdateBpm()` 仅在 `_currentState == null || !_currentState.IsPlaying`（即非攻击进行中）时生效——攻击中途不更新速度，当前攻击以制作时的授权 BPM 比例完成，下一次 `PlayAttack()` 调用时使用新 BPM。若 AC-F6-20 盲测结果显示 Option A 的实时变速对玩家产生负面体感，回退 Option B 的实现成本为在 `UpdateBpm()` 方法体增加一行 `if` 条件（极低）。
+
 ---
 
 ## Edge Cases
@@ -218,7 +228,7 @@ attackAnimSpeed = clamp(currentBPM / authoredBpm, SPEED_MIN, SPEED_MAX)
 
 **⚠ UpdateBpm() + OnEnd 同帧竞争警告**：若 BPM 骤跳事件恰好在攻击 `NormalizedTime > 0.9` 时到达，`UpdateBpm()` 与 `AnimancerState.Events.OnEnd` 可能在**同一帧**触发。此时 C2 的 BPM 事件处理逻辑和 `onComplete` 回调均可能在同帧运行，导致连招图推进信号被同帧发送两次。
 
-**F6 的边界**：F6 不防重入——`AnimancerAttackPlayer.UpdateBpm()` 在 `OnEnd` 已触发后若 `_currentState == null`（`OnAnimationEnd()` 已清空）则空操作，不产生第二次 `onComplete`。
+**F6 的边界**：F6 不防重入——`AnimancerAttackPlayer.UpdateBpm()` 在 `OnEnd` 已触发后若 `_currentState == null || !_currentState.IsPlaying`（`OnAnimationEnd()` 已完成处理）则空操作，不产生第二次 `onComplete`。注意：ADR-D5 确认 `OnAnimationEnd()` 不将 `_currentState` 置为 null，实际守卫条件以 `!_currentState.IsPlaying` 为主；`_currentState == null` 是初始化未完成的额外兜底保护。
 
 **C2 的强制接口合约**：C2 须保证 `onComplete` 的连招图推进逻辑**幂等**——同帧收到两次相同推进信号等价于收到一次。推荐实现：C2 以 `_lastAdvanceFrame == Time.frameCount` 门控（见 C2 GDD 接口合约节）。此合约须在 C2 GDD 编写时明确接受（B3 项）。
 
@@ -310,7 +320,7 @@ attackAnimSpeed = clamp(currentBPM / authoredBpm, SPEED_MIN, SPEED_MAX)
 | 攻击淡入时长 | `ATTACK_LAYER_BLEND_IN`（AnimancerAttackPlayer Inspector） | 0.05 s | [0.02, 0.15] | 攻击开始时从 TDE Animator 到 Animancer 攻击 Clip 的切换延迟；起点值为技术默认，**需原型测试验证响应感**（参见 AC-F6-19） |
 | 攻击淡出时长 | `ATTACK_LAYER_BLEND_OUT`（AnimancerAttackPlayer Inspector） | 0.1 s | [0.05, 0.2] | 攻击完成后 `PlayController()` 切回 TDE Animator 的过渡时长；影响攻击结束后恢复移动动画的流畅度（由 C2 通过 `UpdateBpm()` 间接控制，F6 提供 Inspector 默认值） |
 
-⚠ **安全范围数学约束（AuthoredBpm）**：若所有攻击 Clip 均以 `authoredBpm` 制作，为确保游戏 BPM 范围 [80, 240] 内的速度无意外限幅，`authoredBpm` 应满足：`authoredBpm ∈ [96, 160]`（推导：`authoredBpm × SPEED_MAX ≥ 240` → `authoredBpm ≥ 96`；`authoredBpm × SPEED_MIN ≤ 80` → `authoredBpm ≤ 160`）。默认值 120 满足此约束。使用非标准 authoredBpm 时须检查边界。
+⚠ **安全范围数学约束（AuthoredBpm）**：`authoredBpm ∈ [96, 160]` 是「恰好不触发限幅」的**边界区间**（非中心安全带）——推导：`SPEED_MAX=2.5` → `240/2.5=96`（`authoredBpm < 96` 时 240 BPM 触发上界限幅）；`SPEED_MIN=0.5` → `80/0.5=160`（`authoredBpm > 160` 时 80 BPM 触发下界限幅）。`authoredBpm` 越靠近中心值 120，与游戏 BPM 范围两端的留余越大；使用 60 或 200 等极端值时须检查具体 BPM 组合下的限幅风险。默认值 120 满足此约束且处于中心位置。
 
 **注意**：`SPEED_MIN`、`SPEED_MAX` 定义在 F6 专用 `F6Constants` 类中，以 `static readonly float` 暴露。Blend 时长由 C2/AnimancerAttackPlayer 在 Inspector 中配置，F6 提供合理起点值。
 
@@ -338,11 +348,13 @@ F6 无玩家可见 UI。所有生命周期状态变化通过 TDE 事件通知上
 
 ### AC-F6-01 — JadeRabbitInputManager 不直接操作 Action Map
 
-**类型**: Logic | **测试方式**: PlayMode 自动化测试
+**类型**: Logic | **测试方式**: EditMode 自动化测试（静态分析）+ PlayMode 自动化测试（运行时路径）
 
-IL 扫描 `JadeRabbitInputManager` 所有方法体，断言不存在对 `InputActionMap.Enable()` / `Disable()` 的 `callvirt`。运行时验证攻击输入经 F3 `InputEventBus` 发布，调用栈包含 `BindButton()` → F3 代理路径，不含直接 Action Map 操作。
+**静态验证**：EditMode 测试通过 `System.Reflection` 枚举 `JadeRabbitInputManager` 的所有 `MethodInfo`，获取方法 IL（`MethodBody.GetILAsByteArray()`），断言不存在对 `InputActionMap.Enable()` / `Disable()` 的调用（按方法 token 匹配）；或使用 Roslyn Analyzer 在编译期静态检查（推荐，可加入 CI 管线）。
 
-**通过条件**: IL 无直接调用 + 运行时输入事件经 F3 正确发布。
+**运行时路径验证**：PlayMode 测试中注入 `IInputEventBus` mock，触发攻击输入后断言 mock 收到调用（`OnAttackInput` 路径经 F3 代理）；mock 不记录任何 `InputActionMap` 直接操作。
+
+**通过条件**：静态断言无直接 `Enable/Disable` 调用 + 运行时 mock 确认代理路径正确。
 
 ---
 
@@ -356,9 +368,13 @@ IL 扫描 `JadeRabbitInputManager` 所有方法体，断言不存在对 `InputAc
 
 ### AC-F6-03 — TDELifecycleAdapter 是 BeatClock 生命周期唯一调用者
 
-**类型**: Logic | **测试方式**: PlayMode 自动化测试
+**类型**: Logic | **测试方式**: EditMode 自动化测试（静态）+ PlayMode 自动化测试（运行时 Spy）
 
-IL 扫描全部非 `TDELifecycleAdapter` 类型（CombatCore、FE2、C2 等程序集均在内），断言无对 `BeatClock.Play/Stop/Pause/Resume` 的调用。运行时 Spy 记录所有生命周期调用来源，全部为 `TDELifecycleAdapter`。
+**静态验证**：EditMode 测试通过 Reflection 或 Roslyn Analyzer 枚举全部非 `TDELifecycleAdapter` 类型，断言无对 `IBeatClockLifecycle.Play/Stop/Pause/Resume` 方法的调用。
+
+**运行时 Spy 验证**：注入实现 `IBeatClockLifecycle` 的 mock BeatClock，mock 内部记录每次 `Play/Stop/Pause/Resume` 的调用来源类型（`new System.Diagnostics.StackTrace().GetFrame(1).GetMethod().DeclaringType`）；运行完整生命周期序列（加载场景 → 暂停 → 恢复 → 死亡 → 复活）后，断言所有调用来源均为 `TDELifecycleAdapter`。
+
+**通过条件**：静态分析无越权调用 + 运行时 Spy 全部来源为 `TDELifecycleAdapter`。
 
 ---
 
@@ -398,7 +414,7 @@ BeatClock 处于 `Playing`（currentBPM=120）期间以 `LoadSceneMode.Additive`
 
 **类型**: Logic | **测试方式**: PlayMode 自动化测试
 
-从 Gameplay Active 状态发布 `TopDownEngineEvent(Pause)` 后：`BeatClock.Pause()` 与 `InputEventBus.EnableUIInput()` 调用的 `Time.frameCount` 相同（同一帧）；两个方法各调用恰好 1 次；BeatClock 状态 `Paused`，InputEventBus 状态 `UIActive`。
+从 Gameplay Active 状态发布 `TopDownEngineEvent(Pause)` 后：`BeatClock.Pause()` 与 `InputEventBus.EnableUIInput()` 记录的 `Time.frameCount` 值相同（同一 Update 帧内，单主线程保证）；两个方法各调用恰好 1 次；BeatClock 状态 `Paused`，InputEventBus 状态 `UIActive`。
 
 ---
 
@@ -406,7 +422,7 @@ BeatClock 处于 `Playing`（currentBPM=120）期间以 `LoadSceneMode.Additive`
 
 **类型**: Logic | **测试方式**: PlayMode 自动化测试
 
-从已暂停状态发布 `TopDownEngineEvent(UnPause)` 后：`BeatClock.Resume()` 与 `InputEventBus.EnableGameplayInput()` 调用的 `Time.frameCount` 相同；两个方法各调用恰好 1 次；BeatClock 状态 `Playing`，InputEventBus 状态 `GameplayActive`。
+从已暂停状态发布 `TopDownEngineEvent(UnPause)` 后：`BeatClock.Resume()` 与 `InputEventBus.EnableGameplayInput()` 记录的 `Time.frameCount` 值相同（同一 Update 帧内，单主线程保证）；两个方法各调用恰好 1 次；BeatClock 状态 `Playing`，InputEventBus 状态 `GameplayActive`。
 
 ---
 
@@ -414,7 +430,7 @@ BeatClock 处于 `Playing`（currentBPM=120）期间以 `LoadSceneMode.Additive`
 
 **类型**: Logic | **测试方式**: PlayMode 自动化测试
 
-从 Gameplay Active 状态发布 `TopDownEngineEvent(PlayerDeath)` 后：`BeatClock.Stop()` 与 `InputEventBus.DisableAllInput()` 调用的 `Time.frameCount` 相同（同一帧）；死亡后输入通道不响应攻击指令；BeatClock 状态 `Stopped`，InputEventBus 状态 `AllDisabled`。
+从 Gameplay Active 状态发布 `TopDownEngineEvent(PlayerDeath)` 后：`BeatClock.Stop()` 与 `InputEventBus.DisableAllInput()` 记录的 `Time.frameCount` 值相同（同一 Update 帧内，单主线程保证）；死亡后输入通道不响应攻击指令；BeatClock 状态 `Stopped`，InputEventBus 状态 `AllDisabled`。
 
 ---
 
@@ -428,7 +444,7 @@ BeatClock 处于 `Playing`（currentBPM=120）期间以 `LoadSceneMode.Additive`
 
 ### AC-F6-12 — Animancer 攻击时接管控制权，OnEnd 后 PlayController() 归还 TDE
 
-**类型**: Integration | **测试方式**: PlayMode 自动化测试（依赖 C2 实现）
+**类型**: Integration | **测试方式**: PlayMode 自动化测试（使用 C2 最小 stub，不依赖完整 C2 实现）
 
 触发轻攻击后：`AnimancerAttackPlayer.PlayAttack()` 被调用，`HybridAnimancerComponent` 覆盖 TDE Animator Controller 输出；攻击 Clip 播放完成后 `AnimancerState.Events.OnEnd` 触发 `_animancer.PlayController()`，TDE Animator Controller 恢复完整驱动（下一帧移动/空闲动画正常响应输入）；`onComplete` 回调被触发恰好 1 次，且发生在 `PlayController()` 调用之后；攻击期间 TDE 移动动画被覆盖（无移动 Clip 混入）；完成后 TDE 动画恢复（无攻击 Clip 残留）。
 
@@ -448,8 +464,9 @@ BeatClock 处于 `Playing`（currentBPM=120）期间以 `LoadSceneMode.Additive`
 | 120 | 100 | 1.200f | 无 |
 | 60 | 120 | 0.500f（下界限幅） | `[F6] attackAnimSpeed clamped from X.XXX to Y.YYY` |
 | 300 | 120 | 2.500f（上界限幅） | 同格式 |
+| 任意 | **0**（或负值） | **抛出 `InvalidOperationException`，方法中止** | `[F6-FATAL] authoredBpm <= 0 in AttackNodeSO — PlayAttack aborted` |
 
-限幅 Warning 须包含原始值和截断值；非限幅用例断言无 Warning 输出。
+限幅 Warning 须包含原始值和截断值；非限幅用例断言无 Warning 输出；`authoredBpm <= 0` 用例断言无 `AnimancerState.Speed` 写入且异常被记录。
 
 ---
 
@@ -465,7 +482,7 @@ BeatClock 处于 `Playing`（currentBPM=120）期间以 `LoadSceneMode.Additive`
 
 ### AC-F6-15 — 攻击动画中途 BPM 骤跳时速度立即更新（Option A，via UpdateBpm()）
 
-**类型**: Integration | **测试方式**: PlayMode 自动化测试（依赖 C2 实现）
+**类型**: Integration | **测试方式**: PlayMode 自动化测试（使用 C2 最小 stub，不依赖完整 C2 实现）
 
 BPM=120 时攻击进度 40–60% 处，C2 调用 `AnimancerAttackPlayer.UpdateBpm(200)`（模拟 BPM 骤跳时 C2 的响应）：
 - 调用后**下一帧** `_currentState.Speed ≈ 1.667f`（±0.001，等于 `200 / attackNode.AuthoredBpm`，authoredBpm=120）
@@ -498,11 +515,19 @@ BPM=120 时攻击进度 40–60% 处，C2 调用 `AnimancerAttackPlayer.UpdateBp
 
 ---
 
-### AC-F6-18 — currentBPM=120、authoredBpm=120 时 attackAnimSpeed 精确等于 1.0（参照 BPM 校准）
+### AC-F6-18 — currentBPM=120、authoredBpm=120 时 attackAnimSpeed 精确等于 1.0（端到端集成校准）
 
-**类型**: Integration | **测试方式**: PlayMode 自动化测试
+**类型**: Integration | **测试方式**: PlayMode 自动化测试（使用 C2 最小 stub，不依赖完整 C2 实现）
 
-BeatClock `currentBPM` 锁定为 120，`attackNode.AuthoredBpm == 120`（默认值），触发攻击后：`AnimancerState.Speed == 1.000f`（±0.001 容差）；0.5s 标称 Clip 实际播放时长偏差 ≤ 16ms（60FPS 一帧容差）。
+> 此 AC 补充 AC-F6-13（EditMode 单元测试），验证完整运行时路径：BeatClock → C2 stub → AnimancerAttackPlayer → AnimancerState.Speed。
+
+通过 mock BeatClock 将 `currentBPM` 锁定为 120，`attackNode.AuthoredBpm == 120`（默认值），执行 PlayMode 完整攻击序列后：
+- `AnimancerState.Speed == 1.000f`（±0.001 容差，**在 `PlayAttack()` 调用后下一帧读取**）
+- 0.5s 标称 Clip 实际播放时长偏差 ≤ 16ms（60FPS 一帧容差，通过 `Time.time` 差值计算）
+
+**测试环境**：PC Editor（60Hz 锁帧）；不要求在移动设备上执行本 AC（移动帧率变化引入的额外计时误差由 AC-F6-19 的 FMOD 异步验证层覆盖）。
+
+**通过条件**：Speed 精度和 Clip 时长偏差均在容差范围内。
 
 ---
 
@@ -538,7 +563,11 @@ BPM=120 → 200 骤跳时攻击动画中途加速的场景，以盲测问卷评�
 
 **类型**: Logic | **测试方式**: EditMode 自动化测试
 
-`TDELifecycleAdapter` 通过注入的 `IFMODRuntimeChecker` 接口（而非直接引用 `FMODUnity.RuntimeManager` 静态类）执行初始化状态检查；EditMode 测试中注入返回 `false` 的 mock `IFMODRuntimeChecker`：断言 `BeatClock.Play()` 调用次数 == 0 且记录 fatal 错误——无需真实 FMOD 运行时即可验证 AC-F6-04 的逻辑路径。
+`TDELifecycleAdapter` 通过注入的 `IFMODRuntimeChecker` 接口（而非直接引用 `FMODUnity.RuntimeManager` 静态类）执行初始化状态检查。
+
+**注入路径**：运行时 `TDELifecycleAdapter.Awake()` 中执行 `_fmodChecker ??= new FMODRuntimeChecker()`（`[SerializeField] IFMODRuntimeChecker _fmodChecker` 默认为 null，Awake 时自动填充真实实现）；EditMode/PlayMode 测试通过 Constructor Injection 或直接对 `[SerializeField]` 字段赋值注入 mock 实现，无需真实 FMOD 运行时。
+
+EditMode 测试中注入返回 `false` 的 mock `IFMODRuntimeChecker`：断言 `BeatClock.Play()` 调用次数 == 0 且记录 fatal 错误 `[F6-FATAL] FMOD RuntimeManager not initialized — BeatClock start blocked`——无需真实 FMOD 运行时即可验证 AC-F6-04 的逻辑路径。
 
 **通过条件**：mock false 路径中 BeatClock 被阻止；PlayMode 中真实 FMOD 路径正常启动。
 
@@ -559,7 +588,7 @@ BPM=120 → 200 骤跳时攻击动画中途加速的场景，以盲测问卷评�
 ---
 
 **依赖说明（执行阻断）**：
-- AC-F6-12 / AC-F6-15：需 C2 连招图系统先实现 `AnimancerAttackPlayer` 调用（`PlayAttack()` / `UpdateBpm()`）后方可执行
+- AC-F6-12 / AC-F6-15：需 C2 最小 stub 实现（提供可执行 `PlayAttack()` / `UpdateBpm()` 调用的测试替身），不依赖完整 C2 连招图逻辑
 - AC-F6-04 / AC-F6-21：需与 lead programmer 确认 `IFMODRuntimeChecker` 接口定义及程序集内部访问权限（`[InternalsVisibleTo]` 目标）
 - AC-F6-20：仅在原型阶段执行，须 C2 + AnimancerAttackPlayer 联调完成后安排人工盲测
 

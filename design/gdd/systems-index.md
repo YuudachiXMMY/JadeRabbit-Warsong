@@ -2,7 +2,7 @@
 
 > **Status**: Under Review
 > **Created**: 2026-07-13
-> **Last Updated**: 2026-07-15
+> **Last Updated**: 2026-07-19
 > **Source Concept**: design/gdd/game-concept.md
 
 ---
@@ -24,7 +24,7 @@
 | F3 | Input 事件系统 | Foundation | **MVP** | **Approved** | `design/gdd/input-event-system.md` | — |
 | F4 | ScriptableObject 数据层（推断） | Foundation | **MVP** | **In Review** | `design/gdd/so-data-layer.md` | — |
 | F5 | 存档/持久化系统 | Foundation | **MVP** | **Approved** | `design/gdd/save-persistence.md` | — |
-| F6 | TopDownEngine & Animancer 集成层 | Foundation | **MVP** | **In Review** | `design/gdd/tde-integration.md` | ADR-D1 (Accepted), ADR-D5 (Accepted) |
+| F6 | TopDownEngine & Animancer 集成层 | Foundation | **MVP** | **Approved** | `design/gdd/tde-integration.md` | ADR-D1 (Accepted), ADR-D5 (Accepted) |
 | C1 | 节奏量化攻击系统 | Core | **MVP** | Not Started | `design/gdd/rhythm-core.md` | F2, F3 |
 | C2 | 连招图系统 | Core | **MVP** | Not Started | `design/gdd/combo-system.md` | F4, C1 |
 | C3 | 心法构筑系统 | Core | **MVP** | Not Started | `design/gdd/perk-system.md` | F4, C1 |
@@ -198,7 +198,7 @@
 | 识别的系统总数 | 31 |
 | 设计文档已开始 | 5 |
 | 设计文档已审查 | 5 |
-| 设计文档已 Approved | 2 |
+| 设计文档已 Approved | 5 |
 | MVP 系统已设计 | 5 / 27 |
 | Vertical Slice 系统已设计 | 0 / 1 |
 | Alpha 系统已设计 | 0 / 1 |

@@ -162,6 +162,34 @@ interfaces:
     added: 2026-07-18
     revised: ""
 
+  - contract: animationclip_load_contract
+    status: active
+    pattern: direct_call
+    producer: c2-combo-graph-system
+    consumers:
+      - f6-animancer-attack-player  # receives loaded AnimationClip, passes to AnimancerAttackPlayer.Play()
+    adr: docs/architecture/adr-d4-so-data-layer.md
+    signal_signature: "C2 calls AttackNodeSO.animationClip.LoadAssetAsync<AnimationClip>() during room load for all nodes in the active ComboGraphSO; stores handles; releases via Addressables.Release(handle) on room exit. Clip is passed to AnimancerAttackPlayer.Play(loadedClip) per ADR-D5."
+    referenced_by:
+      - docs/architecture/adr-d4-so-data-layer.md
+      - docs/architecture/adr-d5-animation-pipeline.md
+    added: 2026-07-19
+    revised: ""
+
+  - contract: easysave_so_boundary
+    status: active
+    pattern: shared_resource
+    producer: f5-save-system
+    consumers:
+      - fe5-meta-progression  # extracts DTO from PlayerInfoSO and passes to F5
+    adr: docs/architecture/adr-d4-so-data-layer.md
+    signal_signature: "F5 serializes PlayerProgressDTO (extracted from PlayerInfoSO) — never PlayerInfoSO directly. Pattern: PlayerInfoSO → extract 3 fields (playerMerit→merit, unlockedWeaponIds, metaUpgradeLevels) → ES3.Save('progress', dto). [NonSerialized] fields (latencyCalibrationOffsetMs, audioVolumeMaster) are in separate DTOs per ADR-D7."
+    referenced_by:
+      - docs/architecture/adr-d4-so-data-layer.md
+      - docs/architecture/adr-d7-save-persistence-middleware.md
+    added: 2026-07-19
+    revised: ""
+
 # Example:
 #
 # interfaces:
@@ -321,6 +349,40 @@ api_decisions:
     added: 2026-07-18
     revised: ""
 
+  - purpose: so_data_container
+    status: active
+    api: "Unity ScriptableObjects + Addressables + Odin Editor Validation — 7 concrete SO types: AttackNodeSO, ComboGraphSO, PerkSO, WeaponSO, EnemyInfoSO, LevelConfigSO, PlayerInfoSO"
+    not: "Runtime JSON/CSV external files; Unity DOTS BlobAssets"
+    adr: docs/architecture/adr-d4-so-data-layer.md
+    reason: "ScriptableObjects integrate natively with Unity Inspector (Odin UX) and Addressables (async loading). JSON/CSV lacks type safety and Inspector integration; DOTS BlobAssets are incompatible with TopDownEngine (MonoBehaviour-based)."
+    referenced_by:
+      - docs/architecture/adr-d4-so-data-layer.md
+    added: 2026-07-19
+    revised: ""
+
+  - purpose: so_large_asset_reference
+    status: active
+    api: "AssetReferenceT<T> (Addressables lazy reference) for AnimationClip and Sprite fields in SO classes"
+    not: "Direct AnimationClip or Sprite field references in ScriptableObject classes"
+    adr: docs/architecture/adr-d4-so-data-layer.md
+    reason: "Direct references cause implicit full-bundle pulls when the parent SO loads from Addressables (a single ComboGraphSO load can implicitly pull 20 AnimationClips). AssetReferenceT<T> defers loading to the owning system (C2 for clips, C3 for icons). Exception: List<AttackNodeSO> in ComboGraphSO retains direct refs (small metadata SOs co-bundled per Rule D4-6)."
+    referenced_by:
+      - docs/architecture/adr-d4-so-data-layer.md
+      - docs/architecture/adr-d5-animation-pipeline.md
+    added: 2026-07-19
+    revised: ""
+
+  - purpose: perk_clone_strategy
+    status: active
+    api: "Instantiate(originalPerkSO) — C3 clones PerkSO assets before a run, modifies clones during the run, destroys clones at run end"
+    not: "Modifying PerkSO asset fields directly at runtime; using ScriptableObject.CreateInstance<PerkSO>() as a clone substitute"
+    adr: docs/architecture/adr-d4-so-data-layer.md
+    reason: "All SOs are read-only at runtime (Rule D4-1). PerkSO is the sole exception because C3 needs to track per-run stack counts and parameter overrides. Instantiate() deep-copies all serialized fields (including List<PerkParameter> where PerkParameter is a [Serializable] struct). C3 owns the clone lifecycle."
+    referenced_by:
+      - docs/architecture/adr-d4-so-data-layer.md
+    added: 2026-07-19
+    revised: ""
+
 # Example:
 #
 # api_decisions:
@@ -402,6 +464,27 @@ forbidden_patterns:
     why: "Evaluating offset at input time introduces two errors: (1) pre-beat inputs reference the previous half-beat, producing a falsely large positive offset; (2) BeatStateSnapshot.nearest_half_beat interpolates from system time, not FMOD DSP clock, introducing the very latency error that F3's beat_offset_ms formula is designed to remove."
     adr: docs/architecture/adr-d3-rhythm-quantization-core.md
     added: 2026-07-18
+
+  - pattern: resources_load_for_so
+    status: active
+    description: "Do not use Resources.Load() to load any F4 SO asset (AttackNodeSO, ComboGraphSO, PerkSO, WeaponSO, EnemyInfoSO, LevelConfigSO, PlayerInfoSO). All SO assets must be loaded via Addressables.LoadAssetAsync<T>()."
+    why: "Resources/ causes all assets in the folder to be included in every build regardless of whether they are used. Addressables provides on-demand loading, bundle-level memory control, and enables remote content delivery. AC-F4-09 enforces this via CI scan."
+    adr: docs/architecture/adr-d4-so-data-layer.md
+    added: 2026-07-19
+
+  - pattern: easysave_direct_so_serialization
+    status: active
+    description: "Do not call ES3.Save(key, playerInfoSO) or any EasySave 3 serialization API with a ScriptableObject instance as the value. F5 must extract a plain DTO struct first, then serialize the DTO."
+    why: "EasySave 3 cannot reliably serialize UnityEngine.Object subclasses (it may serialize the GUID reference rather than the field values). Directly serializing PlayerInfoSO also captures [NonSerialized] fields' default values (0 / 1.0) and loses the correct DTO schema versioning from ADR-D7."
+    adr: docs/architecture/adr-d4-so-data-layer.md
+    added: 2026-07-19
+
+  - pattern: perkparameter_ref_type_fields
+    status: active
+    description: "Do not add C# reference type fields (class instances, arrays of objects, interface references, AnimationCurve, etc.) to the PerkParameter [Serializable] struct. All PerkParameter fields must be value types or string."
+    why: "Unity's Instantiate(scriptableObject) deep-copies serialized data but shallow-copies non-serialized reference-type fields. A reference-type field in PerkParameter would cause the PerkSO clone and the original asset to share the same object reference — mutations to the clone's parameter would silently corrupt the original asset (the exact bug Rule D4-1 exists to prevent)."
+    adr: docs/architecture/adr-d4-so-data-layer.md
+    added: 2026-07-19
 
 # Example:
 #

@@ -6,4 +6,4 @@
 - [Project: F4 SO Data Layer AC Review](project_f4_ac_review.md) — 5 BLOCKING-level AC problems found; GDD rewrite required before F4 implementation stories begin
 - [Project: F5 Save/Persistence AC Review](project_f5_ac_review.md) — 5 CRITICAL + 6 WARNING (two-pass review); GDD state table gap on VersionTooHigh + GlobalData corruption path; rewrite required before F5 stories begin
 - [Project: F3 Input Event System AC Review](project_f3_ac_review.md) — 6 BLOCKER findings (3 R8 carried + 3 new: R9-01 DisableAllInput+ChargedAttack gap, R9-02 UIActive→GameplayActive T3 untested, R9-04 AC-F3-03 missing chargeStartDspTime > -1.0); round-9 adversarial pass
-- [Project: F6 TDE Integration Layer AC Adversarial Review](project_f6_ac_review.md) — Re-review of 22 ACs: 6 new Critical findings; 10 BLOCKING rewrites required; 2 missing ACs (out-of-sequence event + LevelConfigSO invalid data) still unresolved
+- [Project: F6 TDE Integration Layer AC Adversarial Review](project_f6_ac_review.md) — Round 3 (2026-07-19): 8 Critical + 5 Major + 5 Minor; 2 missing ACs absent (3 rounds); 3 Player Fantasy risks; F6 sprint blocked; 10 minimum actions required

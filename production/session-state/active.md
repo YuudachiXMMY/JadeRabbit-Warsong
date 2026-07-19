@@ -275,8 +275,43 @@
 - Blocks: C1 GDD 实现 sprint, C2 GDD, P1 HUD, PL2 VFX
 - **下一步**: (1) ADR-D4 SO Data Layer (P2), (2) C1 GDD
 
+## Session Extract — F6 GDD 第三轮 /design-review 2026-07-19
+- **F6 TDE 集成层 GDD — APPROVED** ✅
+- 路径: `design/gdd/tde-integration.md`
+- 第三轮完整审查（5 专家 Agent）：4 阻塞项全部解决
+  - B1: authoredBpm=0 运行时 InvalidOperationException 防护（Core Rule 8 + AC-F6-13 测试用例）
+  - B2: VerifyFMODAsyncMode() 协程防重入（`_isVerifyingFMOD` 门控 + `DSP_DELTA_EPSILON=0.0001f`）
+  - B3: LevelConfigSO 获取路径（Core Rule 6：`scene.GetRootGameObjects()`，禁止 FindObjectOfType）
+  - B4: AC 可测试性批次（AC-F6-01/03/08-10/12/15/18/21 全部改写为可独立执行路径）
+- 推荐修订（5 项）：Option B 定义、DSP 容差阈值、安全范围表述、EC-03 守卫条件、Root Motion 优先级说明
+- CD 裁决：4 条验证标准全部达标，无需第四轮审查
+- 待办（Post-Approval）：ADR-D5 正式修订（Option A → MVP scope）；F2 GDD 补充 ScheduleBGMTransition()
+- **当前状态**: F1/F2/F3/F5/F6 Approved，F4 In Review；C1 GDD 编写已解锁
+
+## Session Extract — ADR-D4 SO Data Layer 2026-07-19
+- **ADR-D4 SO Data Layer — 草稿写入 (Status: Proposed)** ✅
+- 路径: `docs/architecture/adr-d4-so-data-layer.md`
+- 核心决策: Unity ScriptableObjects + Addressables + Odin Editor Validation（over JSON/CSV, DOTS BlobAssets）
+- 7 个 SO 类型: AttackNodeSO, ComboGraphSO, PerkSO, WeaponSO, EnemyInfoSO, LevelConfigSO, PlayerInfoSO
+- 关键规则: D4-1 运行时只读; D4-2 PerkSO 唯一可变（Instantiate 克隆）; D4-3 大型 Unity Object ref 用 AssetReferenceT<T>; D4-4 AnimationClip 加载合约归 C2; D4-5/D4-6 Addressables 组策略; D4-7 Odin 双模式验证; D4-8 PlayerInfoSO EasySave 约束; D4-9 PerkParameter 值类型不变量
+- 引擎专家: CONCERNS（无 BLOCKING，5 项 CONCERN 全部并入 ADR 解决）
+  - C1 AnimationClip 加载合约归 C2（房间加载预解析，退出释放）
+  - C2 AttackNodeSO/ComboGraphSO 须同 Addressable Group 避免 Bundle 重复
+  - C3 PlayerInfoSO 禁止直接 ES3.Save，交叉引用 ADR-D7
+  - C4 PerkParameter 须值类型字段（Instantiate 深拷贝安全）
+  - C5 bgmAssetRef → bgmFilePath 字段名重命名（GDD 同步完成 ✅）
+- GDD 同步: F4 GDD 3 处 bgmAssetRef → bgmFilePath 已更新 ✅
+- 架构注册表更新完成:
+  - 新增 api_decisions: so_data_container, so_large_asset_ref, perk_clone_strategy ✅
+  - 新增接口: animationclip_load_contract, easysave_so_boundary ✅
+  - 新增禁用模式: resources_load_for_so, easysave_direct_so_serialization, perkparameter_ref_type_fields ✅
+- Depends On: ADR-D6 (bgmFilePath 格式), ADR-D5 (AssetReferenceT<AnimationClip>), ADR-D1 (TDE 边界)
+- Enables: C2 GDD, C3 GDD, C5 GDD, FE1 GDD（4 个 GDD 现可开始设计）
+- 全部 7 个预生产 ADR（D1-D7）现已完成 ✅
+- **下一步**: (1) C1 GDD（rhythm-core.md）— 所有先决 ADR 已齐全, (2) /architecture-review（新 session）
+
 <!-- STATUS -->
 Epic: Pre-Production
-Feature: ADR-D3 Rhythm Quantization Core (Proposed) — 6/6 Foundation ADRs drafted
-Task: 下一步：ADR-D4 SO Data Layer (P2) 或 C1 GDD
+Feature: F6 TDE 集成层 GDD — Approved 2026-07-19
+Task: 下一步：C1 GDD rhythm-core.md（所有 Foundation ADRs 已就位，F6 Approved 解锁）
 <!-- /STATUS -->
