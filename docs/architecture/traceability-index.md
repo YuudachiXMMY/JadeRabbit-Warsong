@@ -1,8 +1,8 @@
 # Traceability Index
 
-> **Last Updated**: 2026-07-18 (Rev.5)
+> **Last Updated**: 2026-07-19 (Rev.6)
 > **Source**: `/architecture-review full`
-> **TR Registry**: `docs/architecture/tr-registry.yaml` (79 entries, v1)
+> **TR Registry**: `docs/architecture/tr-registry.yaml` (83 entries, v1)
 
 ---
 
@@ -10,13 +10,13 @@
 
 | System | GDD | Total TRs | Covered | Partial | Gap |
 |--------|-----|-----------|---------|---------|-----|
-| concept | game-concept.md | 14 | 4 | 2 | 8 |
-| beatclock | audio-beat-clock.md | 17 | 4 | 1 | 12 |
-| input | input-event-system.md | 15 | 4 | 1 | 10 |
-| datalayer | so-data-layer.md | 12 | 1 | 2 | 9 |
-| save | save-persistence.md | 13 | 9 | 3 | 1 |
-| tde | tde-integration.md | 8 | 6 | 2 | 0 |
-| **Total** | | **79** | **28** | **11** | **40** |
+| concept | game-concept.md | 14 | 5 | 4 | 5 |
+| beatclock | audio-beat-clock.md | 17 | 1 | 3 | 13 |
+| input | input-event-system.md | 15 | 2 | 0 | 13 |
+| datalayer | so-data-layer.md | 12 | 11 | 1 | 0 |
+| save | save-persistence.md | 13 | 2 | 0 | 11 |
+| tde | tde-integration.md | 12 | 8 | 0 | 4 |
+| **Total** | | **83** | **29** | **8** | **46** |
 
 ---
 
@@ -24,11 +24,13 @@
 
 | ADR | Status | TRs Covered | TRs Partial |
 |-----|--------|-------------|-------------|
-| ADR-D6 (Audio Middleware) | Accepted | TR-concept-001, TR-concept-005, TR-beatclock-002, TR-beatclock-010, TR-beatclock-011, TR-input-012 | TR-beatclock-013 |
-| ADR-D7 (Save/Persistence) | Accepted | TR-save-001, TR-save-002, TR-save-003, TR-save-005, TR-save-007, TR-save-008, TR-save-010, TR-save-011, TR-save-013 | TR-save-004, TR-save-006, TR-datalayer-009 |
-| ADR-D1 (TDE Integration) | Accepted | TR-input-010, TR-input-014, TR-input-015, TR-beatclock-008, TR-datalayer-012, TR-tde-001, TR-tde-002, TR-tde-003, TR-tde-006 | TR-concept-002, TR-input-004, TR-tde-007 |
-| ADR-D2 (Enemy AI) | Accepted | TR-concept-009 | TR-concept-010, TR-tde-008 |
-| ADR-D5 (Animation Pipeline) | Accepted | TR-concept-004, TR-tde-004, TR-tde-005 | TR-datalayer-004 |
+| ADR-D1 (TDE Integration) | Accepted | TR-tde-001, TR-tde-002, TR-tde-003, TR-tde-006, TR-tde-007, TR-input-010, TR-input-014 | TR-concept-001 |
+| ADR-D2 (Enemy AI) | Accepted | TR-concept-009, TR-tde-008 | — |
+| ADR-D3 (Rhythm Quantization) | **Accepted** | TR-concept-006, TR-concept-007 | TR-concept-008, TR-concept-010 |
+| ADR-D4 (SO Data Layer) | **Accepted** | TR-datalayer-001 through 008, TR-datalayer-010, TR-datalayer-011, TR-datalayer-012, TR-concept-012 | TR-concept-013, TR-datalayer-009 |
+| ADR-D5 (Animation Pipeline) | Accepted | TR-concept-004, TR-tde-004, TR-tde-005 | — |
+| ADR-D6 (Audio Middleware) | Accepted | TR-concept-005, TR-beatclock-002 | TR-beatclock-010, TR-beatclock-011, TR-beatclock-013 |
+| ADR-D7 (Save/Persistence) | Accepted | TR-save-005, TR-save-008 | TR-datalayer-009 |
 
 ---
 
@@ -36,8 +38,8 @@
 
 | Layer | Total TRs | Covered | Partial | Gap | Notes |
 |-------|-----------|---------|---------|-----|-------|
-| Foundation (F1-F6) | 66 | 22 | 7 | 37 | save well-covered; datalayer 1 covered, 9 gaps |
-| Core (C1-C6) | 13* | 6* | 4* | 3* | *concept/beatclock/input TRs mapping to Core systems; no Core ADR exists |
+| Foundation (F2-F6) | 69 | 24 | 4 | 41 | datalayer fully covered; tde fully covered; beatclock/input/save gaps expected (GDD = spec) |
+| Core (concept) | 14 | 5 | 4 | 5 | ADR-D3 covers concept-006/007; remaining gaps await C3/C5/FE3 GDDs |
 | Feature | 0 | 0 | 0 | 0 | No Feature-layer GDDs designed yet |
 | Presentation | 0 | 0 | 0 | 0 | No Presentation-layer GDDs designed yet |
 
@@ -45,28 +47,27 @@
 
 ## Gap Priority
 
-### Architecture-level gaps (need new ADRs)
+### Critical path: Proposed ADRs — RESOLVED
 
-| TR-ID | Requirement | Suggested ADR | Priority |
-|-------|-------------|---------------|----------|
-| TR-concept-006 | Half-beat grid snap quantization | ADR-D3 Rhythm Quantization Core | **P1** |
-| TR-concept-007 | Rating system (P/G/M) with multipliers | ADR-D3 | **P1** |
-| TR-beatclock-003 | Beat prediction and lookahead | ADR-D3 | **P1** |
-| TR-beatclock-004 | Drift correction (anchored DSP) | ADR-D3 | **P1** |
-| TR-beatclock-005 | Subdivision handling (half/quarter-beat) | ADR-D3 | **P1** |
-| TR-input-001 | Input timestamp → beat-relative offset | ADR-D3 | **P1** |
-| TR-input-002 | Tolerance window per rating tier | ADR-D3 | **P1** |
-| TR-datalayer-* (9 gaps) | SO schema, Addressables, Odin validation | ADR-D4 SO Data Layer | **P2** |
-| TR-concept-011+ | Enemy beat-lock, token scheduling | ADR-D8 Combat Director | **P2** |
-| TR-concept-008 | Perfect kinetics effects | ADR: Hitbox/Hit Response | P3 |
-| TR-concept-010+ | Combo graph, cancel windows | ADR-D9 Combo System | P3 |
+All ADRs now Accepted (D1–D7). No remaining Proposed blockers.
 
-### Implementation-level gaps (covered by stories, not ADRs)
+| ADR | Status | Covers | Unblocks |
+|-----|--------|--------|----------|
+| ADR-D3 (Rhythm Quantization Core) | **Accepted** (2026-07-19) | TR-concept-006/007 | C1 GDD, C2 implementation |
+| ADR-D4 (SO Data Layer) | **Accepted** (2026-07-19) | 11 datalayer TRs | C2, C3, C5, FE1 GDDs |
 
-| TR-ID | Requirement | Notes |
-|-------|-------------|-------|
-| TR-save-006 | Slot metadata caching strategy | D7 partially covers; story-level detail |
-| TR-tde-007 | Pause menu integration with BeatClock | D1 partially covers; implementation story |
+### Remaining architecture gaps (need future ADRs or GDDs)
+
+| TR-ID | Requirement | Suggested Action | Priority |
+|-------|-------------|------------------|----------|
+| TR-concept-011 | Delay calibration system | FE3 GDD | P2 |
+| TR-concept-014 | Multiple weapon types with ComboGraph | C5 GDD | P2 |
+| TR-concept-002 | Multi-platform input support | Implementation concern, no ADR needed | P3 |
+| TR-concept-003 | 60fps / 16.6ms frame budget | Project-wide constraint, not single-ADR scope | P3 |
+
+### Notes on beatclock/input/save gaps
+
+The 37 gaps in beatclock (13), input (13), and save (11) systems are **expected** — these systems have Approved GDDs that serve as the normative architecture specification. No separate ADR is needed for their internal design; the GDD is the architecture doc.
 
 ---
 
@@ -78,11 +79,12 @@
 | v2 | 2026-07-16 | 3 (D1, D6, D7) | 71 | 14 | 6 | 51 | 19.7%* |
 | v3 | 2026-07-18 | 5 (D1-D2, D5-D7) | 79 | 22 | 8 | 49 | 27.8% |
 | v4 | 2026-07-18 | 5 (D1-D2, D5-D7) | 79 | 22 | 8 | 49 | 27.8%* |
-| **v5** | **2026-07-18** | **5 (D1-D2, D5-D7)** | **79** | **28** | **11** | **40** | **35.4%** |
+| v5 | 2026-07-18 | 5 (D1-D2, D5-D7) | 79 | 28 | 11 | 40 | 35.4% |
+| **v6** | **2026-07-19** | **7 (D1-D7)** | **83** | **29** | **8** | **46** | **34.9%** |
 
 *v2 was a focused ADR-D1 review, not a full recount; total rose to 71 due to 2 new TRs.
 v4 re-ran with fresh engine specialist; no new ADRs or GDD changes → same coverage.
-*v4 totals carried v3 arithmetic without recalculating per-system rows — v5 corrects.
+v6: +2 ADRs (D3, D4), +4 TRs (tde-009~012). Coverage % dipped slightly due to new TRs added to denominator; absolute covered count rose. ADR-D4 converts 10 datalayer gaps to covered. D3+D4 accepted 2026-07-19.
 
 ---
 

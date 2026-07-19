@@ -310,8 +310,22 @@
 - 全部 7 个预生产 ADR（D1-D7）现已完成 ✅
 - **下一步**: (1) C1 GDD（rhythm-core.md）— 所有先决 ADR 已齐全, (2) /architecture-review（新 session）
 
+## Session Extract — Architecture Review v6 (2026-07-19)
+- **`/architecture-review full` (v6) 完成** ✅
+- Verdict: **CONCERNS**（非 FAIL）
+- 7 ADRs reviewed (D1-D7); 83 TR-IDs (新增 TR-tde-009~012)
+- Traceability: 29 Covered (34.9%) / 8 Partial (9.6%) / 46 Gap (55.4%)
+- 0 Cross-ADR Conflicts; 0 Engine Incompatibilities
+- 1 MEDIUM tension: D5 vs F6 UpdateBpm() — 需 D5 一行修订
+- ADR-D3 + ADR-D4 仍为 Proposed（唯一阻塞项）
+- 写入文件:
+  - `docs/architecture/architecture-review-v6.md` ✅
+  - `docs/architecture/traceability-index.md` 更新至 Rev.6 ✅
+  - `docs/architecture/tr-registry.yaml` +4 entries (83 total) ✅
+- **下一步**: (1) Accept ADR-D3 + D4, (2) 修订 ADR-D5 UpdateBpm(), (3) C1 GDD rhythm-core.md
+
 <!-- STATUS -->
 Epic: Pre-Production
-Feature: F6 TDE 集成层 GDD — Approved 2026-07-19
-Task: 下一步：C1 GDD rhythm-core.md（所有 Foundation ADRs 已就位，F6 Approved 解锁）
+Feature: Architecture Review v6 — CONCERNS 2026-07-19
+Task: 下一步：Accept ADR-D3/D4 → C1 GDD rhythm-core.md
 <!-- /STATUS -->

@@ -1,8 +1,8 @@
 # ScriptableObject 数据层 (SO Data Layer)
 
-> **Status**: In Review (Round-5 Revision — Pending Re-review)
+> **Status**: Approved (Round-6, 2026-07-19)
 > **Author**: Jadyn Wu + Claude Code Agents
-> **Last Updated**: 2026-07-15
+> **Last Updated**: 2026-07-19
 > **Implements Pillar**: 支柱一：节奏即战斗 / 支柱四：构筑驱动复盘
 > **System ID**: F4
 > **Layer**: Foundation | **Milestone**: MVP | **Design Order**: 3
@@ -59,6 +59,7 @@ F4 定义以下 7 类核心 ScriptableObject，每类对应一个明确的数据
 - 每局开始（进入第一个房间）前，C3 系统按需调用 `Instantiate(perkSO)` 克隆候选 PerkSO 资产
 - 克隆体在当局内有效；局结束（死亡/通关）时，C3 销毁所有克隆体，不向持久化层写入
 - `PlayerInfoSO` 的「已解锁心法 ID 列表」指向原始资产引用，不持有克隆体
+- ⚠️ **`iconSprite` 句柄共享约束**：`PerkSO.iconSprite: AssetReferenceT<Sprite>` 是引用类型，`Instantiate(perkSO)` 执行浅拷贝——克隆体与原始资产共享同一 `AssetReferenceT<Sprite>` 对象实例。**C3 禁止对 `clone.iconSprite` 调用 `ReleaseAsset()` 或 `LoadAssetAsync()`**；图标资产的加载与释放职责属于原始资产作用域，由 C3 心法选择 UI 对 `original.iconSprite` 管理，局结束清理克隆体时不得附带触发 iconSprite 的 release 操作。C3 GDD 须在图标加载章节中明确声明此约束。
 
 **规则 4：Schema 变更传播合约**
 
@@ -138,13 +139,13 @@ F4 不包含计算公式，但定义了每种 SO 类型的**字段规格**——
 | 字段 | 类型 | 范围/约束 | 必填 | 描述 |
 |------|------|----------|------|------|
 | `id` | `string` | 非空，项目内唯一 | 是 | 攻击节点 ID，格式：`weapon_attackType`（如 `miaodao_light1`） |
-| `animationClip` | `AssetReferenceT<AnimationClip>` | 非 null | 是 | Animancer 层播放的动画 Clip（Addressables 延迟引用；由 F6 在武器加载时调用 `LoadAssetAsync` 解析，C2 持有句柄）|
+| `animationClip` | `AssetReferenceT<AnimationClip>` | 非 null | 是 | Animancer 层播放的动画 Clip（Addressables 延迟引用；由 **C2 在房间加载时**调用 `LoadAssetAsync<AnimationClip>()` 解析，C2 持有句柄并在房间退出时统一释放——见 ADR-D4 Rule D4-4；**F6 不参与 AnimationClip 加载**）|
 | `hitboxStartNormalizedTime` | `float` | [0.0, 1.0) | 是 | Hitbox 激活的动画归一化时间（0=动画开始，接近1.0=动画结束前）；与 Animancer 变速无关，BPM 变化时 Hitbox 相对时机不变。**上界为开区间（不含 1.0）**：当 `start=1.0` 时跨字段约束 `start + duration ≤ 1.0` 要求 `duration ≤ 0`，与 `hitboxDurationNormalized` 的下界约束 `(0.0, 1.0]` 不相容，不存在任何合法值——Odin `[ValidateInput]` 须对 `hitboxStartNormalizedTime ≥ 1.0` 报 Error：「start=1.0 时无任何合法 hitbox duration 值」 |
 | `hitboxDurationNormalized` | `float` | (0.0, 1.0] | 是 | Hitbox 持续的动画归一化时长；约束：`hitboxStartNormalizedTime + hitboxDurationNormalized ≤ 1.0` |
 | `cancelWindowType` | `CancelWindowType` | `{None, Standard, Advanced}` | 是 | 取消窗口类型：None = 无取消；Standard = 普通取消；Advanced = 仅 Perfect 解锁 |
 | `cancelWeight` | `float` | [0.0, 1.0] | 是 | 取消窗口开启的归一化时间点：取消窗口从 `cancelWeight` 处开始，延伸至动画结束（1.0）。`cancelWeight=0.0` = 从动画第 0 帧即可取消；`cancelWeight=0.6` = 前 60% 动画锁定，60% 处取消窗口开启；`cancelWeight=1.0` = 窗口永不开启（等效于 `cancelWindowType=None`）。**注**：当 `cancelWindowType=None` 时，`cancelWeight` 字段的值被 C2 忽略（无论设为何值均无取消窗口）；Odin Validator 在 `cancelWindowType=None` 且 `cancelWeight < 1.0` 时报告 Warning 以提示设计师。 |
 | `quantizationHint` | `QuantizationHint` | `{FullBeat, HalfBeat, Free}` | 否 | 本节点在连招树中的量化对齐偏好；C1 参考此值但最终量化由 C1 决定 |
-| `authoredBpm` | `float` | [60, 240]，默认 120 | 是 | 动画师创作此 Clip 时使用的参考 BPM。运行时 Animancer 攻击层根据 `state.Speed = BeatClock.CurrentBpm / authoredBpm` 动态缩放动画时长，确保攻击与节拍网格对齐（ADR-D5 定义）。**禁止为 0**（除零异常）；Odin Validator `[MinValue(1f)]` 阻止此配置错误 |
+| `authoredBpm` | `float` | [60, 240]，默认 120 | 是 | 动画师创作此 Clip 时使用的参考 BPM。运行时 Animancer 攻击层根据 `state.Speed = BeatClock.CurrentBpm / authoredBpm` 动态缩放动画时长，确保攻击与节拍网格对齐（ADR-D5 定义）。**禁止为 0**（除零异常）；Odin Validator `[MinValue(60f)]` 阻止此配置错误（须与字段范围下界一致——`[MinValue(1f)]` 会允许值 1–59 通过验证但违反字段规格；authoredBpm=1 时动画速度 = 240×，Hitbox 在亚帧内打开并关闭，攻击静默失效） |
 
 **示例**：苗刀一段轻击 → `hitboxStartNormalizedTime=0.13, hitboxDurationNormalized=0.07, cancelWindowType=Standard, cancelWeight=0.6, authoredBpm=120`（原 @60fps 帧数换算：8/60 ≈ 0.13，4/60 ≈ 0.07；BPM=120 下创作）
 
@@ -158,9 +159,9 @@ F4 不包含计算公式，但定义了每种 SO 类型的**字段规格**——
 |------|------|----------|------|------|
 | `id` | `string` | 非空，项目内唯一 | 是 | 连招图 ID，格式：`weapon_comboGraph`（如 `miaodao_comboGraph`） |
 | `weaponType` | `WeaponType` | `{MiaoDao, Spear, Sword}` | 是 | 归属武器类型 |
-| `nodes` | `List<AttackNodeSO>` | 节点数 [1, 20] | 是 | 连招图所有攻击节点；列表索引作为节点 ID 供 edges 中的 fromNodeIndex/toNodeIndex 引用 |
-| `rootNodeIndex` | `int` | [0, nodes.Count-1] | 是 | 连招树起始节点在 `nodes` 列表中的索引 |
-| `edges` | `List<ComboEdge>` | 边数 [0, 60] | 是 | 节点间转换规则列表；空列表表示单节点无分支连招（仅 rootNodeIndex 节点可用） |
+| `nodes` | `List<AttackNodeSO>` | 节点数 [1, 20] | 是 | 连招图所有攻击节点；各 AttackNodeSO 的 `id` 字段唯一标识每个节点；列表顺序无连接语义——edges 和 rootNodeId 均通过 id 字符串引用节点，重排节点不影响边关系 |
+| `rootNodeId` | `string` | 非空，须为 nodes 中某 AttackNodeSO.id 的合法值 | 是 | 连招树起始节点的 AttackNodeSO.id；C2 在 ComboGraphSO 加载时通过 Dictionary<string, AttackNodeSO> 解析 |
+| `edges` | `List<ComboEdge>` | 边数 [0, 60] | 是 | 节点间转换规则列表；空列表表示单节点无分支连招（仅 rootNodeId 节点可用） |
 
 #### ComboEdge 字段规格
 
@@ -168,17 +169,17 @@ F4 不包含计算公式，但定义了每种 SO 类型的**字段规格**——
 
 | 字段 | 类型 | 范围/约束 | 必填 | 描述 |
 |------|------|----------|------|------|
-| `fromNodeIndex` | `int` | [0, nodes.Count-1] | 是 | 转换起始节点在 `nodes` 中的索引 |
-| `toNodeIndex` | `int` | [0, nodes.Count-1] | 是 | 转换目标节点在 `nodes` 中的索引；不得等于 fromNodeIndex（禁止自环） |
+| `fromNodeId` | `string` | 非空，须为某 AttackNodeSO.id 的合法值 | 是 | 转换起始节点的 AttackNodeSO.id |
+| `toNodeId` | `string` | 非空，须为某 AttackNodeSO.id 的合法值，且不等于 fromNodeId（禁止自环） | 是 | 转换目标节点的 AttackNodeSO.id |
 | `requiredInput` | `AttackInputType` | `{Normal, Heavy, Special}` | 是 | 玩家须在取消窗口内按下的攻击键类型 |
 
 **设计约束**：
-- 同一 `fromNodeIndex` 可有多条 edges，但各边 `requiredInput` 须唯一（相同起始节点禁止两条边使用同一输入类型）
-- `fromNodeIndex == toNodeIndex` 的自环边由 Odin Validator 报告 Error（阻止构建）
+- 同一 `fromNodeId` 可有多条 edges，但各边 `requiredInput` 须唯一（相同起始节点禁止两条边使用同一输入类型）
+- `fromNodeId == toNodeId` 的自环边由 Odin Validator 报告 Error（阻止构建）
 - **多节点环路（如 A→B→A）为合法的循环连招设计**，不予禁止——玩家须持续提供输入才能遍历每条边，不会产生无限循环；C2 须实现单局最大遍历深度上限（建议 100 步）防止极端场景
-- C2 在取消窗口期遍历 edges 列表，匹配 `fromNodeIndex = 当前节点索引` 且 `requiredInput = 玩家输入`；无匹配时连招重置到 rootNodeIndex
+- C2 在取消窗口期遍历 edges 列表，匹配 `fromNodeId = 当前节点 id` 且 `requiredInput = 玩家输入`；无匹配时连招重置到 `rootNodeId` 对应节点；C2 维护 `Dictionary<string, AttackNodeSO>` 供 ID 查找，在 ComboGraphSO 加载时构建
 
-**示例**：苗刀两段连招 → `nodes=[LightStrike1(0), LightStrike2(1), HeavyFinisher(2)]`，`edges=[{from=0, to=1, input=Normal}, {from=1, to=2, input=Heavy}]`，`rootNodeIndex=0`
+**示例**：苗刀两段连招 → `nodes=[LightStrike1(id='miaodao_light1'), LightStrike2(id='miaodao_light2'), HeavyFinisher(id='miaodao_heavy')]`，`edges=[{from='miaodao_light1', to='miaodao_light2', input=Normal}, {from='miaodao_light2', to='miaodao_heavy', input=Heavy}]`，`rootNodeId='miaodao_light1'`
 
 ---
 
@@ -265,11 +266,11 @@ F4 不包含计算公式，但定义了每种 SO 类型的**字段规格**——
 
 - **如果 `ComboGraphSO.nodes` 列表为空（节点数 = 0）**：Odin Validator 在 Editor 构建时报错并阻止构建；运行时 C2 检测到空节点列表应抛出 `InvalidDataException` 并记录 Error 日志（不静默失败），游戏进入错误状态要求设计师修复资产，不尝试回退到空连招。
 
-- **如果 `ComboGraphSO.rootNodeIndex` 超出 `nodes` 列表边界**：同上，Odin Validator 阻止构建；运行时 C2 clamp 到 0 并记录 Error 日志。
+- **如果 `ComboGraphSO.rootNodeId` 在 `nodes` 中无匹配 AttackNodeSO.id**：Odin Validator 阻止构建；运行时 C2 使用 nodes[0] 作为根节点并记录 LogError 含 'rootNodeId not found, defaulting to nodes[0]'。
 
-- **如果 `ComboGraphSO.edges` 中某条边的 `fromNodeIndex == toNodeIndex`（自环）**：Odin Validator 报告 Error 并阻止构建；自环会导致 C2 陷入无限循环，属硬性缺陷。
+- **如果 `ComboGraphSO.edges` 中某条边的 `fromNodeId == toNodeId`（自环）**：Odin Validator 报告 Error 并阻止构建；自环会导致 C2 陷入无限循环，属硬性缺陷。
 
-- **如果同一 `fromNodeIndex` 存在两条 `requiredInput` 相同的 edges**：Odin Validator 报告 Error 并阻止构建；运行时 C2 取第一条匹配边执行，但此情况属配置错误须在构建期消除。
+- **如果同一 `fromNodeId` 存在两条 `requiredInput` 相同的 edges**：Odin Validator 报告 Error 并阻止构建；运行时 C2 取第一条匹配边执行，但此情况属配置错误须在构建期消除。
 
 - **如果 `AttackNodeSO.hitboxStartNormalizedTime + hitboxDurationNormalized > 1.0`**：Odin Validator 报告 Error（Hitbox 会超出动画时长）；运行时 C2 将 hitboxDurationNormalized clamp 到 `1.0 - hitboxStartNormalizedTime` 并记录 Error 日志。
 
@@ -293,7 +294,9 @@ F4 不包含计算公式，但定义了每种 SO 类型的**字段规格**——
 
 - **如果 `AttackNodeSO.hitboxDurationNormalized = 0.0`**（违反下界开区间约束 `(0.0, 1.0]`）：零持续时长 Hitbox 在任何帧都不会激活——攻击动画播放但永远不判定命中，是最危险的静默失效路径（不崩溃，不报错，武器完全失效）。字段规格已声明范围为 `(0.0, 1.0]`（下界**开区间**），须在 Odin `[ValidateInput]` 中使用 `value > 0.0f` 严格比较（而非 `[MinValue(0.0)]` 会允许等于 0.0 的值）。对应 AC：AC-F4-32。
 
-- **如果 `ComboGraphSO.edges` 中某条边的 `fromNodeIndex` 或 `toNodeIndex` 超出 `nodes` 列表边界**：边表索引越界比 `rootNodeIndex` 越界更常见（边是手动填写的 struct 列表，设计师在 Inspector 中逐条输入数字，极易误填）。运行时 C2 遍历 edges 时执行 `nodes[fromNodeIndex]` 将抛出 `IndexOutOfRangeException` 崩溃。Odin Validator 须通过 `RegisterValidator` 外部验证类（需同时读取 `edges` 列表和 `nodes.Count`）对所有边执行索引越界检查，发现越界报告 Error 并阻断构建。运行时 C2 须在遍历 edges 前对每条边的两个索引执行边界防御检查，发现越界跳过该边并记录 Error 日志（不崩溃）。对应 AC：AC-F4-31。
+- **如果 `AttackNodeSO.cancelWindowType = Standard`（或 `Advanced`）但 `cancelWeight = 1.0`**：取消窗口开启时间点为动画结束帧（归一化时间 1.0），实际窗口持续时长为零，等价于 `cancelWindowType=None`。Odin Validator 报告 Warning（非 Error，不阻断构建），提示设计师改用 `cancelWindowType=None` 保持语义一致；运行时 C2 按实际 `cancelWeight` 逻辑处理，结果与 None 等效。
+
+- **如果 `ComboGraphSO.edges` 中某条边的 `fromNodeId` 或 `toNodeId` 在 `nodes` 中无匹配 AttackNodeSO.id**：ID 引用无效比旧方案的索引越界更早被发现（字符串无「越界」概念，但 Dictionary<string, AttackNodeSO> 查找失败明确可检测）。Odin Validator 须通过 `RegisterValidator` 外部验证类（需同时读取 `edges` 列表和 `nodes` 中所有 `id` 字段）对所有边执行 ID 合法性检查，发现无效 ID 报告 Error 并阻断构建。运行时 C2 须在 Dictionary 查找失败时跳过该边并记录 Error 日志（不崩溃）。对应 AC：AC-F4-31。
 
 ---
 
@@ -374,12 +377,12 @@ F4 的验收标准按 **BLOCKING**（须自动化测试通过，Done 前必须�
 - **实现意图**：确认 F4 SO 类型的序列化字段均不存在「无保护的公开写入路径」（测试不需要 C2/C5 存在即可运行）
 - 测试位置：`Assets/Tests/EditMode/F4DataLayer/SO_ImmutabilityTest.cs`
 
-**AC-F4-02b 只读资产：真实游戏代码路径不修改原始资产（PlayMode 集成）**
-- **前提条件**：须在 C2（连招图系统）和 C5（武器系统）实现后方可执行
+**AC-F4-02b 只读资产：真实游戏代码路径不修改原始资产（PlayMode 集成）** ⟶ *ADVISORY（测试文件创建职责由 C2 Story 承接）*
+- **注**：本 AC 须在 C2 和 C5 实现后方可执行；F4 层面的只读验证已由 AC-F4-02a（EditMode）覆盖。**C2 GDD 须将本 AC 重新定义为 BLOCKING PlayMode 集成测试并列为 C2 Story DoD BLOCKING 前提条件。** F4 GDD 保留本 AC 定义供 C2 作者参照。
 - Given 一个 `AttackNodeSO` 原始资产已加载，测试通过反射记录所有 float/int/string 字段快照 `fieldSnapshot`
 - When PlayMode 运行进入第一个战斗房间并触发至少一次攻击判定（真实 C2 代码路径）
 - Then 攻击判定后，重新读取同一 SO 实例的相同字段并与 `fieldSnapshot` 逐字段对比，所有字段值 delta = 0
-- 测试位置：`Assets/Tests/PlayMode/F4DataLayer/SO_ImmutabilityIntegrationTest.cs`
+- 测试位置：`Assets/Tests/PlayMode/F4DataLayer/SO_ImmutabilityIntegrationTest.cs`（C2 Story DoD 中创建）
 
 **AC-F4-03 PerkSO：Instantiate 克隆不修改原始资产（EditMode）**
 - Given 通过 `ScriptableObject.CreateInstance<PerkSO>()` 创建原始 PerkSO 实例，设置 `parameters[0].value = 1.0f`；**前置断言**：`Assert.IsTrue(typeof(PerkParameter).IsValueType, "PerkParameter must remain a [Serializable] struct — changing to class breaks clone isolation")`
@@ -402,11 +405,11 @@ F4 的验收标准按 **BLOCKING**（须自动化测试通过，Done 前必须�
 - Then `_activeClones.Count == 0`
 - 测试位置：`Assets/Tests/PlayMode/C3PerkSystem/PerkCloneCleanupTest.cs`（C3 GDD 中定义）
 
-**AC-F4-12 ComboGraphSO.rootNodeIndex 越界：运行时 clamp** ⟶ *ADVISORY（迁移至 C2 GDD）*
-- **注**：此 AC 测试 C2 系统的运行时 clamp 行为，而非 F4 schema 本身；F4 层面由 Odin Validator（AC-F4-11）在构建期阻止越界值进入运行时。本 AC 降为 ADVISORY 集成烟测，须在 C2 GDD 中重新定义为 BLOCKING AC。
-- Given `rootNodeIndex=5`，`nodes.Count=3`
-- When C2 系统运行时读取 rootNodeIndex
-- Then 值被 clamp 到 0；Console 输出 LogError 含 "rootNodeIndex out of range, clamped to 0"
+**AC-F4-12 ComboGraphSO.rootNodeId 无效：运行时降级到 nodes[0]** ⟶ *ADVISORY（迁移至 C2 GDD）*
+- **注**：此 AC 测试 C2 系统的运行时降级行为，而非 F4 schema 本身；F4 层面由 Odin Validator 在构建期阻止无效 rootNodeId 进入运行时。本 AC 降为 ADVISORY，须在 C2 GDD 中重新定义为 BLOCKING AC。
+- Given `rootNodeId='nonexistent_node_id'`，`nodes` 中无匹配 id
+- When C2 系统运行时读取 rootNodeId 并在 Dictionary<string, AttackNodeSO> 中查找
+- Then C2 使用 nodes[0] 作为根节点；Console 输出 LogError 含 'rootNodeId not found, defaulting to nodes[0]'
 
 **AC-F4-14 PerkParameter.value 超范围：运行时 clamp** ⟶ *ADVISORY（迁移至 C3 GDD）*
 - **注**：此 AC 测试 C3 系统的运行时 clamp 行为，而非 F4 schema 本身；F4 层面由 Odin Validator 在构建期检测 value 超范围（AC-F4-13 覆盖必填字段）。本 AC 降为 ADVISORY，须在 C3 GDD 中重新定义为 BLOCKING AC。
@@ -430,8 +433,27 @@ F4 的验收标准按 **BLOCKING**（须自动化测试通过，Done 前必须�
 **AC-F4-08 Odin Attribute 仅在 Editor 程序集（⚠️ BLOCKING — 违反导致非 Editor 平台构建失败）**
 - **严重性说明**：`using Sirenix.*` 出现在 Runtime 程序集是**编译错误**，不是风格问题。Odin Inspector/Validator 程序集不打入 Player Build，Runtime 代码引用将导致非 Editor 平台（iOS/Android/Console）构建失败，属硬性构建门控。
 - Given 项目启动 Player Build 流程
-- When 执行以下两项静态验证：(1) `grep -rn "using Sirenix" Assets/Scripts/` 排除 `Assets/Editor/` 目录——预期 0 条匹配（**注**：不使用 `^` 行首锚点，以覆盖 `#if UNITY_EDITOR` 块内有前导空格的缩进 using 语句）；(2) 验证所有 F4 SO 类 `.cs` 文件的 asmdef 引用中无 `com.sirenix.odinspector.editor` 依赖——预期所有引用均指向 Runtime asmdef
+- When 执行以下两项静态验证：(1) `grep -rn "using Sirenix" Assets/Scripts/` 排除 `Assets/Editor/` 目录——预期 0 条匹配（**注**：不使用 `^` 行首锚点，以覆盖 `#if UNITY_EDITOR` 块内有前导空格的缩进 using 语句）；(2) 验证所有包含 `[RegisterValidator(typeof(...))]` 特性类的 `.asmdef` 文件中设置了 `includePlatforms: [Editor]`——CI 命令参考：`grep -l 'com.sirenix.odinspector.editor' Assets/Editor/**/*.asmdef` → 应仅返回 Editor-only .asmdef 文件；Runtime .asmdef 不得含此引用
 - Then 两项检查均通过；如发现 Runtime 代码引用 Sirenix 命名空间，立即停止构建并报告 Error，注明违规文件路径
+
+**AC-F4-33 RegisterValidator 类必须位于 Editor-only 程序集（⚠️ BLOCKING）**
+- Given 项目中存在带 `[RegisterValidator(typeof(...))]` 特性的类文件
+- When CI 执行：`grep -rn 'RegisterValidator' Assets/ --include='*.cs' | grep -v 'Assets/Editor/'` → 预期 0 条匹配
+- Then 所有 RegisterValidator 类均位于 `Assets/Editor/` 目录下、归属 `includePlatforms: [Editor]` 的 .asmdef 程序集；非 Editor 目录中发现则构建失败
+- **实现注意**：F4 实现冲刺须在第一天建立 .asmdef 结构（Runtime 程序集 + Editor 专属程序集），先于任何 RegisterValidator 实现
+
+**AC-F4-31 ComboEdge ID 引用无效：Validator 报 Error 并阻止构建（⚠️ BLOCKING）**
+- Given `ComboGraphSO.nodes` 中无节点 id='miaodao_light999'，某 `ComboEdge.fromNodeId='miaodao_light999'`
+- When RegisterValidator 执行，构建所有 nodes 的 id 集合并遍历 edges 检查 fromNodeId/toNodeId 是否在集合中
+- Then 报告 Error 'ComboEdge.fromNodeId 未找到对应 AttackNodeSO（id: miaodao_light999）'；构建阻止
+- **背景**：string ID 引用无效等价于旧方案的索引越界，须在构建期消除；C2 运行时 Dictionary 查找失败会导致连招节点丢失
+
+**AC-F4-32 hitboxDurationNormalized 须严格大于 0（⚠️ BLOCKING）**
+- Given `hitboxDurationNormalized = 0.0`
+- When Odin Validator 扫描
+- Then 报告 Error "hitboxDurationNormalized 须 > 0；当前值 0.0 表示零持续时长 hitbox，攻击判定永远不触发"；构建阻止
+- 对比：`hitboxDurationNormalized = 0.01`（最小有效持续时长）须通过验证无 Error
+- **背景**：0.0 值合法通过 `[MinValue(0)]` 约束，但会导致攻击静默失效；须以开区间 (0, 1] 替代闭区间 [0, 1]
 
 ---
 
@@ -442,16 +464,11 @@ F4 的验收标准按 **BLOCKING**（须自动化测试通过，Done 前必须�
 - When 执行 `grep -rl "class AttackNodeSO\|class ComboGraphSO\|class PerkSO\|class WeaponSO\|class EnemyInfoSO\|class LevelConfigSO\|class PlayerInfoSO" Assets/Scripts/` 并统计匹配文件数
 - Then 恰好返回 7 条文件路径（每个 F4 SO 类型对应一个 `.cs` 文件）；任何新增或删除都须更新此检查中的类名列表
 
-**AC-F4-06 Schema 变更触发下游审核** *(过程规则 — 非 QA 可自动验证项，应移至 PR checklist 模板)*
-- Given 开发者对任意 F4 SO 类型新增/修改/删除字段
-- When 变更提交 PR
-- Then PR 描述明确列出受影响下游 GDD；含"版本兼容性"条目说明是否为 breaking change
-- **注**：此项为人工流程检查，无法由 QA 或 CI 自动验证。建议在 `.github/pull_request_template.md` 中添加对应 checkbox，或实现 CI hook 检测 F4 SO 文件变更后请求人工确认，而非将其列为可验收 AC
-
 **AC-F4-07 Odin Validator：CI 中自动运行并阻断 Error**
 - Given CI 构建已配置 Odin Validator 步骤
 - When 构建执行
-- Then 日志含 "Odin Validator scan complete"；任何 Error 级条目导致构建返回非零退出码
+- Then 任何 Error 级条目导致构建返回非零退出码
+- **实现注意**：CI 实现方须在 F4 实现冲刺第一天确认 Odin Validator 的 -batchmode 调用路径（如 `-executeMethod SirenixValidatorRunner.RunAllValidators`）并将实际命令记录于本 AC；若 Odin 无文档化批处理入口，本步骤降级为 PR 前置手动检查并在 `.github/pull_request_template.md` 中添加对应 checkbox
 
 **AC-F4-09 Addressables：所有 SO 不在 Resources/**
 - Given 项目已配置 Addressables
@@ -547,20 +564,6 @@ F4 的验收标准按 **BLOCKING**（须自动化测试通过，Done 前必须�
 - When RegisterValidator 执行 `AssetDatabase.FindAssets("t:LevelConfigSO")` 并比较所有 id 字段
 - Then 报告 Error，注明冲突资产路径；构建阻止
 
-**AC-F4-31 ComboEdge 索引越界：Validator 报 Error 并阻止构建** *(BLOCKING)*
-- Given `ComboGraphSO.nodes` 含 3 个节点，某 `ComboEdge.fromNodeIndex = 3`（合法范围 0–2）
-- When RegisterValidator 执行跨字段检查：对每条 edge，验证 `fromNodeIndex` 和 `toNodeIndex` 均 < `nodes.Count`
-- Then 报告 Error "ComboEdge.fromNodeIndex 超出 nodes 范围"；构建阻止
-- **背景**：C2 运行时直接使用 `nodes[edge.fromNodeIndex]` 索引，越界导致 IndexOutOfRangeException 崩溃
-- **注**：C2 GDD 须额外添加 BLOCKING 运行时测试覆盖此路径（Validator 仅覆盖资产创作期）
-
-**AC-F4-32 hitboxDurationNormalized 须严格大于 0** *(BLOCKING)*
-- Given `hitboxDurationNormalized = 0.0`
-- When Odin Validator 扫描
-- Then 报告 Error "hitboxDurationNormalized 须 > 0；当前值 0.0 表示零持续时长 hitbox，攻击判定永远不触发"；构建阻止
-- 对比：`hitboxDurationNormalized = 0.01`（最小有效持续时长）须通过验证无 Error
-- **背景**：0.0 值合法通过 `[MinValue(0)]` 约束，但会导致攻击静默失效；须以开区间 (0, 1] 替代闭区间 [0, 1]
-
 ---
 
 ## Open Questions
@@ -581,7 +584,7 @@ F4 的验收标准按 **BLOCKING**（须自动化测试通过，Done 前必须�
   - **Legendary 旱期风险**：当前 Legendary 2% 概率下，单次完整游戏局次 61.5% 概率无 Legendary 出现。C3 GDD 须评估是否引入 Pity 计数器或保底机制，以确保 Pillar 4（构筑驱动复盘）的最高表达力层次对玩家可见。
   - **[Rule 4 传递] `effectScope` 字段缺失**：当前 PerkSO 无法区分 Perk 效果作用于自身、当前目标还是范围——C3 执行系统须先决定此语义，再评估是否需要 F4 新增 `effectScope: PerkScope` 枚举字段（`Self / SingleTarget / AreaOfEffect`）。
   - **[Rule 4 传递] `effectDurationType` 字段缺失**：`PerkParameter.value` 的作用持续时间（永久 vs 计时 vs 单次）在 F4 中未定义。若 C3 需要区分「永久增益 Perk」与「限时 buff Perk」，须由 F4 新增 `durationType: PerkDuration` 枚举及 `durationValue: float` 字段。
-  - **[Rule 4 传递] 复合效果缺失**：当前 PerkSO 每个 Perk 只能携带一条 `effectType`（单一效果）。若 C3 设计需要一张心法同时修改多个系统参数（如「Perfect 后：+20% 攻击 AND 下次连招起手节奏加宽」），须 F4 将 `effectType + parameters` 改为 `List<PerkEffect>` 复合效果列表。此为 schema 层 breaking change，须走 Rule 4 全量下游审查。
+  - **[Rule 4 传递] 复合效果缺失**：当前 PerkSO 每个 Perk 只能携带一条 `effectType`（单一效果）。若 C3 设计需要一张心法同时修改多个系统参数（如「Perfect 后：+20% 攻击 AND 下次连招起手节奏加宽」），须 F4 将 `effectType + parameters` 改为 `List<PerkEffect>` 复合效果列表。此为 schema 层 breaking change，须走 Rule 4 全量下游审查。⟶ **[已决策 2026-07-19] 选择 Option A：保持单一 effectType 字段。复合效果通过 C3 运行时组合多个 PerkSO 实例实现，不修改 F4 schema。C3 GDD 须在设计复合效果机制时明确此约束，不得要求 F4 新增 List<PerkEffect> 字段。**
   - **[Rule 4 传递] `PerkTrigger` 枚举扩展**：当前权威枚举值（见 F4-S3 表定义）为 `{Passive, OnPerfect, OnGood, OnMiss, OnComboEnd}`。以下为**扩展候选（非当前定义，待 C3 裁定后通过 Rule 4 更新）**：`OnHit`（任意命中触发）、`OnKill`（击杀触发）、`OnBeat`（任意拍点触发，不限 Perfect/Good）、`OnComboStart`（连招起手触发）、`OnComboBreak`（连招断链触发，用于惩罚/补偿机制）、`OnBeatWindow`（任意节拍窗口开启时触发）。C3 GDD 须确认触发点完整性后回传 F4，更新 F4-S3 表枚举值并触发 RegisterValidator 规则扩展。
   - **[Rule 4 传递] `PerkParameter` 类型单一**：当前 `PerkParameter.value: float` 无法携带整型计数参数（如「最大叠加层数是整数，不是浮点」）或布尔开关（如「是否无视防御」）。若 C3 需要强类型参数，须 F4 将 `value: float` 改为 `union` 或扩展为 `floatValue/intValue/boolValue` 三字段结构（此为 breaking change）。替代方案：保持 float 并在注释中约定 int 用 `Mathf.RoundToInt` 读取，由 C3 GDD 正式裁定。
 

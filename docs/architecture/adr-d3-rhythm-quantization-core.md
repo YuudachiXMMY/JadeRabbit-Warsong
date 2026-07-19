@@ -1,7 +1,7 @@
 # ADR-D3: Rhythm Quantization Core
 
 ## Status
-Proposed
+Accepted (2026-07-19)
 
 ## Date
 2026-07-18

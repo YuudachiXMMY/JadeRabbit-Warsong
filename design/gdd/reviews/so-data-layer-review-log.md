@@ -2,6 +2,15 @@
 
 ---
 
+## Review — 2026-07-19 (Sixth Pass) — Verdict: NEEDS REVISION → Revised In-Session → APPROVED
+Scope signal: L
+Specialists: game-designer, systems-designer, unity-specialist, qa-lead, creative-director
+Blocking items: 6（session 内全部修复）| Recommended: 3（已处理）
+Summary: 第六轮全量对抗性重审（4 专家并行 + creative-director 综合）在第五轮 APPROVED 基础上新发现 6 项阻塞。BLOCK-6-01（RhythmRuleModifier key strings 缺少 schema）被 creative-director 裁决降级为 Advisory（正确传递至 C3）；BLOCK-6-02（iconSprite 浅拷贝 unsafe release）降为 Tier C 文档约束。核心修复：① AnimationClip 加载归属从 F6 更正为 C2（ADR-D4 Rule D4-4 对齐）；② authoredBpm Validator 从 [MinValue(1f)] 更正为 [MinValue(60f)]，消除 1-59 静默通过漏洞；③ ComboEdge 身份模型从 int 列表索引改为 string AttackNodeSO.id（rootNodeIndex→rootNodeId，fromNodeIndex→fromNodeId，toNodeIndex→toNodeId）——消除节点重排时的静默连招破坏；④ Rule 3 新增 iconSprite 句柄共享约束文档（C3 约束声明义务）；⑤ AC-F4-02b 从 BLOCKING 降级为 ADVISORY，测试创建职责移交 C2 Story DoD；⑥ AC-F4-06 彻底删除（移至 PR checklist 模板）；⑦ AC-F4-07 删除虚构日志字符串，改为 CI 实现方确认调用路径；⑧ AC-F4-08 Condition 2 主语从 .cs 更正为 .asmdef；⑨ 新增 AC-F4-33（RegisterValidator 必须位于 Editor-only 程序集）；⑩ AC-F4-31/32 从 ADVISORY 重新归位至 BLOCKING，AC-F4-31 更新为 string ID 语义；⑪ Edge Cases 新增 cancelWeight=1.0+Standard 边界情况；⑫ Open Questions 复合效果决策锁定（Option A：C3 组合多 PerkSO 实例，F4 保持单一 effectType）。
+Prior verdict resolved: Yes — 第五轮 APPROVED；本轮全量重审新发现阻塞均 session 内修复
+
+---
+
 ## Review — 2026-07-15 (Fifth Pass) — Verdict: NEEDS REVISION → Revised In-Session → APPROVED
 Scope signal: L
 Specialists: game-designer, systems-designer, unity-specialist, qa-lead, creative-director

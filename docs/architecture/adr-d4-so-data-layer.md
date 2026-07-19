@@ -1,7 +1,7 @@
 # ADR-D4: SO Data Layer Architecture
 
 ## Status
-Proposed
+Accepted (2026-07-19)
 
 ## Date
 2026-07-19
