@@ -76,25 +76,28 @@
 - [ ] **BeatAccentMap（5/8 分组）**: 待 C4 GDD 确认需求
 - [ ] **F6 GDD 未开始**: ConfirmDSPStart 三步协议须先有 F6 GDD
 
-## Architecture Review Coverage Summary (Rev.2)
+## Architecture Review Coverage Summary (Rev.5)
 
 | 指标 | 值 |
 |------|-----|
-| Total TR-IDs | 69 |
-| Covered | 14 (20.3%) |
-| Partial | 6 (8.7%) |
-| Gap | 49 (71.0%) |
-| ADRs Reviewed | 3 (D1, D6, D7) |
-| Required ADRs | 3 (D5 P1, D2 P2, D3 P3) |
+| Total TR-IDs | 79 |
+| Covered | 28 (35.4%) |
+| Partial | 11 (13.9%) |
+| Gap | 40 (50.6%) |
+| ADRs Reviewed | 5 (D1✅, D2✅, D5✅, D6✅, D7✅) |
+| Required ADRs | D3 (P1), D4 (P2), D8 (P2), D9 (P3) |
 | Cross-ADR Conflicts | 0 |
 | GDD Revision Flags | 0 |
-| Engine Specialist Findings | 11 (4 HIGH, 4 MEDIUM, 3 LOW) |
+| Engine HIGH Risks | 0 (D2 BD risk eliminated by Unity Behavior revision) |
 
 <!-- CONSISTENCY-CHECK: 2026-07-14 | GDDs checked: 2 | Conflicts found: 0 | Registry: 4 constants registered -->
 <!-- CONSISTENCY-CHECK: 2026-07-15 | GDDs checked: 4 | Conflicts found: 0 | Stale entries fixed: 1 | Verdict: PASS -->
 <!-- CROSS-GDD-REVIEW: 2026-07-15 | GDDs reviewed: 5 | BLOCKER: 4 | WARNING: 16 | INFO: 9 | Verdict: CONCERNS -->
 <!-- ARCH-REVIEW: 2026-07-15 v1 | TRs: 69 | Covered: 12 | Partial: 5 | Gap: 52 | ADRs: 2 | Conflicts: 0 | Verdict: CONCERNS -->
 <!-- ARCH-REVIEW: 2026-07-15 v2 | TRs: 69 | Covered: 14 | Partial: 6 | Gap: 49 | ADRs: 3 | Conflicts: 0 | Verdict: CONCERNS -->
+<!-- ARCH-REVIEW: 2026-07-18 v3-updated | TRs: 79 | Covered: 22 | Partial: 8 | Gap: 49 | ADRs: 5 (4 Accepted, 1 Proposed) | Conflicts: 0 | Verdict: CONCERNS | D2 BD risk eliminated -->
+<!-- ARCH-REVIEW: 2026-07-18 v4 | TRs: 79 | Covered: 22 | Partial: 8 | Gap: 49 | ADRs: 5 (all Accepted) | Conflicts: 0 | Verdict: CONCERNS | 3 new LOW specialist findings -->
+<!-- ARCH-REVIEW: 2026-07-18 v5 | TRs: 79 | Covered: 28 | Partial: 11 | Gap: 40 | ADRs: 5 (all Accepted) | Conflicts: 0 | Verdict: CONCERNS | v4 arithmetic corrected -->
 
 ## Session Extract — /review-all-gdds 2026-07-15
 - Verdict: CONCERNS
@@ -187,8 +190,73 @@
 - Files: design/gdd/tde-integration.md (Status: In Review), design/registry/entities.yaml, design/gdd/systems-index.md
 - 下一步推荐：(1) BD M0 Spike（ADR-D2 Accept 阻断），(2) ADR-D3 Rhythm Core，(3) C1 GDD
 
+## Session Extract — Unity Behavior M0 Spike 2026-07-18
+- **Unity Behavior Package (com.unity.behavior) M0 Spike: PASS** ✅
+- 版本: v1.0.16（正式发布，非 Preview）— 与 Unity 6.3 LTS 原生兼容
+- 0 BLOCKER / 2 WARNING（partial class 要求 + 图编辑器绑定模式）
+- API 验证: `BehaviorGraphAgent.SetVariableValue<T>()` ✅ / `Node.Status.Running/Success/Failure` ✅ / `BlackboardVariable<T>` ✅
+- 功能超集 vs BD: EventChannel 事件驱动 + ObserverAbort 响应式 + RunSubgraphDynamic Boss 阶段
+- **建议: ADR-D2 改选 Unity Behavior Package 替代 Behavior Designer**
+- Report: docs/architecture/m0-spike-unity-behavior.md
+- 下一步: (1) ADR-D2 修订, (2) ADR-D3 Rhythm Core, (3) C1 GDD
+
+## Session Extract — Architecture Review v3 Update 2026-07-18
+- **v3 报告更新** — 反映 ADR-D2 修订（BD → Unity Behavior Package）
+- D2 状态: Proposed → **Accepted** ✅
+- BD serialization HIGH risk **已消除**（Unity Behavior 为第一方包，M0 Spike 0 BLOCKER）
+- TR-tde-008 文本修正: "Behavior Designer" → "Unity Behavior Package (com.unity.behavior)"
+- 文件更新: architecture-review-2026-07-18.md, traceability-index.md, tr-registry.yaml
+- Blocking Issues 更新: D2 M0 Spike 已完成 → 替换为 D5 Accept
+- **下一步**: (1) ~~ADR-D5 Accept~~ DONE, (2) ADR-D3 Rhythm Core, (3) C1 GDD
+
+## Session Extract — ADR-D5 Accepted 2026-07-18
+- **ADR-D5 Animation Pipeline — Accepted** ✅ (PlayMode 验证后)
+- PlayMode 验证通过: `KeepChildrenConnected=true` ✅ / `OnEnd` at Speed>1.0 ✅ / `PlayController()` handoff ✅ / TDE locomotion unaffected ✅
+- 文件更新: adr-d5-animation-pipeline.md (Status→Accepted, Verification Required→全部VERIFIED)
+- 架构评审更新: architecture-review-2026-07-18.md (ADR header, Coverage by ADR, Engine Specialist, Verdict, Blocking Issues, Next Steps, Dependency Order)
+- Traceability Index 更新: D5 → Accepted
+- 5 ADRs 全部 Accepted (D1, D2, D5, D6, D7) ✅
+- **下一步**: (1) ADR-D3 Rhythm Quantization Core (P1，解锁 ~20 TRs), (2) C1 GDD
+
+## Session Extract — F6 GDD 修订 2026-07-18
+- **F6 tde-integration.md — MAJOR REVISION NEEDED → Revised (Pending Re-review)**
+- 8 阻塞项全部解决：
+  1. Animancer 架构对齐 ADR-D5 PlayController 模型（Core Rule 7 重写）
+  2. NOMINAL_BPM → per-node `AttackNodeSO.AuthoredBpm`（Core Rule 8, Formula, AC-F6-13/18）
+  3. Root Motion API 修正：`AnimancerState` → `Animator.applyRootMotion`（Core Rule 9, AC-F6-14）
+  4. BGM 过渡策略新增（小节边界无缝换片，BGM 过渡策略章节）
+  5. ConfirmDSPStart 三步协议新增（Core Rule 11）
+  6. FMOD 异步模式验证新增（Core Rule 12, AC-F6-19）
+  7. NOMINAL_BPM 安全范围修正 [60,180] → [96,160]（Tuning Knobs）
+  8. AC-F6-12/15/16 重写为 ADR-D5 架构
+- 用户选择 Option A（实时 UpdateBpm()），ADR-D5 需补充修订
+- 新增 AC-F6-19~22；OQ-02 标记为已解决
+- EC-03/04 旧 Layer 引用清理；Dependencies C2 行更新为 AnimancerAttackPlayer API
+- systems-index: F6 → Revised — Pending Re-review；ADR-D5 → Accepted
+- review log 已创建: design/gdd/reviews/tde-integration-review-log.md
+- **下一步**: /clear → /design-review design/gdd/tde-integration.md（F6 re-review）；或推进 ADR-D3 Rhythm Core
+
+## Session Extract — Architecture Review v4 2026-07-18
+- **`/architecture-review full` (v4) — 完成** ✅
+- Verdict: **CONCERNS** (与 v3 一致 — 无新 ADR，无 GDD 变更)
+- 5 ADRs reviewed: D1, D2, D5, D6, D7 — 全部 Accepted
+- Traceability: 79 TRs — 22 Covered (27.8%) / 8 Partial (10.1%) / 49 Gap (62.0%)
+- v4 新增引擎专家发现 3 个 LOW 风险
+- **下一步**: (1) ADR-D3 Rhythm Quantization Core (P1), (2) ADR-D4 SO Data Layer (P2), (3) C1 GDD
+
+## Session Extract — Architecture Review v5 2026-07-18
+- **`/architecture-review full` (v5) — 完成** ✅
+- Verdict: **CONCERNS** (同 v4 — 无新 ADR，无 GDD 变更)
+- v5 修正 v4 算术错误: per-system 行与 Total 行不一致
+- Traceability: 79 TRs — **28 Covered (35.4%)** / 11 Partial (13.9%) / 40 Gap (50.6%)
+- Delta: +7.6pp (v4 报告 27.8% → v5 实际 35.4%)
+- 引擎专家发现沿用 v4（3 LOW 风险，0 HIGH）
+- Files updated: architecture-review-2026-07-18.md (v5), traceability-index.md (Rev.5)
+- TR registry: 79 entries unchanged
+- **下一步**: (1) ADR-D3 Rhythm Quantization Core (P1), (2) ADR-D4 SO Data Layer (P2), (3) C1 GDD
+
 <!-- STATUS -->
 Epic: Pre-Production
-Feature: F6 GDD
-Task: F6 GDD 完成（In Review）；下一步：BD M0 Spike / ADR-D3 / C1 GDD
+Feature: Architecture Review v5 Complete — 5/5 ADRs Accepted, 35.4% coverage
+Task: 下一步：ADR-D3 Rhythm Quantization Core (P1)
 <!-- /STATUS -->

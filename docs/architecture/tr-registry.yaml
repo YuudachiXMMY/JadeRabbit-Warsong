@@ -668,7 +668,7 @@ requirements:
   - id: TR-tde-008
     system: tde
     gdd: design/gdd/tde-integration.md
-    requirement: "Enemy AI uses Behavior Designer (not TDE AIBrain) — BD BehaviorTree is sole high-level AI driver; no coexistence with TDE AIBrain/AIAction/AIDecision on same prefab"
+    requirement: "Enemy AI uses Unity Behavior Package (com.unity.behavior) — BehaviorGraphAgent is sole high-level AI driver; no coexistence with TDE AIBrain/AIAction/AIDecision on same prefab"
     created: 2026-07-18
-    revised: ""
+    revised: "2026-07-18"
     status: active

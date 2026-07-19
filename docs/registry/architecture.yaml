@@ -125,15 +125,15 @@ interfaces:
   - contract: combat_director_attack_token
     status: active
     pattern: direct_call
-    producer: fe1-enemy-ai (CombatDirectorTokenTask BD Action Task)
+    producer: fe1-enemy-ai (CombatDirectorTokenAction Unity Behavior Action)
     consumers:
       - c4-combat-director
     adr: docs/architecture/adr-d2-enemy-ai-framework.md
-    signal_signature: "CombatDirectorTokenTask calls CombatDirector.RequestAttackToken(enemy) and blocks (returns Running) until OnTokenGranted() callback or TimeoutBeats elapses. No enemy attack CharacterAbility fires without a token grant."
+    signal_signature: "CombatDirectorTokenAction calls CombatDirector.RequestAttackToken(enemy) and blocks (returns Status.Running) until OnTokenGranted() callback or TimeoutBeats elapses. No enemy attack CharacterAbility fires without a token grant."
     referenced_by:
       - docs/architecture/adr-d2-enemy-ai-framework.md
     added: 2026-07-18
-    revised: ""
+    revised: "2026-07-18"  # ADR-D2 revised: BD CombatDirectorTokenTask → Unity Behavior CombatDirectorTokenAction
 
 # Example:
 #
@@ -240,25 +240,25 @@ api_decisions:
 
   - purpose: ai_beat_state_injection
     status: active
-    api: "BD Blackboard (SharedVariable) written by BeatClockBridge.HandleBeatSnapshot() via BehaviorTree.SetVariableValue()"
-    not: "AI tasks reading BeatClock directly; AI tasks subscribing to BeatStateSnapshot events themselves"
+    api: "Unity Behavior Blackboard (BlackboardVariable<T>) written by BeatClockBridge.HandleBeatSnapshot() via BehaviorGraphAgent.SetVariableValue<T>()"
+    not: "AI Action nodes reading BeatClock directly; AI nodes subscribing to BeatStateSnapshot events themselves"
     adr: docs/architecture/adr-d2-enemy-ai-framework.md
-    reason: "beatclock_lifecycle_bypass forbidden pattern and beat_clock_lifecycle state ownership (TDELifecycleAdapter) prohibit AI from coupling directly to BeatClock. BeatClockBridge is the single Blackboard writer, decoupling all AI tasks from the rhythm subsystem."
+    reason: "beatclock_lifecycle_bypass forbidden pattern and beat_clock_lifecycle state ownership (TDELifecycleAdapter) prohibit AI from coupling directly to BeatClock. BeatClockBridge is the single Blackboard writer, decoupling all AI Action nodes from the rhythm subsystem."
     referenced_by:
       - docs/architecture/adr-d2-enemy-ai-framework.md
     added: 2026-07-18
-    revised: ""
+    revised: "2026-07-18"  # ADR-D2 revised: BD SharedVariable/BehaviorTree → Unity Behavior BlackboardVariable<T>/BehaviorGraphAgent
 
   - purpose: enemy_movement_api
     status: active
     api: "CharacterMovement.SetMovement(Vector2) — TDE CharacterAbility layer"
-    not: "TopDownController.SetMovement(Vector3) called directly from BD Action Tasks with a Vector2 argument"
+    not: "TopDownController.SetMovement(Vector3) called directly from Unity Behavior Action nodes with a Vector2 argument"
     adr: docs/architecture/adr-d2-enemy-ai-framework.md
-    reason: "TopDownController.SetMovement() takes Vector3; Vector2→Vector3 implicit conversion sets z=0, which in TopDownController2D's z→y remapping causes y-axis movement to always be 0 (up/down movement broken in 2D). CharacterMovement.SetMovement(Vector2) handles 2D/3D coordinate mapping internally and is the correct public API for BD tasks to use. Verified: CharacterMovement.cs line 200."
+    reason: "TopDownController.SetMovement() takes Vector3; Vector2→Vector3 implicit conversion sets z=0, which in TopDownController2D's z→y remapping causes y-axis movement to always be 0 (up/down movement broken in 2D). CharacterMovement.SetMovement(Vector2) handles 2D/3D coordinate mapping internally and is the correct public API for Unity Behavior Action nodes to use. Verified: CharacterMovement.cs line 200."
     referenced_by:
       - docs/architecture/adr-d2-enemy-ai-framework.md
     added: 2026-07-18
-    revised: ""
+    revised: "2026-07-18"  # ADR-D2 revised: "BD Action Tasks" → "Unity Behavior Action nodes"
 
   - purpose: animation_attack_pipeline
     status: active
@@ -268,6 +268,17 @@ api_decisions:
     reason: "HybridAnimancerComponent is Animancer 8.4.0's first-class API for coexisting with an existing Animator Controller (TDE locomotion). It sets KeepChildrenConnected=true on the PlayableGraph, preventing AnimatorControllerPlayable disconnection. Plain AnimancerComponent triggers OptionalWarning.NativeControllerHumanoid and does not set KeepChildrenConnected."
     referenced_by:
       - docs/architecture/adr-d5-animation-pipeline.md
+    added: 2026-07-18
+    revised: ""
+
+  - purpose: enemy_ai_framework
+    status: active
+    api: "com.unity.behavior v1.0.16 (Unity Behavior Package) — BehaviorGraphAgent component replaces TDE AIBrain on all enemy prefabs"
+    not: "Behavior Designer (Opsive BehaviorTree); TDE AIBrain/AIAction/AIDecision on enemies; custom C# behavior tree"
+    adr: docs/architecture/adr-d2-enemy-ai-framework.md
+    reason: "M0 Spike (2026-07-18) PASS — 0 BLOCKERs, 2 warnings in Unity 6.3 LTS. First-party Unity package: no additional vendor dependency vs Behavior Designer. API-equivalent: BehaviorGraphAgent replaces BehaviorTree, BlackboardVariable<T> replaces SharedVariable<T>, EventChannel<T> provides native event bus, RunSubgraphDynamic supports Boss phase transitions. Custom BT ruled out: redundant effort given Unity Behavior is available at zero cost."
+    referenced_by:
+      - docs/architecture/adr-d2-enemy-ai-framework.md
     added: 2026-07-18
     revised: ""
 
@@ -326,10 +337,11 @@ forbidden_patterns:
 
   - pattern: tde_aibrain_on_bd_enemies
     status: active
-    description: "Enemy prefabs that use Behavior Designer BehaviorTree as the AI controller must NOT include TDE AIBrain, AIAction, or AIDecision components. The two AI systems must not coexist on the same enemy character."
-    why: "TDE AIAction and AIDecision components depend on AIBrain.PerformActions() loop to execute. If AIBrain is absent, these components are inert — they produce no behavior but add confusion and potential initialization errors. BD BehaviorTree is the sole high-level AI driver on enemies; mixing both systems creates split authority over AI behavior."
+    description: "Enemy prefabs that use Unity Behavior BehaviorGraphAgent as the AI controller must NOT include TDE AIBrain, AIAction, or AIDecision components. The two AI systems must not coexist on the same enemy character."
+    why: "TDE AIAction and AIDecision components depend on AIBrain.PerformActions() loop to execute. If AIBrain is absent, these components are inert — they produce no behavior but add confusion and potential initialization errors. BehaviorGraphAgent is the sole high-level AI driver on enemies; mixing both systems creates split authority over AI behavior."
     adr: docs/architecture/adr-d2-enemy-ai-framework.md
     added: 2026-07-18
+    revised: "2026-07-18"  # ADR-D2 revised: "Behavior Designer BehaviorTree" → "Unity Behavior BehaviorGraphAgent"
 
   - pattern: animancer_stop_for_controller_handoff
     status: active

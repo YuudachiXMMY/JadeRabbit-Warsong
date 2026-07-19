@@ -24,7 +24,7 @@
 | F3 | Input 事件系统 | Foundation | **MVP** | **Approved** | `design/gdd/input-event-system.md` | — |
 | F4 | ScriptableObject 数据层（推断） | Foundation | **MVP** | **In Review** | `design/gdd/so-data-layer.md` | — |
 | F5 | 存档/持久化系统 | Foundation | **MVP** | **Approved** | `design/gdd/save-persistence.md` | — |
-| F6 | TopDownEngine & Animancer 集成层 | Foundation | **MVP** | **In Review** | `design/gdd/tde-integration.md` | ADR-D1 (Accepted), ADR-D5 (Proposed) |
+| F6 | TopDownEngine & Animancer 集成层 | Foundation | **MVP** | **In Review** | `design/gdd/tde-integration.md` | ADR-D1 (Accepted), ADR-D5 (Accepted) |
 | C1 | 节奏量化攻击系统 | Core | **MVP** | Not Started | `design/gdd/rhythm-core.md` | F2, F3 |
 | C2 | 连招图系统 | Core | **MVP** | Not Started | `design/gdd/combo-system.md` | F4, C1 |
 | C3 | 心法构筑系统 | Core | **MVP** | Not Started | `design/gdd/perk-system.md` | F4, C1 |

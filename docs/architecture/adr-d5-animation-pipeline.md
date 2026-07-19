@@ -1,7 +1,7 @@
 # ADR-D5: Animation Pipeline — Animancer BPM-Adaptive Attack Layer
 
 ## Status
-Proposed
+Accepted
 
 ## Date
 2026-07-18
@@ -15,7 +15,7 @@ Proposed
 | **Knowledge Risk** | MEDIUM — Animancer is a third-party package (Kybernetik); Unity 6.3 LTS compatibility verified via installed source (Animancer 8.4.0 at `Packages/com.kybernetik.animancer/`) |
 | **References Consulted** | `docs/engine-reference/unity/modules/animation.md`, `docs/engine-reference/unity/VERSION.md`, `docs/architecture/adr-d1-tde-integration.md`, Animancer 8.4.0 source (`Runtime/HybridAnimancerComponent.cs`, `Runtime/Core/Nodes/AnimancerNodeBase.cs`, `Runtime/Core/Events/AnimancerEvent.Sequence.cs`) |
 | **Post-Cutoff APIs Used** | `HybridAnimancerComponent` (Kybernetik Animancer 8.4.0 — wraps Unity PlayableGraph API; first-class hybrid Animator Controller coexistence), `AnimancerState.Speed` (inherited from `AnimancerNodeBase`), `AnimancerState.Events.OnEnd` |
-| **Verification Required** | 1. ~~Confirm Animancer supports Unity 6000.3.x~~ VERIFIED — Animancer 8.4.0 installed and compiling in project. 2. Verify `HybridAnimancerComponent` Hybrid mode with TDE Animator Controller in PlayMode — specifically that `KeepChildrenConnected = true` prevents `AnimatorControllerPlayable` disconnection when attack layer weight drops to zero. 3. Verify `AnimancerState.Events.OnEnd` fires correctly under `state.Speed > 1.0` (Animancer source confirms threshold-based invocation at `DefaultExecutionOrder(-30000)`, no frame-skip — but integration test needed). |
+| **Verification Required** | 1. ~~Confirm Animancer supports Unity 6000.3.x~~ VERIFIED — Animancer 8.4.0 installed and compiling in project. 2. ~~Verify `HybridAnimancerComponent` Hybrid mode with TDE Animator Controller in PlayMode~~ **VERIFIED (2026-07-18)** — `KeepChildrenConnected = true` confirmed preventing `AnimatorControllerPlayable` disconnection; TDE locomotion unaffected during and after Animancer attack state. PlayController() handoff confirmed. 3. ~~Verify `AnimancerState.Events.OnEnd` fires correctly under `state.Speed > 1.0`~~ **VERIFIED (2026-07-18)** — `OnEnd` fires reliably at Speed > 1.0; threshold-based invocation confirmed; no frame-skip observed. All PlayMode validation criteria passed — ADR Accepted. |
 
 ## ADR Dependencies
 

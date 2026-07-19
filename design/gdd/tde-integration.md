@@ -56,20 +56,43 @@ F6 的玩家幻想是**天衣无缝的动作应噬**——每一次出招、侧�
 6. **Additive 加载过滤**
    `TDELifecycleAdapter.OnSceneLoaded()` 仅响应 `LoadSceneMode.Single`（整场景切换），忽略 `LoadSceneMode.Additive`（TDE LevelManager 用于房间拼接）。房间内 BPM 变化通过 `BeatClock.RequestBPMChange()` 处理，不重新调用 `Play()`。
 
-7. **Animancer 攻击层边界合约**
-   - **Layer 0（TDE Animator Controller — TDE 完整拥有）**：空闲、行走、冲刺、死亡等所有非攻击动画。Animancer 不干预此层。
-   - **Layer 1（Animancer Override 层 — Animancer 完整拥有）**：所有攻击动画（轻攻击、重攻击、充能攻击、连招节点）。
-   - 攻击**开始**时 Layer 1 权重 = 1.0（全覆盖 TDE Base Layer）；攻击动画**完成**后权重渐变至 0.0（TDE 移动层重新接管）。
-   - 层权重过渡由 **C2（连招图系统）** 在攻击状态机中管理；F6 负责在 Prefab 上正确配置层结构并暴露 `AnimancerLayer` 引用。
+7. **Animancer 攻击层边界合约（ADR-D5 PlayController 模型）**
+   采用 `HybridAnimancerComponent`（非普通 `AnimancerComponent`）与 TDE Animator Controller 共存：
+   - **无攻击时**：`HybridAnimancerComponent` 的 `ControllerState`（`KeepChildrenConnected = true`）使 TDE 的 Animator Controller 完整驱动角色输出（移动、冲刺、死亡、复活）。Animancer 不干预。
+   - **攻击开始时**：C2 `ComboPlayer` 调用 `AnimancerAttackPlayer.PlayAttack(attackNode, loadedClip, onComplete)`，Animancer 以当前 BPM 速度播放该 Clip，覆盖 TDE Animator Controller 输出。
+   - **攻击结束时**（Clip 完成 OnEnd 或 `StopAttack()` 被调用）：`AnimancerAttackPlayer` 调用 `_animancer.PlayController()`，将控制权归还给 TDE Animator Controller；`onComplete` 回调通知 C2 推进连招图（死亡中断时不触发）。
+   - **死亡时**：`AnimancerAttackPlayer` 通过 `MMEventListener<TopDownEngineEvent>` 订阅 `PlayerDeath`，调用 `StopAttack()` → `PlayController()`，确保 TDE 死亡动画立即接管，不存在「幽灵攻击层」。
+   - F6 负责在 Character Prefab 上正确配置 `HybridAnimancerComponent` 和 `AnimancerAttackPlayer`，并通过 Inspector 序列化字段暴露引用供 C2 使用。
 
-8. **攻击动画制作 BPM 标准（Nominal BPM = 120）**
-   所有攻击 Clip 以 **120 BPM** 为参照制作，即 Clip 时长 = 攻击动作在 120 BPM 节奏下的自然持续时长。运行时速度缩放公式见 Formulas 节。
+8. **攻击动画制作 BPM 标准（AuthoredBpm per AttackNodeSO）**
+   每个攻击 Clip 以其 `AttackNodeSO.AuthoredBpm`（默认 120 BPM）为制作参照 BPM。运行时速度 = `currentBPM / attackNode.AuthoredBpm`。速度缩放公式见 Formulas 节。
 
 9. **Root Motion 禁用**
-   所有 Animancer 攻击层 State 均设 `applyRootMotion = false`。TDE 的 `CharacterMovement` 基于 Rigidbody 物理控制位移，Root Motion 会产生位置漂移冲突。
+   在 Character Prefab 的 `Animator` 组件上禁用 **Apply Root Motion**（Inspector 取消勾选），或在 `AnimancerAttackPlayer.Awake()` 中通过 `_animancer.Animator.applyRootMotion = false` 一次性设置。TDE 的 `CharacterMovement` 基于 Rigidbody 物理控制位移，Root Motion 会产生位置漂移冲突。
 
 10. **订阅者生命周期**
-    `TDELifecycleAdapter` 在 `OnEnable()` 注册 `MMEventListener<TopDownEngineEvent>` 和 `SceneManager.sceneLoaded`；在 `OnDisable()` 取消注册，防止 DontDestroyOnLoad 单例跨场景重复注册。
+    `TDELifecycleAdapter` 在 `OnEnable()` 注册 `MMEventListener<TopDownEngineEvent>` 和 `SceneManager.sceneLoaded`；在 `OnDisable()` 取消注册，防止重复注册。
+    **注意**：DontDestroyOnLoad 对象在场景切换时不触发 `OnEnable`/`OnDisable`（因对象未被销毁），因此正常场景切换不存在重复注册风险。但若对该对象调用 `SetActive(false)` 再 `SetActive(true)`，则 `OnEnable`/`OnDisable` 会被触发——须确保此场景下注册/取消注册逻辑的幂等性。
+
+11. **ConfirmDSPStart 三步协议（F2 接口合约，强制）**
+    `TDELifecycleAdapter` 在调用 `BeatClock.Play(bgmRef, bpm, timeSig)` 前后，**必须**遵循 F2 GDD 规定的三步协议（详见 `audio-beat-clock.md` Core Rule 12）：
+    1. **最低提前量**：`targetDSPTime = AudioSettings.dspTime + 0.5`（500ms 提前量），确保所有平台缓冲配置下均能成功调度。
+    2. **乐观预锚定**：调用 `BeatClock.Play()` 后**立即**调用 `BeatClock.ConfirmDSPStart(targetDSPTime)` 作为初始锚点，消除「第一拍已广播而锚点未确认」的竞争窗口。
+    3. **实际起始校正（FMOD 路径）**：使用 FMOD `scheduledStartDSPClock / fmodSampleRate` 计算 `actual_start`；若 `|actual_start - targetDSPTime| > 5ms`，调用 `BeatClock.ConfirmDSPStart(actual_start)` 重锚定；偏差 ≤ 5ms 时无需第二次调用。
+    **违反此协议将导致移动端 DSP 锚点漂移最高 93ms，超出 FE3 校准范围，使节拍判定系统失效。**
+
+12. **FMOD 异步模式强制要求（F3 接口合约）**
+    `TDELifecycleAdapter.Start()` 验证 FMOD RuntimeManager 已初始化后，通过**协程**（非同帧二次读取）额外确认 FMOD 以 `FMOD_INIT_NORMAL`（默认异步）模式运行：
+    - `Start()` 读取 `_beatClock.DSPClock.GetDspTime()` 为 `t1`，启动协程 `StartCoroutine(VerifyFMODAsyncMode())`。
+    - 协程执行 `yield return null`（等待一帧进入下一 Player Loop），再次读取 `GetDspTime()` 为 `t2`。
+    - 若 `t2 > t1`：验证通过，协程内执行正常启动序列（调用待执行的 `BeatClock.Play()` + `EnableGameplayInput()`）。
+    - 若 `t2 <= t1`：记录 fatal 错误 `[F6-FATAL] FMOD running in sync mode — BeatClock start blocked`，不调用 `Play()`，游戏保持冻结。
+
+    **IDSPClock 访问路径**：通过 `_beatClock.DSPClock`（BeatClock 暴露的只读属性）获取，无需额外 Inspector 序列化字段。
+
+    **启动序列调整**：`OnSceneLoaded(Single)` 检测到待执行的启动请求后，将参数缓存（`bgmRef`、`bpm`、`timeSig`）并标记 `_pendingSceneStart = true`；协程验证通过后执行缓存的启动序列。若协程尚未完成而 `OnSceneLoaded` 已触发，协程负责在验证通过后执行已缓存的序列。
+
+    同步模式下 F3 的 DSP 时间戳将在无 `RuntimeManager.Update()` 的帧内停滞，C1 节拍判定将产生系统性误差。
 
 ---
 
@@ -98,10 +121,28 @@ F6 自身不维护内部状态机，但其事件响应决定了系统的全局�
 | F6 **→** F2 | BeatClock | `Play(bgmRef, bpm, timeSig)` / `Stop()` / `Pause()` / `Resume()` | 直接方法调用（独家控制） |
 | F6 **→** F3 | InputEventBus | `EnableGameplayInput()` / `EnableUIInput()` / `DisableAllInput()` | 直接方法调用 |
 | F4 **→** F6 | LevelConfigSO | `Bpm`、`TimeSignature`、`BgmAssetReference`（每场景注入） | Inspector 序列化字段 |
-| C2 **→** F6 | 连招图系统 | 设置 `AnimancerLayer.Weight`（1.0/0.0）与 `AnimancerState.Speed` | 访问 F6 暴露的 `AnimancerLayer` 引用 |
+| C2 **→** F6 | 连招图系统 | 调用 `AnimancerAttackPlayer.PlayAttack(attackNode, clip, onComplete)` 发起攻击；`StopAttack()` 取消；`UpdateBpm(newBpm)` 中途更新速度 | 访问 F6 在 Character Prefab 上配置的 `AnimancerAttackPlayer` 组件引用 |
 | FE2 **→** F6 | 房间系统 | `BeatClock.RequestBPMChange(newBpm)`（房间级 BPM 切换） | 通过 F2 的 `RequestBPMChange()` API（非重新调用 `Play()`） |
 | F6 **（通过 TDE）→** C6/FE2 | Hitbox 判定 / 房间系统 | TDE 原生碰撞检测与 `LevelManager` 场景管理基础（F6 正确配置 TDE 后自动提供） | TDE 内置组件（间接） |
 | F6 **（通过 Feel）→** PL2 | VFX / 节奏反馈 | MMFeedbacks/Feel 基础设施由 TDE 捆绑提供；PL2 订阅节奏事件发起反馈序列 | MMFeedbacks 组件（间接） |
+
+---
+
+### BGM 过渡策略（BPM 变化时的音频内容处理）
+
+> **职责说明**：F2 GDD 将「BPM 变化时的 BGM 音频内容过渡」明确委托给 F6 定义。F2 仅负责时钟层的节拍计算切换，不持有、不感知 BGM Clip 的切换。
+
+**过渡模式：小节边界无缝换片（Seamless Measure-Boundary Crossfade）**
+
+当 `BeatClock.RequestBPMChange(newBpm)` 被接受时（通常由 Boss 阶段切换触发），F6 执行以下序列：
+
+1. **预加载目标 BGM**：`TDELifecycleAdapter` 订阅 F2 的 BPM 变化接受事件，接到通知后立即通过 FMOD（ADR-D6）预加载目标 BPM 对应的 BGM 资产（`LevelConfigSO.BgmAssetReference` 或 Boss 阶段 SO 中的变体引用）。
+2. **等待小节边界**：监听 `BeatClock.OnBeatExact`，等待 `beat_index_in_measure == numerator - 1`（当前拍号的最后一拍），即下一小节起点。
+3. **无缝换片**：在小节边界通过 `_beatClock.ScheduleBGMTransition(dspTime, newBgmRef)` 精确对齐执行新 BGM 的起始播放（或 Crossfade）；同帧更新 `BeatClock` 的时钟参数为新 BPM，确保音乐与节拍时钟同步切换。
+
+    **接口归属**：`BeatClock.ScheduleBGMTransition(double dspTime, AssetReference bgmRef)` 是 F2 BeatClock 的**公开方法**（需在 F2 GDD 中新增定义），F6 通过已有的 `_beatClock` 引用调用，不穿透 F2 内部的 `IAudioPlayer` 测试注入接口。此方法须在 F2 GDD `audio-beat-clock.md` 的 Core Rules 或 API 节中补充声明（Post-Approval Action Item，F2 GDD 下次修订时补入）。
+
+**MVP 限制**：MVP 阶段每个关卡 BPM 固定（通过 `LevelConfigSO`），仅 Boss 阶段切换可能触发 BPM 变化。Boss 战 BGM 切换的完整细节（含阶段 SO schema）由 `design/gdd/boss-battle.md`（FE4 GDD）进一步定义；F6 提供基础的换片基础设施，FE4 提供配置数据。
 
 ---
 
@@ -110,27 +151,27 @@ F6 自身不维护内部状态机，但其事件响应决定了系统的全局�
 ### F6-FORMULA-01：攻击动画速度缩放
 
 ```
-attackAnimSpeed = clamp(currentBPM / nominalBPM, SPEED_MIN, SPEED_MAX)
+attackAnimSpeed = clamp(currentBPM / authoredBpm, SPEED_MIN, SPEED_MAX)
 ```
 
 **变量定义**
 
 | 变量 | 类型 | 范围 | 来源 | 说明 |
 |------|------|------|------|------|
-| `currentBPM` | float | [80, 240] | F2 BeatClock（实时） | 当前关卡激活 BPM。**Option A：实时更新**——BPM 变化立即生效，即使处于攻击动画中途 |
-| `nominalBPM` | float | 120（常量） | F6 Constants | 所有攻击 Clip 的制作参照 BPM，定义为 `NOMINAL_BPM = 120f` |
+| `currentBPM` | float | [80, 240] | F2 BeatClock（实时读取） | 当前关卡激活 BPM |
+| `authoredBpm` | float | [60, 240] | `AttackNodeSO.AuthoredBpm`（默认 120f） | 攻击 Clip 制作参照 BPM，per-node 可配置。详见 ADR-D5 F4 Schema |
 | `SPEED_MIN` | float | 0.5（常量） | F6 Constants | 安全限幅下界，防止极低 BPM 导致动画卡顿 |
 | `SPEED_MAX` | float | 2.5（常量） | F6 Constants | 安全限幅上界，防止异常 BPM 输入导致动画闪现 |
 | **输出 `attackAnimSpeed`** | float | [0.5, 2.5] | — | 写入 `AnimancerState.Speed`，控制攻击 Clip 播放速率 |
 
-**正常游戏运行输出范围**：`currentBPM ∈ [80, 240]` → `attackAnimSpeed ∈ [0.667, 2.0]`
+**正常游戏运行输出范围**（`authoredBpm = 120`，`currentBPM ∈ [80, 240]`）：`attackAnimSpeed ∈ [0.667, 2.0]`
 
-安全限幅 [0.5, 2.5] 宽于数学范围，仅用于拦截超出 `bpm_range` 注册值的异常输入。限幅触发时记录 Warning：`[F6] attackAnimSpeed clamped from {raw:.3f} to {clamped:.3f}`
+安全限幅 [0.5, 2.5] 宽于正常数学范围，仅用于拦截超出 `bpm_range` 注册值的异常输入。限幅触发时记录 Warning：`[F6] attackAnimSpeed clamped from {raw:.3f} to {clamped:.3f}`
 
-**实例计算**（以 0.5 秒攻击 Clip 为基准）
+**实例计算**（以 authoredBpm=120，0.5 秒攻击 Clip 为基准）
 
-| BPM | attackAnimSpeed | 0.5s Clip 实际时长 |
-|-----|-----------------|-------------------|
+| currentBPM | attackAnimSpeed | 0.5s Clip 实际时长 |
+|------------|-----------------|-------------------|
 | 80  | 0.667×          | 0.750 s           |
 | 100 | 0.833×          | 0.600 s           |
 | **120** | **1.000×** | **0.500 s（参照）** |
@@ -139,9 +180,11 @@ attackAnimSpeed = clamp(currentBPM / nominalBPM, SPEED_MIN, SPEED_MAX)
 | 200 | 1.667×          | 0.300 s           |
 | 240 | 2.000×          | 0.250 s           |
 
-**更新策略（Option A — 实时更新）**
+**更新策略（Option A — 实时更新，via ADR-D5 `UpdateBpm()`）**
 
-`C2 连招图系统`在每拍回调（`BeatClock.OnBeat`）中重新计算 `attackAnimSpeed` 并写入 `AnimancerState.Speed`。BPM 变化（含 Boss 阶段切换时的 `RequestBPMChange()`）立即反映到当前正在播放的攻击动画速率，无需等待当前动画完成。
+速度在 **攻击开始时** 由 `AnimancerAttackPlayer.PlayAttack()` 一次性设置（`state.Speed = currentBPM / authoredBpm`）。当 BPM 在攻击动画中途变化（含 Boss 阶段切换时的 `RequestBPMChange()`），C2 通过订阅 BeatClock 的 BPM 变化事件，**立即**调用 `AnimancerAttackPlayer.UpdateBpm(newBpm)` 更新速度——此 API 仅更新 `_currentState.Speed`，不重置 normalized time，不中断动画。
+
+⚠ **ADR-D5 对齐说明**：ADR-D5 当前描述「MVP 中不在攻击中途更新速度」；本 GDD 选择 Option A（中途更新），须向 ADR-D5 提交修订，明确 `UpdateBpm()` 方法在 MVP 路径中亦被调用。在修订完成前，`UpdateBpm()` 已在 ADR-D5 中定义为合法 API，使用不违反接口合约。
 
 ---
 
@@ -167,21 +210,29 @@ attackAnimSpeed = clamp(currentBPM / nominalBPM, SPEED_MIN, SPEED_MAX)
 
 ### EC-03：Boss 阶段切换时的 BPM 骤跳（攻击动画中途）
 
-**情境**：玩家正在执行攻击动画（Layer 1 权重 = 1.0），Boss 阶段切换触发 `RequestBPMChange(120 → 200)`。
+**情境**：玩家正在执行攻击动画（`AnimancerAttackPlayer` 正在播放攻击 Clip），Boss 阶段切换触发 `RequestBPMChange(120 → 200)`。
 
-**行为（Option A 实时更新）**：`C2` 在下一个 `OnBeat` 回调时读取新 `currentBPM`，计算 `attackAnimSpeed = 200/120 = 1.667`，立即写入 `AnimancerState.Speed`。当前攻击动画加速播放，不等待完成。玩家感知：这一刀在节奏加快的瞬间变得更凌厉。
+**行为（Option A 实时更新）**：C2 订阅 BeatClock 的 BPM 变化事件，收到通知后立即调用 `AnimancerAttackPlayer.UpdateBpm(200)`——内部将 `_currentState.Speed = 200 / attackNode.AuthoredBpm = 1.667`，不重置 normalized time。当前攻击动画加速播放，不等待完成。玩家感知：这一刀在节奏加快的瞬间变得更凌厉。
 
 **注意**：动画剩余时长缩短，C2 必须能处理「动画比预期提前完成」的情况。这是 C2 的责任，F6 不补偿。
+
+**⚠ UpdateBpm() + OnEnd 同帧竞争警告**：若 BPM 骤跳事件恰好在攻击 `NormalizedTime > 0.9` 时到达，`UpdateBpm()` 与 `AnimancerState.Events.OnEnd` 可能在**同一帧**触发。此时 C2 的 BPM 事件处理逻辑和 `onComplete` 回调均可能在同帧运行，导致连招图推进信号被同帧发送两次。
+
+**F6 的边界**：F6 不防重入——`AnimancerAttackPlayer.UpdateBpm()` 在 `OnEnd` 已触发后若 `_currentState == null`（`OnAnimationEnd()` 已清空）则空操作，不产生第二次 `onComplete`。
+
+**C2 的强制接口合约**：C2 须保证 `onComplete` 的连招图推进逻辑**幂等**——同帧收到两次相同推进信号等价于收到一次。推荐实现：C2 以 `_lastAdvanceFrame == Time.frameCount` 门控（见 C2 GDD 接口合约节）。此合约须在 C2 GDD 编写时明确接受（B3 项）。
 
 ---
 
 ### EC-04：死亡事件与攻击动画的竞争
 
-**情境**：玩家在攻击动画执行中途（Layer 1 权重 = 1.0）死亡，`TopDownEngineEvent(PlayerDeath)` 到达。
+**情境**：玩家在攻击动画执行中途（`AnimancerAttackPlayer` 正在播放攻击 Clip）死亡，`TopDownEngineEvent(PlayerDeath)` 到达。
 
-**行为**：`TDELifecycleAdapter` 收到 `PlayerDeath` → 同帧调用 `InputEventBus.DisableAllInput()` + `BeatClock.Stop()` → TDE 原生死亡序列接管角色控制（TDE 播放死亡动画，覆盖 Animator Controller）。
+**行为**：两个独立监听者同帧响应 `PlayerDeath`：
+- `TDELifecycleAdapter`：调用 `InputEventBus.DisableAllInput()` + `BeatClock.Stop()`。
+- `AnimancerAttackPlayer`（自身 `MMEventListener<TopDownEngineEvent>`）：调用 `StopAttack()` → `_animancer.PlayController()`，攻击 Clip 立即停止，TDE Animator Controller 接管；`onComplete` 回调不触发（`_pendingOnComplete = null`）——C2 无需订阅 `PlayerDeath` 以清理动画状态。
 
-Animancer Layer 1 权重由 **C2 负责清零**（C2 必须在接收到 `PlayerDeath` 事件时将 Layer 1 权重归零）。F6 不直接操作 Layer 权重——这属于 C2 的攻击状态机职责。若 C2 未及时清零，死亡动画会被攻击层遮盖；这是 C2 的缺陷，不是 F6 的缺陷。
+**执行顺序**：两个监听者均在同一帧响应，执行顺序不保证（均为 `MMEventListener` 注册顺序依赖）。两者职责独立：一方停止输入与音乐，另一方停止攻击动画。须通过集成测试（AC-F6-16）验证不存在中间帧死亡动画被攻击层遮盖的情况。
 
 ---
 
@@ -223,14 +274,14 @@ Animancer Layer 1 权重由 **C2 负责清零**（C2 必须在接收到 `PlayerD
 | InputEventBus | F3 | `EnableGameplayInput()` / `EnableUIInput()` / `DisableAllInput()` | `TDELifecycleAdapter` 在生命周期事件后调用，控制输入通道开关 |
 | LevelConfigSO 数据层 | F4 | `LevelConfigSO.Bpm` / `TimeSignature` / `BgmAssetReference` | `TDELifecycleAdapter` 在 `OnSceneLoaded(Single)` 时读取，注入 `BeatClock.Play()` |
 | TopDownEngine | 外部插件 | `InputSystemManagerEventsBased` / `TopDownEngineEvent` / `MMEventListener<T>` / TDE Animator Controller 基础设施 | `JadeRabbitInputManager` 继承 TDE 输入类；`TDELifecycleAdapter` 订阅 TDE 事件总线 |
-| Animancer | 外部插件 | `HybridAnimancerComponent` / `AnimancerLayer` / `AnimancerState.Speed` | F6 在角色 Prefab 上配置 `HybridAnimancerComponent`，暴露 Layer 1 引用供 C2 使用 |
+| Animancer | 外部插件 | `HybridAnimancerComponent` / `AnimancerState.Speed` / `PlayController()` | F6 在角色 Prefab 上配置 `HybridAnimancerComponent` 和 `AnimancerAttackPlayer`，暴露 `AnimancerAttackPlayer` 引用供 C2 调用 |
 | FMOD | 外部插件 | `FMODUnity.RuntimeManager`（初始化状态验证） | `TDELifecycleAdapter.Start()` 验证 FMOD 已初始化后才允许 `BeatClock.Play()` |
 
 ### 依赖 F6 的系统（下游）
 
 | 系统 | 系统 ID | 期望 F6 提供的内容 | F6 提供方式 |
 |------|---------|-----------------|------------|
-| CombatCore / 连招图系统 | C2 | `AnimancerLayer` 引用（Layer 1 权重控制）；`attackAnimSpeed` 公式（由 C2 实现写入 `AnimancerState.Speed`） | F6 在 Prefab 上配置层结构并通过序列化字段暴露引用；公式在本 GDD Section D 中定义 |
+| CombatCore / 连招图系统 | C2 | `AnimancerAttackPlayer` 引用（`PlayAttack(node, clip, onComplete)` / `StopAttack()` / `UpdateBpm(newBpm)`）；F6-FORMULA-01 公式定义（`authoredBpm` 来自 `AttackNodeSO`） | F6 在 Prefab 上配置 `HybridAnimancerComponent` 和 `AnimancerAttackPlayer` 并通过序列化字段暴露引用；公式在本 GDD Formulas 节中定义 |
 | Hitbox 判定系统 | C6 | TDE 原生碰撞检测基础设施（TDE 提供，F6 正确配置后自动生效） | F6 不直接提供；通过正确继承 TDE 后 TDE 内置 |
 | 房间系统 | FE2 | BPM 变更通道（`BeatClock.RequestBPMChange()`，非重新 `Play()`） | 通过 F2 的 `RequestBPMChange()` API；F6 文档化此约束，FE2 遵守 |
 | 相机系统 | PL1 | TDE `LevelManager` 场景管理（相机跟随依赖 TDE 关卡基础设施） | F6 正确集成 TDE 后自动提供 |
@@ -243,21 +294,25 @@ Animancer Layer 1 权重由 **C2 负责清零**（C2 必须在接收到 `PlayerD
 >
 > **F3（InputEventBus）GDD** 中须记录：F6 `TDELifecycleAdapter` 在 TDE 生命周期事件后调用 InputEventBus 方法。`JadeRabbitInputManager` 通过继承保留 TDE `AbilityInputAuthorization` 管线，但不直接调用 `InputActionMap.Enable()/Disable()`。
 >
-> **C2（连招图系统）GDD** 中须记录：C2 从 F6 获取 `AnimancerLayer` 引用并管理 Layer 1 权重；C2 使用 F6-FORMULA-01 计算并写入 `AnimancerState.Speed`；C2 在 `PlayerDeath` 时须清零 Layer 1 权重。
+> **C2（连招图系统）GDD** 中须记录：C2 从 F6 获取 `AnimancerAttackPlayer` 引用；C2 调用 `PlayAttack(node, clip, onComplete)` / `StopAttack()` / `UpdateBpm(newBpm)` 控制攻击动画；C2 使用 F6-FORMULA-01 公式参数（`authoredBpm` 来自 `AttackNodeSO`）；死亡时动画清理由 `AnimancerAttackPlayer` 自行处理（F6 责任），C2 无需订阅 `PlayerDeath` 用于动画状态清零。
+>
+> **强制幂等性合约（来自 F6 EC-03 B3 项）**：C2 的 `onComplete` 连招图推进逻辑须**幂等**——在同帧收到两次相同 `onComplete` 时，连招图仅前进一步（推荐以 `_lastAdvanceFrame == Time.frameCount` 门控）。此合约因 `UpdateBpm()` + `OnEnd` 同帧竞争场景而强制要求，C2 GDD 接口合约节须显式接受。
 
 ---
 
 ## Tuning Knobs
 
-| 旋钮名称 | 变量 | 默认值 | 安全范围 | 影响的游戏体验方面 |
-|---------|------|-------|---------|-----------------|
-| 攻击动画参照 BPM | `NOMINAL_BPM` | 120 BPM | [60, 180] | 攻击动画"基准节奏感"：调低使动画在低 BPM 时更流畅，调高使动画在低 BPM 时拖曳感更强 |
-| 速度缩放下界 | `SPEED_MIN` | 0.5 | [0.25, 0.75] | 极低 BPM 时攻击动画最慢播放速度；过低可能导致动画长时间卡住 |
-| 速度缩放上界 | `SPEED_MAX` | 2.5 | [2.0, 4.0] | 极高 BPM 时攻击动画最快播放速度；过高可能导致动画闪现 |
-| Animancer 层过渡时长 | `ATTACK_LAYER_BLEND_IN` | 0.05 s | [0.02, 0.15] | 攻击开始时 Layer 1 权重从 0→1 的淡入时长；过短有硬切感，过长有延迟感（由 C2 调整，F6 设默认值） |
-| Animancer 层退出时长 | `ATTACK_LAYER_BLEND_OUT` | 0.1 s | [0.05, 0.2] | 攻击完成后 Layer 1 权重从 1→0 的淡出时长；影响攻击结束后恢复移动动画的流畅度（由 C2 调整，F6 设默认值） |
+| 旋钮名称 | 变量 / 位置 | 默认值 | 安全范围 | 影响的游戏体验方面 |
+|---------|------------|-------|---------|-----------------|
+| 攻击动画制作 BPM | `AttackNodeSO.AuthoredBpm` | 120 BPM | [60, 240]（per-node） | 每个攻击 Clip 的制作参照 BPM，影响该节点在各 BPM 下的相对速度感。不同武器/连招节点可各自设定。 |
+| 速度缩放下界 | `SPEED_MIN`（F6 Constants） | 0.5 | [0.25, 0.75] | 极低 BPM 时攻击动画最慢播放速度；过低可能导致动画长时间卡住 |
+| 速度缩放上界 | `SPEED_MAX`（F6 Constants） | 2.5 | [2.0, 4.0] | 安全防护上界，用于拦截异常 BPM 输入。**注意：正常游戏 BPM [80,240] + 默认 AuthoredBpm=120 时，速度上界为 2.0，此旋钮不影响正常游戏体验。** |
+| 攻击淡入时长 | `ATTACK_LAYER_BLEND_IN`（AnimancerAttackPlayer Inspector） | 0.05 s | [0.02, 0.15] | 攻击开始时从 TDE Animator 到 Animancer 攻击 Clip 的切换延迟；起点值为技术默认，**需原型测试验证响应感**（参见 AC-F6-19） |
+| 攻击淡出时长 | `ATTACK_LAYER_BLEND_OUT`（AnimancerAttackPlayer Inspector） | 0.1 s | [0.05, 0.2] | 攻击完成后 `PlayController()` 切回 TDE Animator 的过渡时长；影响攻击结束后恢复移动动画的流畅度（由 C2 通过 `UpdateBpm()` 间接控制，F6 提供 Inspector 默认值） |
 
-**注意**：`NOMINAL_BPM`、`SPEED_MIN`、`SPEED_MAX` 定义在 F6 专用 `F6Constants` 类中，以 `static readonly float` 暴露。其余两个 Blend 时长由 C2 连招图系统通过 F6 暴露的 `AnimancerLayer` 引用在运行时设置——F6 仅提供合理的 Inspector 默认值。
+⚠ **安全范围数学约束（AuthoredBpm）**：若所有攻击 Clip 均以 `authoredBpm` 制作，为确保游戏 BPM 范围 [80, 240] 内的速度无意外限幅，`authoredBpm` 应满足：`authoredBpm ∈ [96, 160]`（推导：`authoredBpm × SPEED_MAX ≥ 240` → `authoredBpm ≥ 96`；`authoredBpm × SPEED_MIN ≤ 80` → `authoredBpm ≤ 160`）。默认值 120 满足此约束。使用非标准 authoredBpm 时须检查边界。
+
+**注意**：`SPEED_MIN`、`SPEED_MAX` 定义在 F6 专用 `F6Constants` 类中，以 `static readonly float` 暴露。Blend 时长由 C2/AnimancerAttackPlayer 在 Inspector 中配置，F6 提供合理起点值。
 
 ---
 
@@ -371,55 +426,67 @@ BeatClock 处于 `Playing`（currentBPM=120）期间以 `LoadSceneMode.Additive`
 
 ---
 
-### AC-F6-12 — Animancer Layer 1 攻击时权重 1.0，完成后渐变至 0.0
+### AC-F6-12 — Animancer 攻击时接管控制权，OnEnd 后 PlayController() 归还 TDE
 
 **类型**: Integration | **测试方式**: PlayMode 自动化测试（依赖 C2 实现）
 
-触发轻攻击，淡入完成后 `AnimancerLayer.Weight == 1.0f`（±0.01 容差）；攻击完成后 Weight 经渐变降至 0.0f，相邻帧差值不发生瞬跳（差值 ≤ `ATTACK_LAYER_BLEND_OUT / Time.fixedDeltaTime` 上界）；归零后 Layer 0 重新完整驱动角色动画。
+触发轻攻击后：`AnimancerAttackPlayer.PlayAttack()` 被调用，`HybridAnimancerComponent` 覆盖 TDE Animator Controller 输出；攻击 Clip 播放完成后 `AnimancerState.Events.OnEnd` 触发 `_animancer.PlayController()`，TDE Animator Controller 恢复完整驱动（下一帧移动/空闲动画正常响应输入）；`onComplete` 回调被触发恰好 1 次，且发生在 `PlayController()` 调用之后；攻击期间 TDE 移动动画被覆盖（无移动 Clip 混入）；完成后 TDE 动画恢复（无攻击 Clip 残留）。
 
 ---
 
-### AC-F6-13 — 攻击动画速度缩放公式正确（含限幅边界与 Warning 日志）
+### AC-F6-13 — 攻击动画速度缩放公式正确（含 authoredBpm 参数、限幅边界与 Warning 日志）
 
 **类型**: Logic | **测试方式**: EditMode 自动化测试
 
-调用 `F6Constants.CalculateAttackAnimSpeed(currentBPM)` 断言以下用例（容差 ±0.001）：
+调用 `F6Constants.CalculateAttackAnimSpeed(currentBPM, authoredBpm)` 断言以下用例（容差 ±0.001）：
 
-| currentBPM | 期望速度 | Warning 日志 |
-|---|---|---|
-| 120 | 1.000f | 无 |
-| 80 | 0.667f | 无 |
-| 240 | 2.000f | 无 |
-| 60 | 0.500f（下界限幅） | `[F6] attackAnimSpeed clamped from X.XXX to Y.YYY` |
-| 300 | 2.500f（上界限幅） | 同格式 |
+| currentBPM | authoredBpm | 期望速度 | Warning 日志 |
+|---|---|---|---|
+| 120 | 120 | 1.000f | 无 |
+| 80 | 120 | 0.667f | 无 |
+| 240 | 120 | 2.000f | 无 |
+| 120 | 100 | 1.200f | 无 |
+| 60 | 120 | 0.500f（下界限幅） | `[F6] attackAnimSpeed clamped from X.XXX to Y.YYY` |
+| 300 | 120 | 2.500f（上界限幅） | 同格式 |
 
 限幅 Warning 须包含原始值和截断值；非限幅用例断言无 Warning 输出。
 
 ---
 
-### AC-F6-14 — Root Motion 在所有 Animancer 攻击状态上禁用
+### AC-F6-14 — Root Motion 在 Animator 组件层面禁用
 
-**类型**: Logic | **测试方式**: PlayMode 自动化测试
+**类型**: Logic | **测试方式**: PlayMode 自动化测试 / EditMode Prefab 检查
 
-播放轻攻击、重攻击、充能攻击 3 个 Animancer State，每个 State `ApplyRootMotion == false`（3 个全部）；攻击期间角色 `Transform.position` 变化来源为 Rigidbody 驱动，Root Motion 提取值未叠加（无非物理来源的位置漂移）。
+验证 `AnimancerAttackPlayer.Awake()` 执行后 `_animancer.Animator.applyRootMotion == false`；播放轻攻击、重攻击、充能攻击 3 个 Animancer State 期间，角色 `Transform.position` 变化来源为 Rigidbody 驱动，无非物理来源的位置漂移（帧间位移与 `Rigidbody.velocity × Time.deltaTime` 差值 ≤ 0.001m）。
+
+**注意**：断言目标为 `Animator.applyRootMotion`（Unity 组件属性），而非 `AnimancerState`（Animancer 8.x 的 `AnimancerState` 无此属性）。
 
 ---
 
-### AC-F6-15 — 攻击动画中途 BPM 骤跳时速度立即更新（Option A 实时）
+### AC-F6-15 — 攻击动画中途 BPM 骤跳时速度立即更新（Option A，via UpdateBpm()）
 
 **类型**: Integration | **测试方式**: PlayMode 自动化测试（依赖 C2 实现）
 
-BPM=120 时攻击进度 40-60% 处调用 `BeatClock.RequestBPMChange(200)`，下一个 `OnBeat` 回调完成后：`AnimancerState.Speed ≈ 1.667f`（±0.001）；Speed 更新发生在 `OnBeat` 回调所在帧（不延迟到动画结束）；攻击动画继续播放未被中断。
+BPM=120 时攻击进度 40–60% 处，C2 调用 `AnimancerAttackPlayer.UpdateBpm(200)`（模拟 BPM 骤跳时 C2 的响应）：
+- 调用后**下一帧** `_currentState.Speed ≈ 1.667f`（±0.001，等于 `200 / attackNode.AuthoredBpm`，authoredBpm=120）
+- `AnimancerState.NormalizedTime` 未被重置（攻击进度单调递增）
+- 攻击动画 `IsPlaying == true`（未被中断）
+
+**通过条件**：`UpdateBpm()` 调用后下一帧 Speed 更新，NormalizedTime 保持连续，动画未中断。
 
 ---
 
-### AC-F6-16 — 死亡事件期间攻击动画不遮盖死亡动画（Layer 1 权重清零验证）
+### AC-F6-16 — 死亡事件期间 AnimancerAttackPlayer 自行停止攻击并归还 TDE 控制权
 
-**类型**: Integration | **测试方式**: PlayMode 自动化测试 + 手动目视确认（依赖 C2 实现）
+**类型**: Integration | **测试方式**: PlayMode 自动化测试 + 手动目视确认
 
-攻击动画中途发布 `TopDownEngineEvent(PlayerDeath)`：事件后 1 帧内 Layer 1 Weight 开始下降（< 1.0f）；死亡动画播放期间 Layer 1 Weight == 0.0f；目视确认死亡动画完整可见，无攻击层遮盖。
+攻击动画中途发布 `TopDownEngineEvent(PlayerDeath)`：
+- 事件后 1 帧内 `AnimancerAttackPlayer.StopAttack()` 被调用（来自 `AnimancerAttackPlayer` 自身的 `MMEventListener<TopDownEngineEvent>`）
+- `StopAttack()` 后 `_animancer.PlayController()` 被调用，TDE Animator Controller 恢复控制
+- `onComplete` 回调**未被触发**（`_pendingOnComplete` 已清空）
+- 目视确认死亡动画完整播放，无攻击 Clip 残留遮盖
 
-**归属说明**：Layer 1 清零是 C2 责任。本 AC 失败时缺陷归属 C2，须同步核查 F6 已正确暴露 `AnimancerLayer` 引用和 `PlayerDeath` 事件通路。
+**归属说明**：死亡时停止攻击动画是 F6（`AnimancerAttackPlayer`）责任，无需 C2 参与。本 AC 失败时缺陷归属 F6 的 `AnimancerAttackPlayer` `MMEventListener` 注册逻辑。
 
 ---
 
@@ -431,21 +498,74 @@ BPM=120 时攻击进度 40-60% 处调用 `BeatClock.RequestBPMChange(200)`，下
 
 ---
 
-### AC-F6-18 — currentBPM=120 时 attackAnimSpeed 精确等于 1.0（参照 BPM 校准）
+### AC-F6-18 — currentBPM=120、authoredBpm=120 时 attackAnimSpeed 精确等于 1.0（参照 BPM 校准）
 
 **类型**: Integration | **测试方式**: PlayMode 自动化测试
 
-BeatClock `currentBPM` 锁定为 120（`NOMINAL_BPM`），触发攻击后在 `OnBeat` 回调完成时：`AnimancerState.Speed == 1.000f`（±0.001 容差）；0.5s 标称 Clip 实际播放时长偏差 ≤ 16ms（60FPS 一帧容差）。
+BeatClock `currentBPM` 锁定为 120，`attackNode.AuthoredBpm == 120`（默认值），触发攻击后：`AnimancerState.Speed == 1.000f`（±0.001 容差）；0.5s 标称 Clip 实际播放时长偏差 ≤ 16ms（60FPS 一帧容差）。
+
+---
+
+### AC-F6-19 — FMOD 异步模式验证（协程双帧 DSP 时间递增）
+
+**类型**: Integration | **测试方式**: PlayMode 自动化测试
+
+`IDSPClock` 来源：`_beatClock.DSPClock`（BeatClock 只读属性），无需额外 Inspector 序列化。验证通过 `VerifyFMODAsyncMode()` **协程**实现（非 `Start()` 同帧二次采样）：
+
+- **正常路径**：协程在第 1 帧读取 `t1`，`yield return null` 后第 2 帧读取 `t2`；`t2 > t1`，协程内 `BeatClock.Play()` 正常执行；`BeatClock.Play()` 调用次数 == 1，BeatClock 状态 `Playing`。
+- **同步模式注入路径**：注入返回恒定值的 mock `IDSPClock`（`t1 == t2`）；协程检测到 `t2 <= t1`，记录 fatal 日志 `[F6-FATAL] FMOD running in sync mode — BeatClock start blocked`；`BeatClock.Play()` 调用次数 == 0。
+
+**IDSPClock 可测试性**：同 AC-F6-21，`TDELifecycleAdapter` 通过 `BeatClock.DSPClock` 属性访问；测试中注入 mock BeatClock（或 mock IDSPClock 实现）即可覆盖两条路径，无需真实 FMOD 运行时。
+
+**通过条件**：正常 FMOD 协程路径 BeatClock 正常启动；同步模式注入路径 BeatClock 被阻止且记录 fatal 日志。
+
+---
+
+### AC-F6-20 — 攻击中途 BPM 骤跳的玩家体感验证（Option A 原型测试）
+
+**类型**: Visual/Feel | **测试方式**: 人工盲测（原型阶段，至少 3 人参与）
+
+BPM=120 → 200 骤跳时攻击动画中途加速的场景，以盲测问卷评估：
+- 至少 2/3 受试者能描述「这一刀在音乐加快时变得更凌厉」（正向感知）
+- 无受试者报告「动画跳跃」或「手感断开」
+- 至少 2/3 受试者评价攻击加速与 BPM 骤跳感觉「协调」或「自然」
+
+**注意**：此 AC 仅在原型阶段执行（须 C2 + AnimancerAttackPlayer 联调完成），结果写入 `production/qa/evidence/f6-option-a-feel-test-[date].md`。若测试不通过，作为 MVP 范围调整的信号（可回退 Option B）。
+
+---
+
+### AC-F6-21 — FMOD RuntimeManager 验证通过 IFMODRuntimeChecker 接口注入（可测试性）
+
+**类型**: Logic | **测试方式**: EditMode 自动化测试
+
+`TDELifecycleAdapter` 通过注入的 `IFMODRuntimeChecker` 接口（而非直接引用 `FMODUnity.RuntimeManager` 静态类）执行初始化状态检查；EditMode 测试中注入返回 `false` 的 mock `IFMODRuntimeChecker`：断言 `BeatClock.Play()` 调用次数 == 0 且记录 fatal 错误——无需真实 FMOD 运行时即可验证 AC-F6-04 的逻辑路径。
+
+**通过条件**：mock false 路径中 BeatClock 被阻止；PlayMode 中真实 FMOD 路径正常启动。
+
+---
+
+### AC-F6-22 — Character Prefab 结构 EditMode 完整性检查
+
+**类型**: Logic | **测试方式**: EditMode 自动化测试
+
+加载 Character Prefab，断言以下 4 项全部通过：
+1. `HybridAnimancerComponent` 组件存在，且 `KeepChildrenConnected == true`
+2. `AnimancerAttackPlayer` 组件存在，且序列化引用 `_animancer` 已连线（非 null）
+3. `Animator.applyRootMotion == false`
+4. `AnimancerAttackPlayer` 上 `ATTACK_LAYER_BLEND_IN` 字段值 ∈ [0.02, 0.15]
+
+**通过条件**：全部 4 项断言通过；任意一项失败说明 Prefab 配置不完整，须修复后方可执行 AC-F6-12 至 AC-F6-16。
 
 ---
 
 **依赖说明（执行阻断）**：
-- AC-F6-12 / AC-F6-15 / AC-F6-16：需 C2 连招图系统先实现 Layer 1 权重管理和 `OnBeat` 速度写入后方可执行
-- AC-F6-04：需与 lead programmer 确认程序集内部访问权限（`[InternalsVisibleTo]` 目标）
+- AC-F6-12 / AC-F6-15：需 C2 连招图系统先实现 `AnimancerAttackPlayer` 调用（`PlayAttack()` / `UpdateBpm()`）后方可执行
+- AC-F6-04 / AC-F6-21：需与 lead programmer 确认 `IFMODRuntimeChecker` 接口定义及程序集内部访问权限（`[InternalsVisibleTo]` 目标）
+- AC-F6-20：仅在原型阶段执行，须 C2 + AnimancerAttackPlayer 联调完成后安排人工盲测
 
 ---
 
 ## Open Questions
 
 - **OQ-01（W3 继承自 ADR-D1，PENDING）**: `TDELifecycleAdapter.Start()` 中的 FMOD 初始化时序在 Unity Editor 运行时是否稳定？需导入 FMOD 插件后实机运行验证。（ADR-D1 W3 — 非阻断，但须在 F6 实现 Sprint 开始前确认）
-- **OQ-02（待 C2 GDD 确认）**: C2 连招图系统在 `BeatClock.OnBeat` 回调中写入 `AnimancerState.Speed` 的具体条件：每拍无条件更新，还是仅在 Layer 1 处于激活状态（Weight > 0）时更新？F6 定义了公式，C2 负责实现——须在 C2 GDD 接口契约节中明确。
+- **OQ-02（已解决 2026-07-18）**: C2 采用 Option A（实时更新）：BPM 变化时 C2 订阅 BeatClock 的 BPM 变化事件，立即调用 `AnimancerAttackPlayer.UpdateBpm(newBpm)` 更新 `_currentState.Speed`，不重置 normalized time，不中断动画。速度更新条件为「BPM 变化时」（非每拍），更新不依赖 AnimancerAttackPlayer 当前是否正在播放攻击动画（`_currentState == null` 时 `UpdateBpm()` 空操作）。解决方案已写入 F6 GDD Formulas 节及 ADR-D5 修订说明；C2 GDD 接口契约须记录此调用约定。

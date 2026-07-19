@@ -1,7 +1,7 @@
 # ADR-D2: Enemy AI Framework
 
 ## Status
-Proposed
+Accepted
 
 ## Date
 2026-07-18
@@ -12,10 +12,10 @@ Proposed
 |-------|-------|
 | **Engine** | Unity 6.3 LTS (6000.3.19f1) |
 | **Domain** | AI / Navigation |
-| **Knowledge Risk** | MEDIUM — Behavior Designer (Opsive) is a third-party package; LLM training data reflects an older BD version. Unity Behavior Package (com.unity.behavior) was excluded due to HIGH post-cutoff risk with no verified API reference in engine docs. |
-| **References Consulted** | `docs/engine-reference/unity/VERSION.md`, `docs/engine-reference/unity/modules/navigation.md`, `docs/engine-reference/unity/plugins/top-down-engine.md`, `docs/architecture/adr-d1-tde-integration.md` |
-| **Post-Cutoff APIs Used** | `CharacterMovement.SetMovement(Vector2)` (TDE 4.5 — verified source exists at `Assets/TopDownEngine/…/CharacterAbilities/CharacterMovement.cs:200`). `BehaviorTree.SetVariableValue()` (Behavior Designer — **unverified, pending BD M0 Spike**). |
-| **Verification Required** | 1. **BD M0 Spike (BLOCKING before Accept)**: Import Behavior Designer; confirm `SharedVariable<T>` class hierarchy, `BehaviorTree.SetVariableValue()` / `GetVariable()` signatures, and `[SharedVariable]` attribute usage scope by reading BD source. 2. Confirm BD compiles in Unity 6.3 LTS with no `[SerializeField]` fields-only violations. 3. Confirm `CharacterMovement.SetMovement(Vector2)` on enemy prefab accepts 2D movement vectors without z-axis mapping bugs. 4. Set Script Execution Order: `BeatClockBridge` must execute before BD `BehaviorTree` tick in the same frame. |
+| **Knowledge Risk** | LOW — `com.unity.behavior` is a Unity first-party package. M0 Spike (2026-07-18) verified all key APIs from source code with zero BLOCKERs. No third-party compatibility risk. |
+| **References Consulted** | `docs/engine-reference/unity/VERSION.md`, `docs/engine-reference/unity/modules/navigation.md`, `docs/engine-reference/unity/plugins/top-down-engine.md`, `docs/architecture/adr-d1-tde-integration.md`, `docs/architecture/m0-spike-unity-behavior.md` |
+| **Post-Cutoff APIs Used** | `BehaviorGraphAgent.SetVariableValue<T>()` (com.unity.behavior v1.0.16 — **verified** at `Library/PackageCache/com.unity.behavior@.../Runtime/Execution/Components/BehaviorGraphAgent.cs:541`). `CharacterMovement.SetMovement(Vector2)` (TDE 4.5 — **verified** at `Assets/TopDownEngine/.../CharacterAbilities/CharacterMovement.cs:200`). |
+| **Verification Required** | ✅ COMPLETED (M0 Spike 2026-07-18 PASS — 0 BLOCKER). Runtime validation pending during FE1 GDD playmode tests: confirm `BeatClockBridge` write → BT tick ordering in-editor. |
 
 ## ADR Dependencies
 
@@ -24,7 +24,7 @@ Proposed
 | **Depends On** | ADR-D1 (TDE Integration — Accepted; enemy AI must use TDE lifecycle hooks and health system defined in D1; `TDELifecycleAdapter` is the authoritative controller for scene/death/respawn events that enemy AI must respect) |
 | **Enables** | FE1 GDD (`design/gdd/enemy-ai.md` — blocked until this ADR is Accepted) |
 | **Blocks** | FE1 GDD authoring and implementation |
-| **Ordering Note** | F4 GDD (EnemyInfoSO schema) should be finalized before FE1 GDD authors enemy data contracts, but this ADR can be Accepted independently before F4 GDD is Approved. C4 GDD (CombatDirector) must define the attack token grant protocol that `CombatDirectorTokenTask` depends on; C4 and FE1 GDDs should be authored concurrently with explicit interface alignment. |
+| **Ordering Note** | F4 GDD (EnemyInfoSO schema) should be finalized before FE1 GDD authors enemy data contracts, but this ADR can be Accepted independently before F4 GDD is Approved. C4 GDD (CombatDirector) must define the attack token grant protocol that `CombatDirectorTokenAction` depends on; C4 and FE1 GDDs should be authored concurrently with explicit interface alignment. |
 
 ## Context
 
@@ -38,7 +38,7 @@ FE1 (Enemy AI System) requires an AI behavior framework decision before its GDD 
 
 The choice of AI framework determines the entire enemy AI development pipeline (BT authoring tooling, Blackboard data bus, TDE movement integration) and must be made before FE1 GDD specifies any behavioral schemas.
 
-Three viable options were evaluated: Unity Behavior Package (Unity 6 first-party), Behavior Designer (Opsive, already purchased and noted in game-concept.md Open Questions), and a custom C# BT.
+Three viable options were evaluated: Unity Behavior Package (Unity 6 first-party), Behavior Designer (Opsive, purchased but unused), and a custom C# BT.
 
 ### Constraints
 
@@ -46,24 +46,24 @@ Three viable options were evaluated: Unity Behavior Package (Unity 6 first-party
 - **Beat-lock constraint** (game-concept.md Rule 4 / TR-concept-009): All enemy attack decisions must go through CombatDirector (C4) beat-slot token requests. AI must NOT call `BeatClock` directly.
 - **Registry forbidden pattern** `beatclock_lifecycle_bypass`: No system except `TDELifecycleAdapter` may call `BeatClock.Play()` / `Stop()` / `Pause()` / `Resume()`.
 - **Registry state constraint** `beat_clock_lifecycle`: Other systems may only read beat state via `BeatStateSnapshot` subscription — not by calling BeatClock lifecycle methods.
-- **TDE AIBrain incompatibility**: TDE's built-in `AIAction` and `AIDecision` components depend on `AIBrain`'s `PerformActions()` loop. If `AIBrain` is replaced by BD `BehaviorTree`, TDE's stock AI components cannot be reused. The ADR decision entails building custom BD Action tasks for all AI behaviors.
+- **TDE AIBrain incompatibility**: TDE's built-in `AIAction` and `AIDecision` components depend on `AIBrain`'s `PerformActions()` loop. If `AIBrain` is replaced by `BehaviorGraphAgent`, TDE's stock AI components cannot be reused. The ADR decision entails building custom Unity Behavior Action nodes for all AI behaviors.
 
 ### Requirements
 
 - Support behavior-tree-driven enemies as specified in MVP (game-concept.md: "普通敌人 1 种（行为树驱动）")
 - Enable beat-locked attack token requests to CombatDirector without direct rhythm system coupling (TR-concept-009)
-- Provide a Blackboard data bus for runtime beat state injection to AI tasks
+- Provide a Blackboard data bus for runtime beat state injection to AI action nodes
 - Support MVP scope: 1 enemy type (patrol/chase/beat-locked attack loop) + 1 Boss (phase-based rhythm design with sub-tree switching)
 - Integrate with TDE's `CharacterMovement` and `TopDownController` for movement execution (no TDE source modification)
 - Framework must compile in Unity 6.3 LTS (6000.3.19f1)
 
 ## Decision
 
-**Behavior Designer (Opsive)** is adopted as the enemy AI behavior framework for all enemy characters.
+**Unity Behavior Package (`com.unity.behavior` v1.0.16)** is adopted as the enemy AI behavior framework for all enemy characters.
 
-Behavior Designer (BD) is already purchased for this project (game-concept.md Open Questions: "Behavior Designer（已购入但未用）"). It provides a mature visual BT editor, a typed Blackboard (SharedVariable) system, and Action Task APIs compatible with TDE integration. It avoids the HIGH post-cutoff risk of the Unity Behavior Package, and eliminates the development overhead of a custom C# BT for a project that already carries TDE + FMOD + EasySave verification debt.
+Unity Behavior is Unity's first-party hierarchical behavior tree authoring tool. It provides a visual graph editor, a typed `BlackboardVariable<T>` system, `EventChannel<T>` event-driven architecture, `ObserverAbortModifier` for reactive interruption, and `RunSubgraphDynamic` for Boss phase transitions. M0 Spike (2026-07-18) confirmed zero BLOCKERs and full API compatibility with Unity 6.3 LTS.
 
-BD replaces TDE `AIBrain` as the high-level behavior controller on all enemy prefabs. TDE's stock `AIAction` and `AIDecision` components are **not used** — all behavior is authored as custom BD Action Tasks.
+`BehaviorGraphAgent` replaces TDE `AIBrain` as the high-level behavior controller on all enemy prefabs. TDE's stock `AIAction` and `AIDecision` components are **not used** — all behavior is authored as custom Unity Behavior `Action` nodes.
 
 ### Architecture Diagram
 
@@ -71,84 +71,99 @@ BD replaces TDE `AIBrain` as the high-level behavior controller on all enemy pre
 BeatClock (F2)
     │  BeatStateSnapshot event (each beat)
     ▼
-BeatClockBridge : MonoBehaviour       [on enemy prefab, same GO as BehaviorTree]
-    │  BehaviorTree.SetVariableValue("CurrentBPM" / "CurrentBeat" / "TimeToNextBeat")
+BeatClockBridge : MonoBehaviour       [DefaultExecutionOrder(-100)]
+    │  agent.SetVariableValue("CurrentBPM",       snapshot.Bpm)
+    │  agent.SetVariableValue("CurrentBeat",      snapshot.Beat)
+    │  agent.SetVariableValue("TimeToNextBeat",   snapshot.TimeToNextBeat)
     ▼
-BD Blackboard (SharedVariable store)
-    │  read by AI Action Tasks
+BehaviorGraphAgent [DefaultExecutionOrder(-50)]   [on enemy prefab]
+    │  Blackboard: CurrentBPM (float), CurrentBeat (int), TimeToNextBeat (float)
     ▼
-Behavior Designer BehaviorTree
-    ├─ Patrol sub-tree
-    │      └─ TDESetMovementTask → CharacterMovement.SetMovement(Vector2)
-    ├─ Chase sub-tree
-    │      └─ TDESetMovementTask → CharacterMovement.SetMovement(playerDir)
-    └─ Attack sub-tree
-           ├─ CombatDirectorTokenTask  [blocks BT — Running/Success/Failure]
+Unity Behavior Graph (visual editor)
+    ├─ Patrol sub-tree (SequenceComposite)
+    │      └─ TDESetMovementAction → CharacterMovement.SetMovement(Vector2)
+    ├─ Chase sub-tree (SequenceComposite)
+    │      └─ TDESetMovementAction → CharacterMovement.SetMovement(playerDir)
+    └─ Attack sub-tree (SequenceComposite)
+           ├─ CombatDirectorTokenAction  [Running until token / Failure on timeout]
            │      │  on Success: token granted for this beat
            │      ▼
-           └─ TDETriggerAbilityTask → CharacterAbility.TriggerAbility()
-                                        │
-                                        ▼
-                              TDE Health.Damage() on target
+           └─ TDETriggerAbilityAction → CharacterAbility.TriggerAbility()
+                                          │
+                                          ▼
+                                TDE Health.Damage() on target
 ```
+
+**Execution order guarantee** (from verified source):
+- `BeatClockBridge` runs at -100 (manual `[DefaultExecutionOrder(-100)]`)
+- `BehaviorGraphAgent` runs at -50 (`[DefaultExecutionOrder(-50)]` — hardcoded in Unity Behavior source)
+- Beat data is guaranteed written before BT tick within the same `Update` frame
 
 ### Key Interfaces
 
 ```csharp
 /// <summary>
-/// Bridge between BeatClock event bus and BD Blackboard.
-/// Placed on enemy prefab alongside BehaviorTree component.
-/// Script Execution Order: must execute BEFORE BD BehaviorTree tick.
+/// Bridge between BeatClock event bus and Unity Behavior Blackboard.
+/// Placed on enemy prefab alongside BehaviorGraphAgent component.
+/// Execution order -100 ensures beat data is written before BT tick (-50).
 /// </summary>
+[DefaultExecutionOrder(-100)]
 public class BeatClockBridge : MonoBehaviour
 {
-    // Reference to the BD BehaviorTree on the same GameObject
-    [SerializeField] private BehaviorTree _behaviorTree;
+    [SerializeField] private BehaviorGraphAgent _agent;
 
     private void OnEnable()  => BeatClock.OnBeatSnapshot += HandleBeatSnapshot;
     private void OnDisable() => BeatClock.OnBeatSnapshot -= HandleBeatSnapshot;
 
     private void HandleBeatSnapshot(BeatStateSnapshot snapshot)
     {
-        // Write to BD Blackboard via BehaviorTree.SetVariableValue()
-        // NOTE: [SharedVariable] attribute is only valid inside BD Task classes,
-        //       NOT on MonoBehaviour fields. Use SetVariableValue() from outside.
-        _behaviorTree.SetVariableValue("CurrentBPM",       snapshot.Bpm);
-        _behaviorTree.SetVariableValue("CurrentBeat",      snapshot.Beat);
-        _behaviorTree.SetVariableValue("TimeToNextBeat",   snapshot.TimeToNextBeat);
+        // Write to Unity Behavior Blackboard — verified API signature:
+        // BehaviorGraphAgent.SetVariableValue<TValue>(string variableName, TValue value) : bool
+        // Source: BehaviorGraphAgent.cs:541
+        _agent.SetVariableValue("CurrentBPM",       snapshot.Bpm);
+        _agent.SetVariableValue("CurrentBeat",      snapshot.Beat);
+        _agent.SetVariableValue("TimeToNextBeat",   snapshot.TimeToNextBeat);
     }
 }
 
 /// <summary>
-/// BD Action Task: requests a beat-slot attack token from CombatDirector (C4).
-/// Blocks the BT subtree until token is granted or timeout elapses.
+/// Unity Behavior Action node: requests a beat-slot attack token from CombatDirector (C4).
+/// Blocks the BT subtree (Status.Running) until token is granted or timeout elapses.
 /// Token grant protocol defined by C4 GDD (combat-director.md — not yet authored).
+/// MUST be partial class — required by [GeneratePropertyBag] source generator.
 /// </summary>
-public class CombatDirectorTokenTask : Action
+[Serializable, GeneratePropertyBag]
+[NodeDescription(
+    name: "Request Attack Token",
+    description: "Requests a beat-slot token from CombatDirector. Running until granted or timeout.",
+    story: "[Agent] requests attack token (timeout: [TimeoutBeats] beats)",
+    category: "Action/Combat",
+    id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890")]
+internal partial class CombatDirectorTokenAction : Action
 {
-    // Read from Blackboard — timeout in number of beats before cancelling
-    public SharedFloat TimeoutBeats;
+    // Bound to Blackboard variable in graph editor
+    [SerializeReference] public BlackboardVariable<float> TimeoutBeats;
+    [SerializeReference] public BlackboardVariable<float> CurrentBPM;
 
-    // Internal state
-    private bool  _tokenRequested;
     private bool  _tokenGranted;
     private float _timeoutTimer;
 
-    public override void OnStart()
+    protected override Status OnStart()
     {
-        _tokenRequested = false;
-        _tokenGranted   = false;
-        _timeoutTimer   = 0f;
-        // Request: protocol TBD in C4 GDD; expected: CombatDirector.RequestAttackToken(this)
+        _tokenGranted = false;
+        _timeoutTimer = 0f;
+        // Protocol TBD in C4 GDD: CombatDirector.RequestAttackToken(this)
+        return Status.Running;
     }
 
-    public override TaskStatus OnUpdate()
+    protected override Status OnUpdate()
     {
-        if (_tokenGranted) return TaskStatus.Success;
+        if (_tokenGranted) return Status.Success;
         _timeoutTimer += Time.deltaTime;
-        if (_timeoutTimer >= TimeoutBeats.Value * (60f / CurrentBPMFromBlackboard()))
-            return TaskStatus.Failure;
-        return TaskStatus.Running;
+        float bpm = CurrentBPM != null ? CurrentBPM.Value : 120f;
+        if (_timeoutTimer >= TimeoutBeats.Value * (60f / bpm))
+            return Status.Failure;
+        return Status.Running;
     }
 
     // Called by CombatDirector when token is granted for this enemy's request
@@ -156,118 +171,134 @@ public class CombatDirectorTokenTask : Action
 }
 
 /// <summary>
-/// BD Action Task: delegates movement to TDE CharacterMovement component.
-/// Uses CharacterMovement.SetMovement(Vector2) — the recommended TDE entry point
-/// that internally handles 2D/3D coordinate mapping (avoids TopDownController
-/// Vector3 z-axis remapping bug in 2D scenes).
+/// Unity Behavior Action node: delegates movement to TDE CharacterMovement component.
+/// Uses CharacterMovement.SetMovement(Vector2) — verified TDE 4.5 entry point
+/// that internally handles 2D/3D coordinate mapping.
+/// MUST be partial class — required by [GeneratePropertyBag].
 /// </summary>
-public class TDESetMovementTask : Action
+[Serializable, GeneratePropertyBag]
+[NodeDescription(
+    name: "TDE Set Movement",
+    description: "Sets enemy movement direction via TDE CharacterMovement.",
+    story: "[Agent] moves in [Direction]",
+    category: "Action/TDE",
+    id: "b2c3d4e5-f6a7-8901-bcde-f12345678901")]
+internal partial class TDESetMovementAction : Action
 {
-    public SharedVector2 Direction;
+    [SerializeReference] public BlackboardVariable<Vector2> Direction;
 
     private CharacterMovement _characterMovement;
 
-    public override void OnAwake()
+    protected override void OnSetup()
     {
-        _characterMovement = GetComponent<CharacterMovement>();
+        _characterMovement = GameObject.GetComponent<CharacterMovement>();
     }
 
-    public override TaskStatus OnUpdate()
+    protected override Status OnUpdate()
     {
-        if (_characterMovement == null) return TaskStatus.Failure;
+        if (_characterMovement == null) return Status.Failure;
         _characterMovement.SetMovement(Direction.Value);
-        return TaskStatus.Success;
+        return Status.Success;
     }
 }
 
 /// <summary>
-/// BD Action Task: triggers a named TDE CharacterAbility on the enemy.
-/// Used after CombatDirectorTokenTask returns Success.
+/// Unity Behavior Action node: triggers a named TDE CharacterAbility on the enemy.
+/// Used after CombatDirectorTokenAction returns Status.Success.
+/// MUST be partial class — required by [GeneratePropertyBag].
 /// </summary>
-public class TDETriggerAbilityTask : Action
+[Serializable, GeneratePropertyBag]
+[NodeDescription(
+    name: "TDE Trigger Ability",
+    description: "Triggers a named TDE CharacterAbility on the enemy.",
+    story: "[Agent] triggers ability [AbilityName]",
+    category: "Action/TDE",
+    id: "c3d4e5f6-a7b8-9012-cdef-123456789012")]
+internal partial class TDETriggerAbilityAction : Action
 {
-    public SharedString AbilityName;  // e.g. "CharacterHandleWeapon"
+    [SerializeReference] public BlackboardVariable<string> AbilityName;
     // Calls CharacterAbility.TriggerAbility() — no TDE source modification
 }
 ```
 
-### Boundary Contract (TDE AI vs BD AI)
+### Boundary Contract (TDE AI vs Unity Behavior AI)
 
 | Concern | Owner | Not Owner |
 |---------|-------|-----------|
-| High-level behavior decision (patrol/chase/attack) | BD BehaviorTree | ~~TDE AIBrain~~ (not present on enemies) |
-| Movement execution | TDE `CharacterMovement.SetMovement()` via `TDESetMovementTask` | ~~TDE AIAction~~ (not used; requires AIBrain) |
-| Attack gating (beat-lock) | `CombatDirectorTokenTask` | ~~direct BeatClock read~~ (forbidden) |
-| Attack execution | TDE `CharacterAbility.TriggerAbility()` via `TDETriggerAbilityTask` | ~~TDE AIDecision~~ (not used; requires AIBrain) |
-| Beat state data | BD Blackboard written by `BeatClockBridge` | ~~BeatClock direct call~~ (forbidden by registry) |
-| Death / respawn lifecycle | TDE `Health` + `TDELifecycleAdapter` events | BD BT (listens, does not control) |
+| High-level behavior decision (patrol/chase/attack) | Unity Behavior `BehaviorGraphAgent` | ~~TDE AIBrain~~ (not present on enemies) |
+| Movement execution | TDE `CharacterMovement.SetMovement()` via `TDESetMovementAction` | ~~TDE AIAction~~ (not used; requires AIBrain) |
+| Attack gating (beat-lock) | `CombatDirectorTokenAction` | ~~direct BeatClock read~~ (forbidden) |
+| Attack execution | TDE `CharacterAbility.TriggerAbility()` via `TDETriggerAbilityAction` | ~~TDE AIDecision~~ (not used; requires AIBrain) |
+| Beat state data | Unity Behavior Blackboard written by `BeatClockBridge` | ~~BeatClock direct call~~ (forbidden by registry) |
+| Death / respawn lifecycle | TDE `Health` + `TDELifecycleAdapter` events | `BehaviorGraphAgent` (listens via `End()`/`Restart()`, does not control) |
 | Damage receipt | TDE `Health.Damage()` | ~~direct field write~~ (forbidden by ADR-D1) |
 
-**Explicit rule**: Enemy prefabs do NOT include `AIBrain`, `AIAction`, or `AIDecision` components. BD `BehaviorTree` is the sole high-level AI driver.
+**Explicit rule**: Enemy prefabs do NOT include `AIBrain`, `AIAction`, or `AIDecision` components. `BehaviorGraphAgent` is the sole high-level AI driver.
 
 ## Alternatives Considered
 
-### Alternative A: Unity Behavior Package (com.unity.behavior)
+### Alternative A: Behavior Designer (Opsive)
 
-- **Description**: Unity 6 first-party BT authoring tool with built-in Blackboard and visual graph editor. Available as `com.unity.behavior` package in Unity 6.0+.
-- **Pros**: No external vendor dependency; Unity-native; no additional licensing cost; likely long-term support trajectory if Unity commits to it.
-- **Cons**: HIGH post-cutoff risk — `com.unity.behavior` was introduced in Unity 6.0 (post-LLM-cutoff) and has no verified API reference in `docs/engine-reference/`. Package was in preview/experimental state as of Unity 6.0-6.1. Adding another unverified post-cutoff API on top of TDE + FMOD + EasySave verification debt creates unacceptable spike risk for MVP timeline.
-- **Rejection Reason**: Behavior Designer is already purchased and addresses the same requirements without post-cutoff API risk. Unity Behavior Package can be reconsidered for a future project or if BD proves problematic after M0 Spike.
+- **Description**: Third-party BT framework (Asset Store). Already purchased for this project. Provides visual BT editor, SharedVariable Blackboard, and Action Task APIs.
+- **Pros**: Mature ecosystem; SharedVariable system for beat state injection; hierarchical BT supports Boss phase transitions; already purchased (no additional cost).
+- **Cons**: Third-party package — adds a 9th external dependency alongside TDE, FMOD, EasySave, Odin, Animancer, Feel, DOTween, Hot Reload. Must remain compatible with each Unity LTS update independently. No BD M0 Spike was completed: `BehaviorTree.SetVariableValue()` API was unverified from training data. `[SerializeField]` fields-only breaking change (Unity 6.3 LTS) posed unknown risk to `SharedVariable` serialization. No first-party event channel system (EventChannel equivalent requires custom code or additional plugins).
+- **Rejection Reason**: Unity Behavior Package provides equivalent functionality with zero additional vendor dependencies. M0 Spike confirmed Unity Behavior's API is production-ready in Unity 6.3 LTS with 0 BLOCKERs, while BD remained unverified. Reducing third-party dependency count reduces long-term maintenance risk.
 
 ### Alternative B: Custom C# Behavior Tree
 
-- **Description**: Pure C# hierarchical BT implementation. Game-concept.md names this "v1 自研 AIBT".
+- **Description**: Pure C# hierarchical BT implementation (game-concept.md: "v1 自研 AIBT").
 - **Pros**: Zero external dependencies; full architectural control over BT node types and Blackboard schema; no licensing concerns.
-- **Cons**: Behavior Designer is already purchased — a custom BT is sunk cost duplication. Custom BT requires implementing Blackboard, composites, decorators, serialization, and visual debugging tooling from scratch. For MVP scope (1 enemy type), the overhead is disproportionate.
-- **Rejection Reason**: No benefit over Behavior Designer for this project's scope. Custom BT is appropriate only when BT requirements are uniquely constrained (e.g., requiring custom composites that BD does not support) — not the case here.
+- **Cons**: Unity Behavior is available at no cost — a custom BT is redundant effort. Custom BT requires implementing Blackboard, composites, decorators, serialization, and visual debugging tooling from scratch. For MVP scope (1 enemy type), the overhead is disproportionate.
+- **Rejection Reason**: No benefit over Unity Behavior for this project's scope. Custom BT is appropriate only when BT requirements are uniquely constrained — not the case here.
 
 ### Alternative C: TDE AIBrain (Built-in)
 
-- **Description**: TDE's native AI layer: `AIBrain`, `AIAction` implementations (e.g., `AIActionMoveTowardsTarget3D`), `AIDecision` implementations, and `AIState` containers.
-- **Pros**: Already part of TDE; zero additional packages; simple integration with TDE's character system; immediate availability.
-- **Cons**: TDE AIBrain is a flat state machine, not a hierarchical BT. Beat-locked attack token requests require asynchronous blocking behavior (`Running` / `Success` / `Failure` states) within a single state — TDE `AIDecision` polling cannot implement this cleanly. No built-in Blackboard for beat state injection. Boss phase transitions (sub-tree switching) are architecturally incompatible with AIBrain's flat state model.
-- **Rejection Reason**: game-concept.md MVP definition explicitly specifies "行为树驱动" for enemies. TDE AIBrain cannot implement the CombatDirector beat-token wait protocol without significant workarounds that negate its simplicity advantage.
+- **Description**: TDE's native AI layer: `AIBrain`, `AIAction` implementations, `AIDecision` implementations, and `AIState` containers.
+- **Pros**: Already part of TDE; zero additional packages; simple integration with TDE's character system.
+- **Cons**: TDE AIBrain is a flat state machine, not a hierarchical BT. Beat-locked attack token requests require asynchronous blocking behavior (`Running` / `Success` / `Failure`) within a single state — TDE `AIDecision` polling cannot implement this cleanly. No Blackboard for beat state injection. Boss phase transitions architecturally incompatible with AIBrain's flat state model.
+- **Rejection Reason**: game-concept.md MVP explicitly specifies "行为树驱动" for enemies. TDE AIBrain cannot implement the CombatDirector beat-token wait protocol without significant workarounds.
 
 ## Consequences
 
 ### Positive
 
-- BD's mature SharedVariable Blackboard cleanly implements beat state injection without custom infrastructure
-- Visual BT graph editor (BD) accelerates FE1 GDD prototyping iteration for 1 enemy type + Boss
-- `CombatDirectorTokenTask` as a first-class BT node enforces beat-lock at the architecture level: no attack fires without C4 token
-- BD's hierarchical BT supports Boss phase transitions (sub-tree switching) without flat state machine workarounds
-- Purchase is already made — no additional licensing cost at adoption
+- `BlackboardVariable<T>.OnValueChanged` event enables **reactive** beat state patterns — BT branches can respond immediately to beat changes rather than polling
+- `ObserverAbortModifier` allows high-priority branches (e.g., death) to interrupt lower-priority ones (e.g., attack) without polling
+- `RunSubgraphDynamic` provides clean Boss phase transitions between sub-behavior graphs
+- `CombatDirectorTokenAction` as a first-class BT node enforces beat-lock at the architecture level: no attack fires without C4 token
+- `[DefaultExecutionOrder(-50)]` on `BehaviorGraphAgent` is hardcoded — execution ordering with `BeatClockBridge` (-100) is deterministic without manual Project Settings configuration
+- No additional licensing cost; eliminates one potential third-party dependency (BD) from the project
+- `EventChannel<T>` enables future upgrade: `BeatSnapshotEventChannel` as a Unity-native alternative to `BeatClockBridge` MonoBehaviour polling
 
 ### Negative
 
-- Behavior Designer is an additional third-party package that must remain compatible with Unity version updates (alongside TDE, FMOD, EasySave, Odin, Animancer, Feel, DOTween)
-- BD `BehaviorTree` replaces TDE `AIBrain`, meaning TDE's built-in `AIAction` and `AIDecision` stock components cannot be reused on enemies; all AI tasks must be custom BD Action Tasks
-- BD graph asset files may produce git merge conflicts if multiple team members edit the same BT graph simultaneously
-- `CombatDirectorTokenTask` interface assumes a C4 token-grant protocol that is TBD until C4 GDD is authored — FE1 GDD cannot fully specify attack behavior until C4 contract is established
+- All AI behaviors must be custom Unity Behavior `Action` nodes — TDE's stock `AIAction`/`AIDecision` components cannot be reused on enemies
+- Custom action nodes must be `partial class` with `[Serializable, GeneratePropertyBag]` and a unique `[NodeDescription(id: "...")]` GUID — more boilerplate than plain C# classes
+- `CombatDirectorTokenAction` interface assumes a C4 token-grant protocol TBD until C4 GDD is authored
+- BT graph asset files (`*.behavior`) may produce git merge conflicts if multiple team members edit the same graph simultaneously
 
 ### Risks
 
-- **BD Unity 6.3 LTS compatibility (HIGH — must verify before Accept)**: Behavior Designer has not yet been imported into this project. Unity 6.3 LTS's `[SerializeField]` fields-only breaking change may affect BD's `SharedVariable` serialization. **Mitigation**: BD M0 Spike (see Verification Required) must be completed before this ADR can be Accepted. Import BD, confirm compilation, read source for SharedVariable hierarchy.
-- **`BehaviorTree.SetVariableValue()` signature drift (MEDIUM)**: BD's Blackboard write API may differ from LLM training data. **Mitigation**: BD M0 Spike confirms actual method signature before `BeatClockBridge` code is written.
-- **Script Execution Order (MEDIUM)**: If BD `BehaviorTree` ticks before `BeatClockBridge` writes the latest beat data in the same frame, AI reads a one-frame-stale beat snapshot. **Mitigation**: Set Script Execution Order in Project Settings so `BeatClockBridge` executes before BD `BehaviorTree`. Document the ordering in FE1 GDD's implementation notes.
-- **CombatDirector protocol undefined (MEDIUM)**: `CombatDirectorTokenTask` depends on C4's token grant interface, which does not exist yet. **Mitigation**: C4 GDD (combat-director.md) must define the `RequestAttackToken(enemy)` / `OnTokenGranted()` protocol to match the interface contract declared in this ADR. Flag as joint authorship requirement in FE1 GDD.
-- **CharacterMovement API on non-player characters (LOW)**: `CharacterMovement.SetMovement(Vector2)` is the recommended TDE movement entry point, verified at `CharacterMovement.cs:200`. However, enemy characters may require different movement ability setups than player characters. **Mitigation**: Confirm `CharacterMovement` component exists on enemy prefabs during FE1 GDD implementation; fallback to `TopDownController.SetMovement(new Vector3(dir.x, 0f, dir.y))` if not.
+- **Script Execution Order (LOW — mitigated)**: `BehaviorGraphAgent` has hardcoded `[DefaultExecutionOrder(-50)]`. `BeatClockBridge` must declare `[DefaultExecutionOrder(-100)]`. Mitigation: enforced by attribute; verify with frame-count log during FE1 PlayMode tests.
+- **`partial class` requirement (LOW)**: All custom Action nodes must be `partial class` or `[GeneratePropertyBag]` source generator will fail. Mitigation: established as a coding standard in FE1 GDD implementation notes.
+- **CombatDirector protocol undefined (MEDIUM)**: `CombatDirectorTokenAction` depends on C4's `RequestAttackToken(enemy)` / `OnTokenGranted()` interface, which does not exist yet. Mitigation: C4 GDD must define this protocol; FE1 GDD co-authoring required.
+- **CharacterMovement API on non-player characters (LOW)**: `CharacterMovement.SetMovement(Vector2)` verified at TDE source `CharacterMovement.cs:200`. Enemy prefabs may require different movement ability setups. Mitigation: confirm `CharacterMovement` component on enemy prefabs during FE1 GDD implementation.
 
 ## GDD Requirements Addressed
 
 | GDD System | Requirement | How This ADR Addresses It |
 |------------|-------------|--------------------------|
-| game-concept.md | TR-concept-009: "Enemy beat-lock: all enemy attacks forced on-beat with beat-unit windups" | `CombatDirectorTokenTask` is the architectural enforcement point — no enemy attack ability fires without a CombatDirector beat-slot token grant. Beat-lock is structural, not optional. |
-| game-concept.md | Rule 4: 所有敌人攻击前摇以拍为单位，由 CombatDirector 令牌分配确保落拍 | `CombatDirectorTokenTask.TimeoutBeats` encodes the windup duration in beats. The task blocks the attack BT subtree until the correct beat arrives. |
-| game-concept.md | MVP: "普通敌人 1 种（行为树驱动）" | BD `BehaviorTree` provides the BT authoring infrastructure for FE1's 1 enemy type. |
-| game-concept.md | Boss 1 个（阶段化节奏设计）| BD's hierarchical BT + sub-tree switching supports Boss phase transitions without flat state machine workarounds. |
-| game-concept.md | Key Dynamic: "玩家在 Boss 战中用耳朵「听前摇」" | `CombatDirectorTokenTask.TimeoutBeats` enforces a fixed beat-unit windup, making enemy attack timing audibly predictable. |
+| game-concept.md | TR-concept-009: "Enemy beat-lock: all enemy attacks forced on-beat with beat-unit windups" | `CombatDirectorTokenAction` is the architectural enforcement point — no enemy attack ability fires without a CombatDirector beat-slot token grant. Beat-lock is structural, not optional. |
+| game-concept.md | Rule 4: 所有敌人攻击前摇以拍为单位，由 CombatDirector 令牌分配确保落拍 | `CombatDirectorTokenAction.TimeoutBeats` encodes the windup duration in beats. The action blocks the attack BT subtree until the correct beat arrives. |
+| game-concept.md | MVP: "普通敌人 1 种（行为树驱动）" | `BehaviorGraphAgent` + Unity Behavior graph provides the BT authoring infrastructure for FE1's 1 enemy type. |
+| game-concept.md | Boss 1 个（阶段化节奏设计）| Unity Behavior's `RunSubgraphDynamic` + `SwitchComposite` supports Boss phase transitions without flat state machine workarounds. |
+| game-concept.md | Key Dynamic: "玩家在 Boss 战中用耳朵「听前摇」" | `CombatDirectorTokenAction.TimeoutBeats` enforces a fixed beat-unit windup, making enemy attack timing audibly predictable. |
 
 ## Performance Implications
 
-- **CPU**: BD BT evaluation is O(active nodes) per tick. For MVP (≤5 concurrent enemies), estimated overhead <0.5ms/frame. Well within remaining frame budget. `BeatClockBridge.HandleBeatSnapshot()` fires at most 4–8 times/second (per enemy, per BPM); negligible cost.
-- **Memory**: BD `BehaviorTree` asset + per-instance Blackboard per enemy. Estimate ~50KB per enemy at runtime. Acceptable for MVP scope.
-- **Load Time**: BD graph assets loaded at scene load. Negligible for MVP (3–5 hand-crafted rooms).
+- **CPU**: Unity Behavior BT evaluation is O(active nodes) per tick. For MVP (≤5 concurrent enemies), estimated overhead <0.5ms/frame. `BeatClockBridge.HandleBeatSnapshot()` fires at most 4–8 times/second (per enemy, per BPM); negligible cost.
+- **Memory**: `BehaviorGraphAgent` instantiates a unique graph copy per enemy via `BehaviorGraph.AcquireInstance()`. Estimate ~50–80KB per enemy at runtime. Acceptable for MVP scope.
+- **Load Time**: Unity Behavior graph assets (`.behavior`) loaded at scene load. Negligible for MVP (3–5 hand-crafted rooms).
 - **Network**: N/A (single-player).
 
 ## Migration Plan
@@ -276,18 +307,18 @@ No existing AI code to migrate. FE1 GDD is the first enemy AI specification docu
 
 ## Validation Criteria
 
-1. Behavior Designer imports into Unity 6.3 LTS (6000.3.19f1) with zero compile errors (BD M0 Spike gate)
-2. `SharedVariable<T>` class hierarchy confirmed by source inspection; `BehaviorTree.SetVariableValue()` signature matches implementation in `BeatClockBridge`
-3. `BeatClockBridge.HandleBeatSnapshot()` fires and updates all three Blackboard values within the same frame as each BeatClock beat event
-4. BD `BehaviorTree` on enemy prefab evaluates correctly with no TDE `AIBrain` component present (no NullReferenceException at play-mode entry)
-5. `CombatDirectorTokenTask` returns `Running` while waiting for a token, `Success` on grant, `Failure` on timeout
-6. Enemy attack ability (`CharacterAbility.TriggerAbility()`) never fires without a preceding `CombatDirectorTokenTask` `Success` result
-7. `TDESetMovementTask` moves enemy using `CharacterMovement.SetMovement(Vector2)` — enemy moves in all 4 directions without z-axis mapping issues
-8. Script Execution Order: `BeatClockBridge` executes before BD `BehaviorTree` tick in the same Update frame (verified by adding frame-count log to both)
+1. `BehaviorGraphAgent` initializes on enemy prefab entry to Play mode with zero NullReferenceException (no TDE `AIBrain` component required)
+2. `BeatClockBridge.HandleBeatSnapshot()` fires and updates all three Blackboard values before `BehaviorGraphAgent.Update()` tick in the same frame (verified by frame-count log on both components)
+3. `BehaviorGraphAgent.SetVariableValue<float>("CurrentBPM", value)` returns `true` — Blackboard variable name matches graph definition
+4. `CombatDirectorTokenAction` returns `Status.Running` while waiting for token, `Status.Success` on grant, `Status.Failure` on timeout
+5. Enemy attack ability (`CharacterAbility.TriggerAbility()`) never fires without a preceding `CombatDirectorTokenAction` `Status.Success` result
+6. `TDESetMovementAction` moves enemy in all 4 directions using `CharacterMovement.SetMovement(Vector2)` without z-axis mapping issues
+7. `RunSubgraphDynamic` switches Boss behavior sub-graph at runtime without NullReferenceException or graph restart artifacts
 
 ## Related Decisions
 
-- **ADR-D1** (`adr-d1-tde-integration.md`): TDE lifecycle hooks and `TDELifecycleAdapter` that enemy AI must observe for death/respawn events
+- **ADR-D1** (`adr-d1-tde-integration.md`): TDE lifecycle hooks and `TDELifecycleAdapter` that enemy AI must observe for death/respawn events; `BehaviorGraphAgent.End()` / `Restart()` called by `TDELifecycleAdapter` on PlayerDeath / RespawnComplete
 - **ADR-D6** (`adr-d6-audio-middleware.md`): FMOD — upstream source for BeatClock's DSP timestamps that ultimately feed `BeatClockBridge`
-- **C4 GDD** (`design/gdd/combat-director.md` — not yet authored): defines the `RequestAttackToken()` / `OnTokenGranted()` protocol that `CombatDirectorTokenTask` depends on; must be co-authored with FE1 GDD
-- **FE1 GDD** (`design/gdd/enemy-ai.md` — blocked until this ADR is Accepted): specifies enemy behavior schemas, BT graph structure, and EnemyInfoSO integration
+- **M0 Spike Report** (`docs/architecture/m0-spike-unity-behavior.md`): Unity Behavior API verification — source of all confirmed API signatures in this ADR
+- **C4 GDD** (`design/gdd/combat-director.md` — not yet authored): defines the `RequestAttackToken()` / `OnTokenGranted()` protocol that `CombatDirectorTokenAction` depends on; must be co-authored with FE1 GDD
+- **FE1 GDD** (`design/gdd/enemy-ai.md` — unblocked by this ADR): specifies enemy behavior schemas, BT graph structure, and EnemyInfoSO integration
