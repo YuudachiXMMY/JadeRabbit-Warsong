@@ -1,10 +1,10 @@
-# Session State — 2026-07-16
+# Session State — 2026-07-21
 
 ## Current Focus
 
 - **Epic**: Pre-Production
-- **Feature**: M0 Spike — TDE + FMOD + EasySave 3 兼容性验证
-- **Task**: Designing F6 TDE & Animancer Integration Layer GDD — 骨架已创建，进行中 Section A (Overview)
+- **Feature**: C1 节奏量化攻击系统 GDD — ✅ APPROVED（2026-07-21，第五轮 lean 复查）
+- **Task**: 下一步 C2 连招图 (/design-system combo-system) 或 C4 战斗导演（可并行）
 
 ---
 
@@ -324,8 +324,65 @@
   - `docs/architecture/tr-registry.yaml` +4 entries (83 total) ✅
 - **下一步**: (1) Accept ADR-D3 + D4, (2) 修订 ADR-D5 UpdateBpm(), (3) C1 GDD rhythm-core.md
 
+<!-- CONSISTENCY-CHECK: 2026-07-19 | GDDs checked: 5 | Stale registry: 1 (nominal_attack_bpm) | Conflicts: 0 | Registry updated: entities.yaml -->
+
+## Session Extract — /review-all-gdds 2026-07-19
+- Verdict: **CONCERNS** (1B / 12W / 32I)
+- GDDs reviewed: 5 (F2, F3, F4, F5, F6)
+- BLOCKER: 1 — B-01 C1 judgment window values undefined (known prerequisite)
+- WARNING: 12 — 3 actionable now (F2 ScheduleBGMTransition API, F5 status FIXED, LevelBootstrap deferred), 9 downstream (C1-C5/FE5 responsibility)
+- INFO: 32 — formatting, cross-refs, downstream AC dependencies
+- F5 status fix: save-persistence.md "In Review" → "Approved" ✅
+- Registry fix: nominal_attack_bpm notes updated for per-node authoredBpm ✅
+- Comparison to 2026-07-15 Rev.2: WARNING increase from deeper Phase 3+4 analysis, not regression
+- Report: design/gdd/reviews/gdd-cross-review-2026-07-19.md
+- **下一步**: (1) C1 GDD rhythm-core.md, (2) Accept ADR-D3 + D4, (3) ADR-D5 UpdateBpm() 修订
+
+<!-- CROSS-GDD-REVIEW: 2026-07-19 | GDDs reviewed: 5 | BLOCKER: 1 | WARNING: 12 | INFO: 32 | Verdict: CONCERNS -->
+
+## Session Extract — /design-review rhythm-core.md Round 2 — 2026-07-21
+- Verdict: **NEEDS REVISION** → **Revised Round 2, Pending Re-review**
+- 3 blocking items resolved, 5 recommended revisions applied
+- Key fixes:
+  - B1: C1-F1 条件改为 `chargeStartDspTime > -1.0`（去掉 attackType 判断，与 F3 guard table 对齐）
+  - B2: C1-F3/F5/E7 引入 `gridIntervalMs` 抽象（HalfBeat=halfBeatMs, Beat=fullBeatMs）
+  - B3: AC-C1-07 重写为 BPM=120 具体可测断言
+  - R1-R5: Rule 2 Lookahead 语义、AC-C1-03 移除伤害倍率、M3 宏 DEVELOPMENT_BUILD、Assert 条件编译、Rule 9/10 顺序修正
+- systems-index: C1 → "Revised Round 2 — Pending Re-review" ✅
+- review-log: 第二轮条目已追加 ✅
+
+## Session Extract — /design-review rhythm-core.md Round 3 — 2026-07-21
+- Verdict: **NEEDS REVISION** → **Revised Round 3, Pending Re-review**
+- 4 blocking items resolved, 4 recommended revisions applied
+- Key fixes:
+  - P1: C1-F5 内联 E7 二步坍缩逻辑（Assert 之前），修正 Android BPM ≥ 186 时 Assert 误报
+  - P2: Rule 1 Beat 行"触发条件"改为 C1 skip toggle；AC-C1-07 重写为含初始相位和可测断言的具体描述
+  - P3: AC-C1-06 补充 `CancelTier=Advanced` 断言
+  - P4: 新增 C1-F6 节——RhythmJudgmentEvent 规范性字段定义（含 ADR-D3 同步需求）
+  - N/H: C1-F1 变量表 HeavyAttack 遗漏修复；C1-F3 不变量措辞改为"经 E7 坍缩修复后始终成立"
+- systems-index: C1 → "Revised Round 3 — Pending Re-review" ✅
+- review-log: 第三轮条目已追加 ✅
+- **下一步**: /clear → /design-review design/gdd/rhythm-core.md（第四轮全深度重审）
+
+## Session Extract — /design-review rhythm-core.md Round 4 — 2026-07-21
+- Verdict: **NEEDS REVISION** → **Revised Round 4, Pending Re-review**
+- 7 blocking items resolved, 1 recommended revision applied (U4)
+- Key fixes:
+  - P0: C1-F2 新增延迟安全约束（|latency_offset_ms| < GoodHalfWindowMs_effective）；FE7 层负责边界拦截
+  - P1: Rule 7 新增 Off 模式豁免条款（立即 EmitAndClear(0)，完全绕过 IsStartConfirmed 检查）
+  - P2: AC-C1-02b 边界点改为严格小于 < LateWindowMs；精确边界点明确适用 AC-C1-04
+  - P3: C1-F5 末尾加 `_skipToggle = false`；AC-C1-15 补充 Beat 模式额外断言
+  - P4: AC-C1-19 明确极高 BPM 下 platformMinPerfectMs 承诺被放弃，Warning 须含具体值
+  - P5: AC-C1-07 拆分为 07a（正向）和 07b（负向）两个子用例
+  - P6: Tuning Knobs 新增 platformMinPerfectMs 实现指引（Application.platform + 测试注入方案）
+  - U4: C1-F5 Debug.Assert 注释修正（因果方向原先反向）
+- creative-director 裁定：激励真空（Rule 5+9）为可接受设计选择，不列阻塞
+- systems-index: C1 → "Revised Round 4 — Pending Re-review" ✅
+- review-log: 第四轮条目已追加 ✅
+- **下一步**: /clear → /design-review design/gdd/rhythm-core.md（第五轮，lean mode 复查即可）
+
 <!-- STATUS -->
 Epic: Pre-Production
-Feature: Architecture Review v6 — CONCERNS 2026-07-19
-Task: 下一步：Accept ADR-D3/D4 → C1 GDD rhythm-core.md
+Feature: C1 GDD rhythm-core.md — Revised Round 4 Pending Re-review
+Task: /clear 后运行 /design-review design/gdd/rhythm-core.md 第五轮重审（lean mode）
 <!-- /STATUS -->

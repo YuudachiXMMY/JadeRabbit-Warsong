@@ -37,7 +37,7 @@
 #   Each entry: name, status, source, referenced_by[], attributes{}, added, revised
 
 version: 1
-last_updated: "2026-07-14"
+last_updated: "2026-07-19"
 
 # ─── ENTITIES ────────────────────────────────────────────────────────────────
 # Named game-world objects: enemies, NPCs, characters, factions, bosses.
@@ -193,14 +193,17 @@ constants:
 
   - name: nominal_attack_bpm
     status: active
-    source: design/gdd/tde-integration.md   # 攻击动画制作参照 BPM，由 F6 定义
+    source: design/gdd/tde-integration.md   # 攻击动画制作参照 BPM 默认值，由 F6 定义
     referenced_by:
       - design/gdd/tde-integration.md
-    value: 120
+    value: 120                              # was: described as global F6Constants.NOMINAL_BPM before 2026-07-19
     unit: bpm
-    notes: "所有攻击 Clip 的制作参照 BPM。F6-FORMULA-01 分母：attackAnimSpeed = clamp(currentBPM / 120, 0.5, 2.5)。代码中以 F6Constants.NOMINAL_BPM = 120f 定义。若变更须同步重新制作所有攻击 Clip。"
+    notes: "攻击 Clip 的制作参照 BPM 默认值，由 AttackNodeSO.AuthoredBpm 字段 per-node 配置（默认 120f，范围 [60, 240]）。\
+      F6-FORMULA-01 分母为 authoredBpm（非全局常量）：attackAnimSpeed = clamp(currentBPM / authoredBpm, SPEED_MIN, SPEED_MAX)。\
+      不同连招节点可各自设定制作参照 BPM；若更改默认值须同步更新所有未自定义 AuthoredBpm 的攻击 Clip。\
+      ADR-D5 引入 per-node 字段（tde-integration.md R3 修订，2026-07-19）。"
     added: 2026-07-18
-    revised: ""
+    revised: "2026-07-19"
 
 # Example:
 #
