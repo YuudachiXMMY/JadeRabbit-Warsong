@@ -386,3 +386,11 @@ Epic: Pre-Production
 Feature: C1 GDD rhythm-core.md — Revised Round 4 Pending Re-review
 Task: /clear 后运行 /design-review design/gdd/rhythm-core.md 第五轮重审（lean mode）
 <!-- /STATUS -->
+
+## Session Extract — /review-all-gdds 2026-08-08
+- Verdict: FAIL
+- GDDs reviewed: 6 (F2, F3, C1, F4, F5, F6)
+- Flagged for revision (marked in systems-index): F2 audio-beat-clock, F5 save-persistence (Blocking)
+- Blocking issues: B1 (F2 未定义 OnBpmChanged/OnBeatClockResumed 事件); B2 (F2↔F5 初始化时序/未初始化读取矛盾); D1 (Off 模式未隔离 merit/进度, 击穿反支柱, 须先于 C5/FE5 锁定)
+- Recommended next: /design-review design/gdd/audio-beat-clock.md 修复 F2 两个 Blocking, 再修 F5, 然后重跑 /review-all-gdds
+- Report: design/gdd/gdd-cross-review-2026-08-08.md
