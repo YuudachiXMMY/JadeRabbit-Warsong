@@ -210,3 +210,38 @@ Greenfield project — no existing audio code to migrate. Integration sequence f
 - D1 (TDE integration): TDE handles movement/lifecycle audio at the MMFeedbacks level; FMOD handles all audio output — no conflict at the architecture level; Feel/MMFeedbacks audio feedback types require Post-MVP migration to `MMF_FMODEvent`
 - D5 (Rhythm Core design): BeatScheduler in CombatCore uses `IDSPClock` — `FMODDSPClockImpl` is the production implementation
 - ADR-D2 (Enemy AI): No dependency; AI systems access beat data via BeatClock's C# events, not via audio APIs
+- ADR-D10 (Bootstrap Sequencing & Latency Injection Topology): consumes the main-thread threading model formalized in the Addendum below; the F6 boot-inject of `LatencyOffsetMs` runs on the same main thread as BeatClock dispatch
+
+---
+
+## Addendum — BeatClock Threading Model (2026-08-08)
+
+**Status**: Accepted addendum to ADR-D6 (Accepted). Clarifying/normative only — does not reverse the original decision; it makes the thread model implicit in the Decision body explicit and normative so that F2 GDD Core Rule 12 / Rule 14 can drop their now-stale conditional clauses. Resolves F2 review **OQ-6**.
+
+### Why this addendum
+
+ADR-D6's Decision selected **FMODUnity RuntimeManager + main-thread Update-loop polling** of the FMOD DSP clock and explicitly **rejected `OnAudioFilterRead`** (Alternative 2). Consequently the audio-thread-callback marshalling machinery (`ConcurrentQueue<BeatEventData>`) is **not** part of this architecture. However, F2 GDD Core Rule 12 (`audio-beat-clock.md:65`) and Rule 14 (`:74`) still carry a **conditional** thread-safety clause — *"若 ADR-D6 选用 `OnAudioFilterRead`…须通过 `ConcurrentQueue<BeatEventData>`…"* — whose premise ADR-D6 has now falsified. That conditional is stale (flagged as OQ-6). This addendum states the authoritative thread model so those clauses can be simplified.
+
+### Normative thread model
+
+1. **Two threads, one dispatch thread.** FMOD runs its audio mixing on its **own internal audio thread** (see Architecture Diagram: `FMOD Audio Thread (internal)`). All BeatClock logic and **all C# beat event dispatch run exclusively on the Unity main thread.** There is **no** beat callback on the FMOD audio thread and **no** use of Unity's `OnAudioFilterRead` audio thread.
+
+2. **Poll, don't call back.** `BeatClock.Update()` (main thread) reads the DSP clock via `IDSPClock.GetCurrentTime()` and dispatches `DispatchBeatEvent()` **directly, with no queue and no cross-thread marshalling.** `ConcurrentQueue<BeatEventData>` is **NOT required and must not be introduced** under this architecture — it would add ~1 frame of latency for zero benefit.
+
+3. **Frame ordering guarantee.** `FMODUnity.RuntimeManager.Update()` runs (via its own hook) **before** `BeatClock.Update()` within the same frame, so the DSP clock BeatClock reads is fresh. If a Script Execution Order dependency is needed to guarantee this, it must be documented in the F2/bootstrap setup (see ADR-D10 Bootstrap Sequencing Contract).
+
+4. **Double-update prohibition.** `BeatClock` (and any other system) **must NOT** call `FMOD.Studio.System.Update()` — RuntimeManager already calls it once per frame; a second call corrupts FMOD's command queue. (Restates Decision §Integration Surface as a thread-model invariant.)
+
+5. **DSP clock read contract.** The DSP clock is read on the **main thread** from the **master channel group** (`getMasterChannelGroup().getDSPClock(out ulong dspClock, …)`), returning a **`ulong`** sample counter maintained by FMOD's audio thread. Conversion to `double` seconds uses `coreSystem.getSoftwareFormat()` sample rate (never `AudioSettings.outputSampleRate`). No lock is required for this read because BeatClock never writes the DSP clock — it only reads FMOD's monotonic counter.
+
+6. **Latency-offset injection is main-thread.** All writers of `BeatClock.LatencyOffsetMs` (F6 boot-inject and FE3 runtime calibration, per ADR-D10 D-5) execute on the main thread, coherent with main-thread dispatch. No synchronization primitive is required.
+
+### Downstream contract changes (F2 GDD, to apply in the same-round revision)
+
+- **Rule 12 (`:65`)**: replace the conditional `OnAudioFilterRead` / `ConcurrentQueue` clause with a normative statement: *dispatch is main-thread Update-loop polling (ADR-D6 Addendum); no ConcurrentQueue.* Keep the enduring downstream contract (subscribers must read `BeatEventData.beat_dsp_time`; forbidden to read `AudioSettings.dspTime` in the callback).
+- **Rule 14 (`:74`)**: remove the "若 ADR-D6 调度机制最终确定为异步回调" sub-clause — the premise is closed.
+- **PlayMode thread-safety test** remains valid and required (Validation Criteria #4: 1000 rapid `BeatClock.Update()` calls → zero `UnityException`), now as a guard that the main-thread invariant holds, not as coverage of a queue.
+
+### Non-goals / boundaries
+
+- This addendum governs **beat-event dispatch timing on the audio↔main-thread boundary** only. It does **not** change **input** timing: input judgement uses F3's `InputAction.performed` callback timestamp (per game-concept.md technical risk / CLAUDE.md forbidden pattern), which is a separate clock from F2's Update-loop dispatch. F2 broadcasts a precise DSP timestamp *value* (< 0.1ms); the value's precision is independent of when the C# callback fires (F2 Core Rule 12).

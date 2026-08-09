@@ -80,6 +80,20 @@ state_ownership:
     added: 2026-07-18
     revised: ""
 
+  - state: latency_offset_ms
+    status: active
+    owner_system: fe3-latency-calibration
+    adr: docs/architecture/adr-d10-bootstrap-sequencing.md
+    interface: "BeatClock.LatencyOffsetMs (float ms, range [-200,200]). Two-phase writer (ADR-D10 D-5): BOOT = f6-tde-lifecycle-adapter injects once from F5 LatencyCalibrationDTO before BeatClock.Play() and EnableGameplayInput(); RUNTIME = fe3-latency-calibration is the sole writer. Persisted by F5 (global/calibration.es3); source field so-data-layer latencyCalibrationOffsetMs."
+    write_access: boot-f6-tde-lifecycle-adapter-once__runtime-fe3-latency-calibration-only
+    referenced_by:
+      - docs/architecture/adr-d10-bootstrap-sequencing.md
+      - design/gdd/audio-beat-clock.md
+      - design/gdd/save-persistence.md
+      - design/gdd/tde-integration.md
+    added: 2026-08-08
+    revised: ""
+
 # Example:
 #
 # state_ownership:
@@ -250,6 +264,24 @@ performance_budgets:
 #     revised: ""
 
 
+  - contract: save_service_consumer_seam
+    status: active
+    pattern: direct_call
+    producer: f5-save-service
+    consumers:
+      - f2-beat-clock
+      - f6-tde-lifecycle-adapter
+    adr: docs/architecture/adr-d10-bootstrap-sequencing.md
+    signal_signature: "ISaveService (consumer-facing seam, ADR-D10 D-4): void Initialize() [synchronous, blocking, main thread]; bool IsInitialized; LatencyCalibrationDTO LoadLatencyCalibration(); void SaveLatencyCalibration(LatencyCalibrationDTO). Production SaveService : ISaveService; test MockSaveService : ISaveService. Distinct from F5-internal IFileStorage (storage-backend mock) — ISaveService is the whole-service mock for F2/F6 consumer tests."
+    referenced_by:
+      - docs/architecture/adr-d10-bootstrap-sequencing.md
+      - docs/architecture/adr-d7-save-persistence-middleware.md
+      - design/gdd/save-persistence.md
+      - design/gdd/tde-integration.md
+    added: 2026-08-08
+    revised: ""
+
+
 # ─── API DECISIONS ───────────────────────────────────────────────────────────
 # Which engine APIs are chosen for which purpose across the project.
 # Conflicts: two ADRs using different APIs for the same purpose = inconsistent
@@ -408,6 +440,13 @@ api_decisions:
 # unknowingly use it (i.e., it's a tempting but wrong approach for this project).
 
 forbidden_patterns:
+  - pattern: f2_self_load_latency_from_f5
+    status: active
+    description: "BeatClock (F2) must NOT call SaveService.LoadLatencyCalibration() or otherwise self-load LatencyOffsetMs from F5. The boot value is injected once by the F6 TDELifecycleAdapter startup coordinator; runtime updates come only from the FE3 calibration flow. BeatClock is a pure injected holder, never a loader."
+    why: "A self-load in BeatClock.Start() created a second, un-owned writer of LatencyOffsetMs that Rule 10's single-writer invariant did not cover, and a hidden runtime dependency of F2 on F5. ADR-D10 D-5 centralizes the boot-load on the F6 gate so BeatClock has no F5 dependency and the runtime invariant (FE3-only) holds."
+    adr: docs/architecture/adr-d10-bootstrap-sequencing.md
+    added: 2026-08-08
+
   - pattern: fmod_eventinstance_bgm_scheduling
     status: active
     description: "Do not use FMOD.Studio.EventInstance to play or schedule rhythm-critical BGM. Use FMOD Core API (FMOD.Sound + FMOD.Channel.setDelay()) instead."
