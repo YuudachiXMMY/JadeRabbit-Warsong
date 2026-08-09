@@ -20,7 +20,7 @@
 | # | 系统 | 层级 | 里程碑 | 状态 | 设计文档 | 依赖 |
 |---|------|------|--------|------|---------|------|
 | F1 | Game Concept | Foundation | — | **Approved** | `design/gdd/game-concept.md` | — |
-| F2 | 音频/拍点时钟系统 | Foundation | **MVP** | Needs Revision | `design/gdd/audio-beat-clock.md` | — |
+| F2 | 音频/拍点时钟系统 | Foundation | **MVP** | **Amended — Pending Re-review** | `design/gdd/audio-beat-clock.md` | — |
 | F3 | Input 事件系统 | Foundation | **MVP** | **Approved** | `design/gdd/input-event-system.md` | — |
 | F4 | ScriptableObject 数据层（推断） | Foundation | **MVP** | **Approved** | `design/gdd/so-data-layer.md` | — |
 | F5 | 存档/持久化系统 | Foundation | **MVP** | Needs Revision | `design/gdd/save-persistence.md` | — |

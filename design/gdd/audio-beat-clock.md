@@ -1,8 +1,8 @@
 # 音频/拍点时钟系统 (Audio Beat Clock System)
 
-> **Status**: Approved
+> **Status**: Approved (Amended — B1 事件契约补订 OnMeter*, Pending Re-review)
 > **Author**: Jadyn Wu + Claude Code Agents
-> **Last Updated**: 2026-07-15
+> **Last Updated**: 2026-08-08
 > **Implements Pillar**: 支柱一：节奏即战斗 (Rhythm IS Combat)
 > **System ID**: F2
 > **Layer**: Foundation | **Milestone**: MVP | **Design Order**: 1
@@ -64,6 +64,16 @@ F2 音频/拍点时钟系统是《玉兔：破阵》节奏战斗体系的时序�
 
    > **⚠ 线程安全约束（ADR-D6 必要前提）**：若 ADR-D6 选用 `OnAudioFilterRead` 作为调度机制，C# 事件**禁止**从音频线程直接触发。`OnAudioFilterRead` 在 Unity 的独立音频线程运行，订阅者回调若调用任何 Unity API（`AudioSource.Play()`、`Instantiate()`、`Transform.position` 等）将抛出 `UnityException`。正确实现须通过 `ConcurrentQueue<BeatEventData>` 将事件数据从音频线程写入，由主线程 `Update()` 消费并分发事件（增加约 1 帧调度延迟，但保持主线程安全）。此约束须作为 ADR-D6 的**强制后果**写入 ADR 文档，并在 EditMode 测试（MockDSPClock 在主线程）无法覆盖此场景时额外进行 PlayMode 线程安全验证。
 
+13. **DSP 时间坐标系强制标注（raw/adjusted 命名规则）**: 所有跨模块传递的 DSP 时间戳字段与事件 payload **必须**在命名上显式标注坐标系后缀——`...Raw`（未应用延迟偏移，用于音频硬件调度调用，如 `IAudioPlayer.PlayScheduled()`、`ConfirmDSPStart()`、BGM 换片）或 `...Adjusted`（已应用 F2-F5 偏移，用于玩家判定/呈现消费，如 C1 判定窗口、P1/PL2 节奏呈现）。**禁止**使用裸 `dspTime` 字段名。理由：raw 与 adjusted 混用是本项目递归出现的缺陷类（F2-F3 暂停恢复公式、F2-F7 HUD 公式已两次修订，见 B2 修订警告），最大引入 ±200ms 坐标系误差。**契约铁律**：音频调度调用一律使用 raw（物理输出延迟在硬件层已自然发生，叠加 offset 将双重应用，产生随玩家校准值漂移的可听接缝）；面向玩家的时间对齐一律使用 adjusted。
+
+14. **BPM/拍号变更事件（双阶段：Accepted → Changed）**: F2 暴露两个变更事件，服务两类不同时序需求。均为 C# `event`（签名 `event Action<MeterChangeEventData>`，非 `EventHandler<T>`，避免值类型 payload 被迫继承 `EventArgs` 而装箱）；payload `MeterChangeEventData` 为 `readonly struct`（字段见下方结构表），全字段纯值类型，零 GC。
+    - **`OnMeterChangeAccepted`（接受时广播）**：在 `RequestBPMChange()` / `RequestTimeSignatureChange()` 被接受、状态转入 `PendingBPMChange` / `PendingTimeSignatureChange` 的**同帧**广播。供 F6 立即预加载/预调度目标 BGM——由此获得从接受到边界的**全部提前量**，满足 BGM 播放规范的 500ms 最低提前量约束（若在边界才通知，BPM≥120 时 `beat_interval_s ≤ 0.5s`，提前量数学上不可能满足）；供 C2 立即 `UpdateBpm()` 实现「骤跳瞬间即变凌厉」的体感。payload 携带 `predictedEffectiveDspTimeRaw`——边界生效时刻，接受时即可由 F2-F3 确定性计算。
+    - **`OnMeterChanged`（生效时广播）**：在 `PendingBPMChange` / `PendingTimeSignatureChange → Playing` 于小节边界生效的**同帧**广播，顺序上位于**边界拍 `OnBeatExact` 之后、新段第 0 拍调度之前**。供 C1 重锚定量化网格、C4 调整令牌密度、HUD/状态刷新。
+    - **合并语义**：同帧 BPM + 拍号合并生效时（Edge Case + AC-F2-15），`OnMeterChangeAccepted` 与 `OnMeterChanged` **各恰好触发 1 次**（不因合并被吞或双发），payload 的 `bpmChanged` / `timeSigChanged` 布尔标志指示本次变更涵盖的维度。此设计同时覆盖 Boss 序列 3/4→5/8 这类**仅拍号变化、BPM 不变**的场景——单纯的 `OnBpmChanged` 会漏掉此事件（F6 BGM 换片、C4 令牌密度将收不到通知）。
+    - **状态一致性**：内部状态字段（bpm/numerator/dsp_start 等）**必须**在事件广播**之前**完成翻转，保证事件回调内同步查询 `BeatStateSnapshot` 读到新值。
+    - **线程安全**：若 ADR-D6 调度机制最终确定为异步回调（见 Rule 12 ⚠ 约束），本双事件与 `OnBeatExact` 须经**同一** dispatch pass 分发以保证跨事件相对顺序（同一 pass 内先 flush Exact 队列，再 flush Meter 事件队列），并显式测试断言此顺序。
+    - **消费方反向引用（跟进项）**：F6 GDD § BGM 过渡策略、C1 GDD F2 依赖章节、C4 GDD 须反向引用本双事件——本轮仅在 F2 侧声明契约，F6/C1/C4 文档的反向引用为后续跟进。
+
 ---
 
 ### States and Transitions
@@ -81,10 +91,10 @@ F2 音频/拍点时钟系统是《玉兔：破阵》节奏战斗体系的时序�
 | `Stopped` | `Play(clip, bpm, timeSig)` 调用 | `Playing` |
 | `Playing` | 收到 TDE 暂停信号 | `Paused` |
 | `Paused` | 收到 TDE 恢复信号 | `Playing` |
-| `Playing` | `RequestBPMChange(newBpm)` | `PendingBPMChange` |
-| `PendingBPMChange` | 当前小节最后一拍 Exact 事件广播后 | `Playing`（新 BPM） |
-| `Playing` | `RequestTimeSignatureChange(num, den)` | `PendingTimeSignatureChange` |
-| `PendingTimeSignatureChange` | 当前小节最后一拍 Exact 事件广播后 | `Playing`（新拍号） |
+| `Playing` | `RequestBPMChange(newBpm)`（广播 `OnMeterChangeAccepted`） | `PendingBPMChange` |
+| `PendingBPMChange` | 当前小节最后一拍 Exact 事件广播后（广播 `OnMeterChanged`） | `Playing`（新 BPM） |
+| `Playing` | `RequestTimeSignatureChange(num, den)`（广播 `OnMeterChangeAccepted`） | `PendingTimeSignatureChange` |
+| `PendingTimeSignatureChange` | 当前小节最后一拍 Exact 事件广播后（广播 `OnMeterChanged`） | `Playing`（新拍号） |
 | `Playing` / `Paused` | `Stop()` 或关卡卸载 | `Stopped` |
 
 ---
@@ -95,6 +105,8 @@ F2 音频/拍点时钟系统是《玉兔：破阵》节奏战斗体系的时序�
 |------|------|---------|---------|
 | F2 **→** C1 | 节奏量化攻击系统 | `OnHalfBeatLookahead`（DSP 时间戳）+ `BeatStateSnapshot` | 事件订阅 + 同步查询 |
 | F2 **→** C4 | 战斗导演 | `OnBeatLookahead`（时间戳 + 小节号 + 拍内序号） | 事件订阅 |
+| F2 **→** F6 | TDE 集成层 | `OnMeterChangeAccepted`（接受时；`MeterChangeEventData`，含 `predictedEffectiveDspTimeRaw`，供 BGM 预加载/预调度） | 事件订阅 |
+| F2 **→** C1 / C4 | 量化 / 战斗导演 | `OnMeterChanged`（生效时；网格重锚定 / 令牌密度调整） | 事件订阅 |
 | FE3 **→** F2 | 延迟校准系统 | `LatencyOffsetMs`（float，毫秒） | 属性注入（可随时重写；FE3 每次校准完成后更新） |
 | F2 **→** FE3 | 延迟校准系统 | `GetCurrentDSPTime()`（double，秒） | 同步查询接口 |
 | F2 **→** P1 | HUD | `OnBeatExact` + `BeatProgress`（0–1，帧查询） | 事件订阅 + 帧查询 |
@@ -128,6 +140,25 @@ F2 音频/拍点时钟系统是《玉兔：破阵》节奏战斗体系的时序�
 > ```
 > 其中 `n` = 当前已广播的最近一拍 `segment_beat_index`，`m` = 当前已广播的最近一半拍 `segment_half_beat_index`。两者均经 F2-F5 偏移调整（即等价于 `F2-F5(F2-F3(n+1))`），与广播给上层的 `adjusted_beat_time` 坐标系一致。
 > **`PendingBPMChange` 状态下**：`dsp_start_time`、`beat_interval_s` 均使用**当前（旧）BPM 段**的值，直到小节边界生效前，`nextBeatDspTime` 仍以旧 BPM 计算。
+
+---
+
+### MeterChangeEventData 事件结构
+
+`OnMeterChangeAccepted` 与 `OnMeterChanged`（见 Core Rule 14）共用的 payload（`readonly struct`，全字段纯值类型，零 GC，坐标系遵循 Core Rule 13）。
+
+| 字段 | 类型 | 描述 |
+|------|------|------|
+| `bpmChanged` | bool | 本次变更是否涉及 BPM（拍号-only 变更时为 `false`） |
+| `timeSigChanged` | bool | 本次变更是否涉及拍号（BPM-only 变更时为 `false`） |
+| `oldBpm` | float | 变更前生效 BPM，∈ [80, 240] |
+| `newBpm` | float | 变更后 BPM（已 clamp，∈ [80, 240]）；拍号-only 变更时 == `oldBpm` |
+| `oldNumerator` | int | 变更前拍号分子，∈ {3, 4, 5} |
+| `newNumerator` | int | 变更后拍号分子；BPM-only 变更时 == `oldNumerator` |
+| `predictedEffectiveDspTimeRaw` | double | 边界生效时刻的**原始** DSP 时间戳（**raw，未应用 latency offset**——遵循 Core Rule 13；接受时由 F2-F3 确定性计算，生效时与实际边界一致）。F6 以此值直接调度 `IAudioPlayer.PlayScheduled()`，禁止叠加 offset |
+| `newBeatIntervalS` | double | 变更后的 `beat_interval_s` = `60.0 / newBpm`（拍号-only 变更时 == 旧值） |
+
+> **`OnMeterChangeAccepted` vs `OnMeterChanged` 的字段差异**：两事件 payload 结构相同；`Accepted` 在接受时广播（`predictedEffectiveDspTimeRaw` 为**预测**的边界时刻），`Changed` 在边界生效时广播（同一字段为**已实现**的边界时刻，二者数值一致——F2-F3 边界时刻是确定性的，不存在预测偏差）。
 
 ---
 
@@ -413,6 +444,8 @@ F2-F8 (beat_index_in_measure)          [依赖 time_sig_segment_beat_index + num
 
 - **如果 Boss 阶段切换信号在小节中途到达（如第 2 拍 of 4）**：切换请求入队，当前小节剩余拍数正常播放，在最后一拍的 Exact 事件广播后生效。玩家不会感受到节奏在小节中途中断。
 
+- **如果 BPM/拍号变更请求发起时距下一个小节边界不足 500ms**：因 BGM 换片调度须满足 `IAudioPlayer.PlayScheduled()` 的 500ms 最低提前量（见 F2-F3 BGM 播放规范第 1 条），若变更在最近的边界生效将使 F6 无足够提前量完成无缝换片。F2 将该变更**顺延至再下一个小节边界**生效（而非最近的边界）。`OnMeterChangeAccepted` 仍在接受时立即广播，其 `predictedEffectiveDspTimeRaw` 指向**顺延后**的边界时刻；`OnMeterChanged` 在顺延后的边界广播。记录 Info 日志说明顺延。此规则仅影响 BGM 有实际换片需求的变更；纯时钟层 BPM 变更（无 BGM 切换）不受 500ms 约束，仍在最近边界生效。
+
 ---
 
 ## Dependencies
@@ -453,7 +486,7 @@ F2 的实例化必须在 F6 完成 BGM 加载之后。F6 GDD 须在接口合约�
 `RequestBPMChange()` / `RequestTimeSignatureChange()` 仅负责时钟层节拍计算切换，F2 **不**处理 BGM 的音频内容过渡。BGM 过渡策略由 F6 GDD 定义，须遵守以下约束：
 
 - **禁止**通过音频播放器 pitch 属性（FMOD `Channel.setPitch()` 等）实现 BPM 切换——变速会使编钟等中国传统乐器失调，违反支柱三（华风沉浸）
-- 推荐模型：F6 订阅 F2 的 BPM 切换接受事件（或在调用 `RequestBPMChange()` 后立即预加载目标 BPM 的 BGM 音频资产），在小节边界（`OnBeatExact` 触发时 `beat_index_in_measure == numerator-1`）通过 `IAudioPlayer.PlayScheduled()` 精确对齐执行无缝换片或 Crossfade
+- 推荐模型：F6 订阅 F2 的 **`OnMeterChangeAccepted`** 事件（接受时广播，见 Core Rule 14），接到通知后立即预加载目标 BGM，并以 payload 的 `predictedEffectiveDspTimeRaw`（**raw 坐标系，禁止叠加 offset**——见 Core Rule 13）通过 `IAudioPlayer.PlayScheduled()` 在小节边界精确对齐执行无缝换片或 Crossfade。接受时通知保证 F6 获得从接受到边界的全部提前量（满足 500ms 最低提前量约束），无需再自行手写 `beat_index_in_measure == numerator-1` 边界轮询
 - F2 不持有、不感知 BGM Clip 的切换——时钟层（F2）与音频内容层（F6）职责严格分离
 
 ---
@@ -509,7 +542,7 @@ F2 无运行时 UI。
 ## Acceptance Criteria
 
 > **测试位置**：`Assets/Tests/EditMode/F2/` + `Assets/Tests/PlayMode/F2/`
-> **门控级别**：BLOCKING — MVP 门控以 AC-F2-01 ~ AC-F2-20 及 AC-F2-23（含拆分后的 a/b 子条目）为准，自动化覆盖率 ≥ 80%
+> **门控级别**：BLOCKING — MVP 门控以 AC-F2-01 ~ AC-F2-20、AC-F2-23 及 AC-F2-24 ~ AC-F2-27（含拆分后的 a/b 子条目）为准，自动化覆盖率 ≥ 80%
 > AC-F2-21/22（5/8 拍号，Post-MVP）标记为 ADVISORY，不阻塞 MVP 验收。AC-F2-07b 为手工 QA 证据步骤，CI 中以 MockDSPClock 替代（详见 AC-F2-07b CI 策略注记）
 > **可测性要求**：BeatClock 须通过 `IDSPClock` 接口注入时钟源，EditMode 测试使用 `MockDSPClock` 进行确定性验证
 >
@@ -664,6 +697,26 @@ F2 无运行时 UI。
 - **When** 调用 `RequestBPMChange(300)`（超出上界 240）
 - **Then** Pending 的目标 BPM 被 clamp 至 240；记录 Warning 日志；切换在当前小节结束后生效；生效后 `BeatStateSnapshot.bpm == 240`；`GetBeatIntervalSeconds() == 0.250 s`（误差 < 0.01ms）
 
+**AC-F2-24：OnMeterChangeAccepted 接受时广播与负载** `[EditMode]` `[BLOCKING]`
+- **Given** `MockDSPClock` 注入，BPM=120 / 4/4 运行（`dsp_start=10.000`）；测试订阅 `OnMeterChangeAccepted`
+- **When** 调用 `RequestBPMChange(180)`
+- **Then** (1) 事件**恰好触发 1 次**，且在 `RequestBPMChange()` 返回的同一帧（`Time.frameCount` 相同 / EditMode 同一 tick）；(2) payload `bpmChanged == true`、`timeSigChanged == false`、`oldBpm == 120`、`newBpm == 180`、`oldNumerator == newNumerator == 4`；(3) `predictedEffectiveDspTimeRaw` 等于接受时刻当前小节边界的 **raw** DSP 时刻（F2-F3 计算，误差 < 0.1ms），且为 raw（在 `latency_offset_ms != 0` 场景下断言其**不含** offset）；(4) 此刻 `BeatStateSnapshot.bpm` 仍为 120（尚未生效）
+
+**AC-F2-25：OnMeterChanged 生效时广播、顺序与 raw 坐标** `[EditMode]` `[BLOCKING]`
+- **Given** 复用 AC-F2-13 场景（`MockDSPClock`，BPM=120 / 4/4）；在 `beatIndexInMeasure == 3`（末拍）的 `OnBeatExact` 回调中调用 `RequestBPMChange(180)`；同时订阅 `OnMeterChanged` 与 `OnBeatExact`，各记录单调递增的全局调用序号
+- **When** `MockDSPClock` 推进跨越小节边界，进入新 BPM 段
+- **Then** (1) `OnMeterChanged` **恰好触发 1 次**；(2) 顺序：其调用序号 **>** 触发切换的末拍 `OnBeatExact`，且 **<** 新 BPM 段第 0 拍 `OnBeatExact`（保证收到 `OnMeterChanged` 时新段尚无 Exact 先行广播）；(3) payload `newBpm == 180`、`newBeatIntervalS == 60.0/180`（误差 < 0.001ms），且与生效后 `GetBeatIntervalSeconds()` 一致；(4) `predictedEffectiveDspTimeRaw` 为 **raw**，与 AC-F2-13 结论中的边界时刻（旧末拍 raw DSP 时刻）相等，误差 < 0.1ms（非 adjusted）；(5) 回调内查询 `BeatStateSnapshot.bpm` 已 == 180（状态先于广播翻转）
+
+**AC-F2-26：合并 BPM+拍号变更下双事件各触发一次** `[EditMode]` `[BLOCKING]`
+- **Given** 复用 AC-F2-15 场景（120 BPM / 4/4）；订阅 `OnMeterChangeAccepted` 与 `OnMeterChanged`
+- **When** 同一帧调用 `RequestBPMChange(160)` + `RequestTimeSignatureChange(3, 4)`，随后推进至小节边界生效
+- **Then** (1) `OnMeterChangeAccepted` **恰好 1 次**（非 0、非 2），payload `bpmChanged == true && timeSigChanged == true`、`newBpm == 160`、`newNumerator == 3`；(2) `OnMeterChanged` **恰好 1 次**（非 0、非 2），payload 同上；(3) 二者均不因 BPM 与拍号合并而被吞或双发。**（拍号-only 变体，Post-MVP）**：3/4→5/8 仅拍号变更时，两事件仍各 1 次，`bpmChanged == false`、`timeSigChanged == true`、`newBpm == oldBpm`
+
+**AC-F2-27：新事件空订阅者与订阅者生命周期防御** `[EditMode]` + `[PlayMode]` `[BLOCKING]`
+- **Given** `OnMeterChangeAccepted` / `OnMeterChanged` 无任何订阅者（EditMode 子用例）；另有一个在 `OnDestroy()` 中正确退订的订阅者 A（PlayMode 子用例）
+- **When** 触发一次 BPM 变更全程（接受 → 生效）；随后 A 的 GameObject `Object.Destroy()` 并等 1 帧后再触发一次变更
+- **Then** (1) 空订阅者路径不抛任何异常（镜像 AC-F2-19a）；(2) A 销毁后其回调**不被调用**（内部计数器维持 0），不抛 `MissingReferenceException` / `NullReferenceException`（镜像 AC-F2-19c）；(3) BeatClock 正常继续广播后续事件
+
 ---
 
 **覆盖矩阵**
@@ -686,6 +739,10 @@ F2 无运行时 UI。
 | F2-21 | EditMode | `BeatClock58TimeSigTests` | ADVISORY (Post-MVP) |
 | F2-22 | PlayMode | `BeatClock58TimeSigTests` | ADVISORY (Post-MVP) |
 | F2-23 | EditMode | `BeatClockEdgeCaseTests` | BLOCKING |
+| F2-24 | EditMode | `BeatClockMeterChangeEventTests` | BLOCKING |
+| F2-25 | EditMode | `BeatClockMeterChangeEventTests` | BLOCKING |
+| F2-26 | EditMode | `BeatClockMeterChangeEventTests` | BLOCKING |
+| F2-27 | EditMode + PlayMode | `BeatClockMeterChangeEventTests` / `BeatClockLifecycleTests` | BLOCKING |
 
 ---
 
@@ -696,3 +753,6 @@ F2 无运行时 UI。
 | OQ-1 | M0 Spike：量化档位（Off / HalfBeat / Beat）的判定窗口数据（Perfect/Good 各占 half_beat_interval 的比例）尚未实测 | 阻塞 C1 GDD Formulas 节 | C1 设计者 | M0 Spike 完成后更新 C1 GDD；F2 公式 F2-F2 提供上界，C1 须在范围内设定 |
 | ~~OQ-2~~ | ~~ADR-D6（FMOD vs Unity Audio）~~ | **已解决** — ADR-D6 Accepted (2026-07-14)，选定 FMOD Studio 2.x | — | `docs/architecture/adr-d6-audio-middleware.md`；F2 实现阻塞已解除 |
 | OQ-3 | BeatAccentMap（5/8 节奏分组 2+3 或 3+2）是否作为 F2 可选配置 | 不阻塞 F2；影响 C4 设计 | C4 设计者 | 待 C4 GDD 明确需求后决定是否在 F2 Tuning Knobs 增加 `accentPattern` 参数 |
+| OQ-4 | **B2b 初始化时序**：F2 延迟校准加载与 F5 Bootstrap 初始化对齐（W-4-01）。用户已选「F6 启动协议统一 gate」方向，但落地依赖两项前置决策——D-4（F5.Initialize() 同步 or 异步）、D-5（LatencyOffsetMs 写者归属，涉 Core Rule 10 单一写者不变量）。**本轮未修订 `:425`**（保留原文，避免半提交）| 阻塞 F2 `:425` 修正 + F5 `:127/:221/:316` + F6 启动链路 | technical-director（主）+ F5/F6 设计者 | 定 D-4/D-5 后一次性三文档同轮修订，gate AC 归属 F6 |
+| OQ-5 | **B2a 暂停/恢复事件**：`OnBeatClockPaused` / `OnBeatClockResumed` 本轮**延后**。依赖 `IAudioPlayer.Pause()/Resume()`（当前接口缺失，Core Rule 12 仅有 `PlayScheduled/Stop/IsPlaying`）、C1/C2 消费需求确认、`Stopped` 态转移补全 | 不阻塞 B1；阻塞 Scenario 3（暂停中充能恢复）跨系统语义 | C2 设计者 + audio（IAudioPlayer 契约） | C1/C2 GDD 编写时确认消费需求，同轮补 `IAudioPlayer` 暂停能力与 AC 后再定事件 |
+| OQ-6 | **ADR-D6 线程模型回填**：Core Rule 12 `:65` 的 `ConcurrentQueue` 强制令仍挂在「若选 OnAudioFilterRead」条件句上，但 ADR-D6 已选 FMOD。BeatClock 调度是 Update 轮询还是 FMOD 异步回调，决定 OnMeter* 双事件是否需 ConcurrentQueue 跨队列排序 | 阻塞 OnMeter* 事件线程安全 AC 的最终形态 | technical-director + ADR-D6 Addendum | ADR-D6 增补调度机制结论后回填 `:65`，据结论决定新事件是否需 PlayMode 线程安全 AC |

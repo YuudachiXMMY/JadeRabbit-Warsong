@@ -121,3 +121,29 @@ Blocking items: 4 (全部已在本 session 修订) | Recommended: 5 (IC-1~IC-5 �
 Prior verdict resolved: Yes — 第六次评审（2026-07-14）APPROVED，本次为第七次全量重审
 
 Summary: 第七次全量对抗性评审（5 专家 + creative-director）。creative-director 从约 35 条专家 BLOCKING 发现中提炼出 4 项真实阻塞，其余归类为文档改善或下游系统职责。4 项阻塞全在本 session 修订完成：(1) TB-2 Core Rule 9 视觉节拍器时钟源由 `AudioSettings.dspTime` 改为 `Time.unscaledTime`（音频不可用时 DSP 时钟可能冻结，视觉动画须以墙上时钟驱动）；(2) TB-3 AC-F2-07b 补充 CI 策略注记（headless runner 无音频设备，本 AC 不作为 CI gate，改为 MockDSPClock 替代执行）；(3) TB-4 新增 AC-F2-23 验证 `RequestBPMChange()` 越界 clamp 行为（原有 AC 仅覆盖 `Play()` 路径）；(4) TB-1 修正 F2-F9 `is_measure_boundary` 公式为 `h > 0 && h mod 5 == 0`，修正 AC-F2-21（Post-MVP ADVISORY）。同时应用 5 项推荐项：IC-1 F2-F3/F2-F4 锚点等价性说明；IC-2 ConfirmDSPStart 步骤 3 调换 FMOD/Unity-native 主备层级；IC-3 IAudioPlayer.Stop() 立即停止语义；IC-4 EditMode 测试实例化说明；IC-5 AC-F2-15 双边界检测标准精化。systems-index 同步从 Needs Revision 更新为 Approved。
+
+---
+
+## Review — 2026-08-08 — Verdict: MAJOR REVISION NEEDED（B1 已补订；B2b/B2a/线程拆分退回）
+
+Scope signal: L→XL（原 cross-review 预估 M 被推翻——触及 F2↔F6 事件契约边界 + 延迟注入拓扑 + ADR-D6 线程 Addendum，牵动 F2/F5/F6 三文档）
+Specialists: systems-designer, unity-specialist, qa-lead, audio-director, creative-director
+Blocking items: 7（B1 相关 4 已补订 / B2b·线程 3 拆分退回）| Recommended: 多项归入补文
+Prior verdict resolved: 部分 — 本轮源自 gdd-cross-review-2026-07-19（W-4-01/W-2c-01），非上次 APPROVED 的遗留
+
+**背景**：用户立项「补 OnBpmChanged/OnBeatClockResumed 两事件 + 修初始化时序」，但 4 专家对抗核验证明为架构级改动被误判为措辞级。creative-director 裁定退回先做架构决策。用户选择「推进 B1 核心，其余拆分」。
+
+**B1 已落地修订（本 session）** — 决策 D-1 双事件 / D-2 raw+命名规则 / D-3 合并 OnMeterChanged：
+- 新增 Core Rule 13（raw/adjusted 命名铁律，堵住第三次坐标系混用）
+- 新增 Core Rule 14（`OnMeterChangeAccepted` 接受时 + `OnMeterChanged` 生效时 双事件；合并语义覆盖仅BPM/仅拍号/合并三场景，修复 3/4→5/8 漏事件）
+- 新增 `MeterChangeEventData` 结构表（纯值类型，`Action<T>` 签名，`predictedEffectiveDspTimeRaw` 用 raw）
+- 新增 Edge Case：距边界 <500ms 顺延下一小节（解 500ms 提前量冲突）
+- 新增 AC-F2-24~27 + 覆盖矩阵 4 行 + 门控行；Interactions/States 表同步
+- Header → Amended — Pending Re-review；systems-index 同步
+
+**拆分退回（未在本轮修订，记入 Open Questions OQ-4/5/6）**：
+- OQ-4 B2b 初始化时序：`:425` **保留原文**，待 D-4（F5.Initialize 同步/异步）+ D-5（LatencyOffsetMs 写者归属 vs Rule 10）由 technical-director 定，再 F2/F5/F6 三文档同轮修订
+- OQ-5 B2a 暂停/恢复事件：延后——依赖 `IAudioPlayer.Pause()/Resume()`（接口缺失）+ C1/C2 消费确认 + Stopped 态转移补全
+- OQ-6 ADR-D6 线程模型：`:65` ConcurrentQueue 条件句待回填（ADR-D6 已选 FMOD），决定 OnMeter* 是否需 PlayMode 线程安全 AC
+
+**跟进项**：F6/C1/C4 GDD 须反向引用 `OnMeterChangeAccepted`/`OnMeterChanged`（本轮仅 F2 侧声明契约）。

@@ -90,3 +90,18 @@ creative-director 裁定：game-designer 提出的"激励真空"（Rule 5+9 联�
 本轮修订在同 session 内完成全部 7 项阻塞和 1 项推荐（U4 Debug.Assert 注释修正）：C1-F2 新增延迟安全约束（FE7 层拦截方案）；Rule 7 新增 Off 模式豁免条款；AC-C1-02b 边界条件改严格小于；C1-F5 末尾加 `_skipToggle = false`；AC-C1-15 补充 Beat 模式断言；AC-C1-19 明确 platformMinPerfectMs 放弃声明；AC-C1-07 拆分为 07a/07b；Tuning Knobs 新增 platformMinPerfectMs 实现指引。
 
 建议运行 /clear 后在新 session 运行 /design-review design/gdd/rhythm-core.md 进行第五轮正式重审（lean mode 复查即可）。
+
+---
+
+## Carry-Forward Notes — 2026-08-08 — 第五轮复查再确认（C1 保持 APPROVED）
+
+lean 模式稳定性复查：8/8 章节完整，边界值逐一复算通过（C1-F3 临界 BPM 124、AC-C1-13 92.75ms、E7 坍缩 BPM≥186、AC-C1-19 二次钳位 61.5ms 均一致），Round 4 七项阻塞全部核验落地，无新增阻塞。追踪记录已是最新，未改动。
+
+以下为非阻塞推荐项，落点在 FE7 / ADR-D3，不影响 C1 进入实现：
+
+- **[FE7]** R1 — C1-F2 延迟安全约束 `|latency_offset_ms| < GoodHalfWindowMs_effective`
+  的上限随 BPM 收缩（BPM=160 时仅 92.75ms）。FE7 校准界面拦截时须针对关卡 BPM 跨度
+  内的最小有效 Good 窗口（或保守固定上限）判定，而非 authored 默认 120ms。FE7 GDD
+  须锚定该数值来源；Tuning Knobs 表 latency_offset_s 范围 [-0.2,0.2] 需加一致性注解。
+- **[ADR-D3]** R3 — 明确评级锚定到 beat_dsp_time 而非事件接收时刻（GDD 已正确，ADR 伪代码待同步）。
+- **[C1 文档-可选]** R2 — States and Transitions 表可补一条 Beat 模式 skip 相位屏蔽注释（纯可读性）。

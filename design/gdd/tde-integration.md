@@ -142,13 +142,13 @@ F6 自身不维护内部状态机，但其事件响应决定了系统的全局�
 
 **过渡模式：小节边界无缝换片（Seamless Measure-Boundary Crossfade）**
 
-当 `BeatClock.RequestBPMChange(newBpm)` 被接受时（通常由 Boss 阶段切换触发），F6 执行以下序列：
+当 `BeatClock.RequestBPMChange(newBpm)` / `RequestTimeSignatureChange()` 被接受时（通常由 Boss 阶段切换触发），F6 执行以下序列：
 
-1. **预加载目标 BGM**：`TDELifecycleAdapter` 订阅 F2 的 BPM 变化接受事件，接到通知后立即通过 FMOD（ADR-D6）预加载目标 BPM 对应的 BGM 资产（`LevelConfigSO.BgmAssetReference` 或 Boss 阶段 SO 中的变体引用）。
-2. **等待小节边界**：监听 `BeatClock.OnBeatExact`，等待 `beat_index_in_measure == numerator - 1`（当前拍号的最后一拍），即下一小节起点。
-3. **无缝换片**：在小节边界通过 `_beatClock.ScheduleBGMTransition(dspTime, newBgmRef)` 精确对齐执行新 BGM 的起始播放（或 Crossfade）；同帧更新 `BeatClock` 的时钟参数为新 BPM，确保音乐与节拍时钟同步切换。
+1. **接受时预加载 + 预调度**：`TDELifecycleAdapter` 订阅 F2 的 **`OnMeterChangeAccepted`** 事件（接受时广播，见 `audio-beat-clock.md` Core Rule 14）。接到通知后立即通过 FMOD（ADR-D6）预加载目标 BGM 资产（`LevelConfigSO.BgmAssetReference` 或 Boss 阶段 SO 中的变体引用）。**关键**：该事件在接受时（而非小节边界）广播，F6 由此获得从接受到边界的**全部提前量**，满足 `PlayScheduled()` 的 500ms 最低提前量约束——无需再手写 `OnBeatExact` + `beat_index_in_measure == numerator - 1` 的边界轮询判定。
+2. **以事件负载的 raw 边界时刻精确对齐**：直接使用 `OnMeterChangeAccepted` 负载中的 `predictedEffectiveDspTimeRaw`（**raw 坐标系，禁止叠加 latency offset**——见 F2 Core Rule 13）作为无缝换片的调度目标时刻。此值在接受时即由 F2-F3 确定性给出，与实际小节边界一致。
+3. **无缝换片**：通过 `_beatClock.ScheduleBGMTransition(predictedEffectiveDspTimeRaw, newBgmRef)` 精确对齐执行新 BGM 的起始播放（或 Crossfade）。F2 的时钟参数由 F2 在小节边界自行切换并广播 `OnMeterChanged`（生效时），F6 无需同帧手动更新 BeatClock 时钟——职责回归 F2。
 
-    **接口归属**：`BeatClock.ScheduleBGMTransition(double dspTime, AssetReference bgmRef)` 是 F2 BeatClock 的**公开方法**（需在 F2 GDD 中新增定义），F6 通过已有的 `_beatClock` 引用调用，不穿透 F2 内部的 `IAudioPlayer` 测试注入接口。此方法须在 F2 GDD `audio-beat-clock.md` 的 Core Rules 或 API 节中补充声明（Post-Approval Action Item，F2 GDD 下次修订时补入）。
+    **接口归属（仍为 F2 API 缺口，W-2c-01，本轮未解决）**：`BeatClock.ScheduleBGMTransition(double dspTimeRaw, AssetReference bgmRef)` 是 F2 BeatClock 的**公开方法**（尚未在 F2 GDD 定义）。F2 本轮（2026-08-08）仅补订了 `OnMeterChangeAccepted`/`OnMeterChanged` 双事件契约，`ScheduleBGMTransition` 的 F2 侧定义仍为待办（见 cross-review W-2c-01 与 F2 后续修订）。在其落地前，F6 依赖 `OnMeterChangeAccepted` 负载已可获得精确 raw 边界时刻，换片调度机制的最终 API 形态待 F2 定义。
 
 **MVP 限制**：MVP 阶段每个关卡 BPM 固定（通过 `LevelConfigSO`），仅 Boss 阶段切换可能触发 BPM 变化。Boss 战 BGM 切换的完整细节（含阶段 SO schema）由 `design/gdd/boss-battle.md`（FE4 GDD）进一步定义；F6 提供基础的换片基础设施，FE4 提供配置数据。
 
@@ -190,7 +190,7 @@ attackAnimSpeed = clamp(currentBPM / authoredBpm, SPEED_MIN, SPEED_MAX)
 
 **更新策略（Option A — 实时更新，via ADR-D5 `UpdateBpm()`）**
 
-速度在 **攻击开始时** 由 `AnimancerAttackPlayer.PlayAttack()` 一次性设置（`state.Speed = currentBPM / authoredBpm`）。当 BPM 在攻击动画中途变化（含 Boss 阶段切换时的 `RequestBPMChange()`），C2 通过订阅 BeatClock 的 BPM 变化事件，**立即**调用 `AnimancerAttackPlayer.UpdateBpm(newBpm)` 更新速度——此 API 仅更新 `_currentState.Speed`，不重置 normalized time，不中断动画。
+速度在 **攻击开始时** 由 `AnimancerAttackPlayer.PlayAttack()` 一次性设置（`state.Speed = currentBPM / authoredBpm`）。当 BPM 在攻击动画中途变化（含 Boss 阶段切换时的 `RequestBPMChange()`），C2 通过订阅 F2 的 **`OnMeterChangeAccepted`** 事件（接受时广播，见 `audio-beat-clock.md` Core Rule 14），以负载的 `newBpm` **立即**调用 `AnimancerAttackPlayer.UpdateBpm(newBpm)` 更新速度——此 API 仅更新 `_currentState.Speed`，不重置 normalized time，不中断动画。选用**接受时**（而非生效时 `OnMeterChanged`）事件，是为实现「骤跳瞬间这一刀即变凌厉」的预告体感（见 EC-03），使动作在玩家听到 BGM 换片前即先行响应。
 
 ⚠ **ADR-D5 对齐说明**：ADR-D5 当前描述「MVP 中不在攻击中途更新速度」；本 GDD 选择 Option A（中途更新），须向 ADR-D5 提交修订，明确 `UpdateBpm()` 方法在 MVP 路径中亦被调用。在修订完成前，`UpdateBpm()` 已在 ADR-D5 中定义为合法 API，使用不违反接口合约。
 
