@@ -1,10 +1,10 @@
 # ADR-D10: Bootstrap Sequencing & Latency Injection Topology
 
 ## Status
-Proposed
+Accepted
 
 ## Date
-2026-08-08
+2026-08-08 (proposed) · 2026-08-09 (accepted — boot-inject topology aligned with ADR-D1: `Play()`/`EnableGameplayInput()` stay in `OnSceneLoaded(Single)`; single bootstrap driver; release-active runtime guard)
 
 ## Engine Compatibility
 
@@ -12,10 +12,10 @@ Proposed
 |-------|-------|
 | **Engine** | Unity 6.3 LTS (6000.3.19f1) |
 | **Domain** | Core (bootstrap / lifecycle) + Audio (BeatClock latency injection) |
-| **Knowledge Risk** | LOW-MEDIUM — Relies on Unity's documented "all `Awake()` complete before the first `Start()`" guarantee and Script Execution Order (stable since Unity 4). FMOD/DSP behaviour verified via ADR-D6; EasySave 3 synchronous read verified via ADR-D7. No post-cutoff API introduced. |
+| **Knowledge Risk** | LOW-MEDIUM — Relies on Unity's documented "all `Awake()` complete before the first `Start()`" guarantee, plus a single explicit bootstrap driver for cross-component ordering (Script Execution Order is deliberately NOT relied upon as the ordering mechanism). `SceneManager.sceneLoaded` semantics stable since Unity 4. FMOD/DSP behaviour verified via ADR-D6; EasySave 3 synchronous read verified via ADR-D7. No post-cutoff API introduced. |
 | **References Consulted** | `docs/architecture/adr-d6-audio-middleware.md`, `docs/architecture/adr-d7-save-persistence-middleware.md`, `docs/architecture/adr-d1-tde-integration.md`, `docs/engine-reference/unity/modules/audio.md`, `docs/engine-reference/unity/current-best-practices.md` |
-| **Post-Cutoff APIs Used** | None — this ADR composes existing ADR-D6/D7 APIs and standard `MonoBehaviour` lifecycle (`Awake`/`Start`, `[DefaultExecutionOrder]`, Script Execution Order). |
-| **Verification Required** | 1. PlayMode test confirming `SaveService.Initialize()` completes within the Awake→Start window on all target platforms (esp. mobile, where the ES3 load budget is < 100ms). 2. Confirm Script Execution Order (or an explicit bootstrap driver) reliably orders `SaveService` initialization before `TDELifecycleAdapter.Start()`. 3. Confirm the boot-injected `LatencyOffsetMs` is applied before the first `OnBeatExact` broadcast. |
+| **Post-Cutoff APIs Used** | None — this ADR composes existing ADR-D6/D7 APIs and standard `MonoBehaviour` lifecycle (`Awake`/`Start`, `SceneManager.sceneLoaded`) plus a single explicit bootstrap driver that sequences the phases directly (no reliance on `[DefaultExecutionOrder]` / Script Execution Order for ordering). |
+| **Verification Required** | 1. PlayMode test confirming `SaveService.Initialize()` completes within the Awake→Start window on all target platforms (esp. mobile, where the ES3 load budget is < 100ms). 2. Confirm the single explicit bootstrap driver reliably orders `SaveService` initialization before `TDELifecycleAdapter.Start()` (Script Execution Order is not relied upon). 3. Confirm the boot-injected `LatencyOffsetMs` is applied inside the first `OnSceneLoaded(Single)` pass, before the first `BeatClock.Play()` and the first `OnBeatExact` broadcast. |
 
 ## ADR Dependencies
 
@@ -81,16 +81,16 @@ public interface ISaveService {
 
 `BeatClock.LatencyOffsetMs` has a **two-phase writer model**:
 
-- **Boot phase (one-time, before gameplay input is enabled):** the F6 `TDELifecycleAdapter` startup coordinator loads the persisted `LatencyCalibrationDTO` from F5 (synchronously, per D-4) and injects it into `BeatClock.LatencyOffsetMs` **exactly once**, *before* `BeatClock.Play()` and *before* `EnableGameplayInput()`. If `isCalibrated=false` (first launch / missing file), the injected value is the default `0ms`.
+- **Boot phase (one-time, guaranteed before the first `BeatClock.Play()`):** the F6 `TDELifecycleAdapter` startup coordinator loads the persisted `LatencyCalibrationDTO` from F5 (synchronously, per D-4) and injects it into `BeatClock.LatencyOffsetMs` **exactly once**. The injection is performed inside the first `OnSceneLoaded(LoadSceneMode.Single)` pass — the same method that owns `BeatClock.Play()` and `EnableGameplayInput()` per **ADR-D1** — immediately *before* that first `Play()`, so it is guaranteed to precede the first `OnBeatExact` broadcast and the input enable. **`Play()` / `EnableGameplayInput()` are NOT relocated into `Start()`; they remain in `OnSceneLoaded(Single)` exactly as ADR-D1 specifies.** A one-time guard flag ensures re-entrant `OnSceneLoaded(Single)` passes (respawn / level change) do not re-inject and clobber a runtime FE3 write. If `isCalibrated=false` (first launch / missing file), the injected value is the default `0ms`.
 - **Runtime phase (during gameplay):** the **FE3 calibration flow is the sole writer** of `LatencyOffsetMs`. F2 Core Rule 10's single-writer invariant is **preserved for the runtime phase** and re-scoped to say so explicitly.
 
-**F2 no longer self-loads from F5.** The `LoadLatencyCalibration()` call moves out of `BeatClock.Start()` and into the F6 startup coordinator. This removes the un-owned second writer and F2's hidden runtime dependency on F5; BeatClock becomes a pure holder that is *injected into* (by F6 at boot, by FE3 at runtime), never a loader.
+**F2 no longer self-loads from F5.** The `LoadLatencyCalibration()` call moves out of `BeatClock.Start()` and into the F6 startup coordinator (specifically, the first `OnSceneLoaded(Single)` pass, ahead of `Play()`). This removes the un-owned second writer and F2's hidden runtime dependency on F5; BeatClock becomes a pure holder that is *injected into* (by F6 at boot, by FE3 at runtime), never a loader.
 
 This is consistent with the previously-chosen "F6 unified startup gate" direction and with F6 already being the sole lifecycle controller of BeatClock.
 
 ### Bootstrap Sequencing Contract (resolves W-4-01)
 
-The startup chain is deterministically ordered (via Script Execution Order and/or an explicit bootstrap driver — see Migration Plan):
+The startup chain is deterministically ordered by a **single explicit bootstrap driver** — one component that calls the phases in sequence (see Migration Plan). Script Execution Order is *not* relied upon as the ordering mechanism; the bootstrap driver is the sole guarantor of order:
 
 ```
 [Awake phase — Unity guarantees all Awake() finish before any Start()]
@@ -98,22 +98,29 @@ The startup chain is deterministically ordered (via Script Execution Order and/o
   BeatClock.Awake()              // registers singleton; DontDestroyOnLoad [BeatClock]
   TDELifecycleAdapter.Awake()    // registers; holds ISaveService + BeatClock refs
 
-[Start phase — ordered: SaveServiceBootstrap BEFORE TDELifecycleAdapter]
+[Start phase — the single bootstrap driver enforces: SaveServiceBootstrap BEFORE TDELifecycleAdapter]
   1. SaveServiceBootstrap.Start():
         saveService.Initialize();                         // D-4: SYNCHRONOUS, blocking — loads LatencyCalibrationDTO
-  2. TDELifecycleAdapter.Start():                          // ordered after step 1
-        Assert(saveService.IsInitialized);                // gate precondition
+  2. TDELifecycleAdapter.Start():                          // driven after step 1 by the bootstrap driver
+        if (!saveService.IsInitialized) FailFast(...);     // runtime guard — release-active (NOT Debug.Assert)
         VerifyFMOD();  VerifyFMODAsyncMode();              // ADR-D6 / F6 Core Rule 12 (existing)
-        var dto = saveService.LoadLatencyCalibration();    // D-5 BOOT-LOAD (F6 owns it, not F2)
-        beatClock.LatencyOffsetMs = dto.latencyOffsetMs;   // D-5 BOOT-INJECT (once; default 0 if !isCalibrated)
-        beatClock.Play(clip, bpm, timeSig);                // → ConfirmDSPStart()  (existing three-step protocol)
-        EnableGameplayInput();                             // input enabled ONLY after clock start + offset inject
+        SceneManager.sceneLoaded += OnSceneLoaded;         // per ADR-D1 — Play()/input live in OnSceneLoaded, NOT here
+
+[First OnSceneLoaded(LoadSceneMode.Single) — ADR-D1 owns Play() / EnableGameplayInput()]
+  TDELifecycleAdapter.OnSceneLoaded(scene, Single):
+        if (!_offsetInjected) {                            // one-time guard — re-entrant passes skip re-inject
+            var dto = saveService.LoadLatencyCalibration();// D-5 BOOT-LOAD (F6 owns it, not F2)
+            beatClock.LatencyOffsetMs = dto.latencyOffsetMs;// D-5 BOOT-INJECT (once; default 0 if !isCalibrated)
+            _offsetInjected = true;
+        }                                                  // ← guaranteed BEFORE the first Play() below
+        beatClock.Play(clip, bpm, timeSig);                // ADR-D1 — unchanged location & authority (3-step protocol)
+        EnableGameplayInput();                             // ADR-D1 — input enabled after clock start + offset inject
 
 [Runtime]
   FE3 calibration flow → beatClock.LatencyOffsetMs = newOffset;   // D-5: SOLE runtime writer (Rule 10)
 ```
 
-Because `Initialize()` is synchronous (D-4), step 1 fully completes before step 2 reads — no async wait, no timeout policy needed. The gate's only failure surface is misordering, which Script Execution Order + the `IsInitialized` assertion make deterministic and headless-testable.
+Because `Initialize()` is synchronous (D-4), step 1 fully completes before step 2 reads — no async wait, no timeout policy needed. Play/input ordering is unchanged from ADR-D1 (both in `OnSceneLoaded(Single)`); this ADR only inserts the one-time boot-inject ahead of the first `Play()` in that same method. The gate's only failure surface is misordering, which the single bootstrap driver + the release-active `IsInitialized` runtime guard make deterministic and headless-testable.
 
 ### Key Interfaces
 
@@ -122,15 +129,33 @@ Because `Initialize()` is synchronous (D-4), step 1 fully completes before step 
 public class TDELifecycleAdapter : MonoBehaviour {
     [SerializeField] private BeatClock _beatClock;      // injected (or BeatClock.Instance)
     private ISaveService _saveService;                  // injected — D-4 seam (prod: SaveService.Instance)
+    private bool _offsetInjected;                        // one-time boot-inject guard
 
+    // Start(): FMOD guard + sceneLoaded subscription ONLY.
+    // Play()/EnableGameplayInput() are NOT called here — they live in OnSceneLoaded(Single) per ADR-D1.
     private void Start() {
-        Debug.Assert(_saveService.IsInitialized,
-            "[F6-FATAL] SaveService not initialized before TDELifecycleAdapter.Start() — check Script Execution Order");
+        // Release-active runtime guard (NOT Debug.Assert — must fail loudly in shipped builds):
+        if (!_saveService.IsInitialized) {
+            Debug.LogError("[F6-FATAL] SaveService not initialized before TDELifecycleAdapter.Start() " +
+                           "— the bootstrap driver did not order SaveServiceBootstrap first.");
+            enabled = false;                                       // do not proceed; scene stays in a safe frozen state
+            return;
+        }
         // ... FMOD readiness gate (existing AC-F6-04 / AC-F6-21) ...
-        var cal = _saveService.LoadLatencyCalibration();          // D-5 boot-load
-        _beatClock.LatencyOffsetMs = cal.latencyOffsetMs;         // D-5 boot-inject (once)
-        _beatClock.Play(/* clip, bpm, timeSig from SO */);        // existing lifecycle authority
-        EnableGameplayInput();
+        SceneManager.sceneLoaded += OnSceneLoaded;                // ADR-D1 lifecycle wiring
+    }
+
+    // OnSceneLoaded(Single): unchanged ADR-D1 authority over Play()/input,
+    // with the one-time boot-inject inserted ahead of the FIRST Play().
+    private void OnSceneLoaded(Scene scene, LoadSceneMode mode) {
+        if (mode != LoadSceneMode.Single) return;                 // ADR-D1 additive-load filter
+        if (!_offsetInjected) {
+            var cal = _saveService.LoadLatencyCalibration();      // D-5 boot-load (F6 owns it, not F2)
+            _beatClock.LatencyOffsetMs = cal.latencyOffsetMs;     // D-5 boot-inject (once; default 0 if !isCalibrated)
+            _offsetInjected = true;                               // guaranteed before the first Play() below
+        }
+        _beatClock.Play(/* clip, bpm, timeSig from SO */);        // ADR-D1 — unchanged location & authority
+        EnableGameplayInput();                                    // ADR-D1 — after clock start + offset inject
     }
 }
 ```
@@ -161,19 +186,19 @@ public class TDELifecycleAdapter : MonoBehaviour {
 - OQ-4 / W-4-01 unblocked; F2/F5/F6 can be revised in one coherent pass citing this ADR.
 - `LatencyOffsetMs` gains a single boot owner (F6 gate) and a single runtime owner (FE3); Rule 10's invariant is preserved and made precise.
 - BeatClock becomes a pure injected holder — no F5 dependency, cleaner testability.
-- Deterministic, headless-testable startup: the `ISaveService` seam + `IsInitialized` assertion enable AC-F6-23 with a `MockSaveService`, no real file I/O.
+- Deterministic, headless-testable startup: the `ISaveService` seam + release-active `IsInitialized` runtime guard enable AC-F6-23 with a `MockSaveService`, no real file I/O.
 - No new async/timeout subsystem; no ADR-D7 conflict.
 - No beat is ever evaluated with a stale `offset=0` (injection ordered before first broadcast and before input enable).
 
 ### Negative
 - F6 `TDELifecycleAdapter` gains a data-loading responsibility (reading `LatencyCalibrationDTO`) in addition to lifecycle control — a mild broadening of its role, mitigated by the `ISaveService` abstraction.
-- Introduces a Script Execution Order dependency (SaveService bootstrap before TDELifecycleAdapter) that must be enforced and documented — a latent misconfiguration surface.
+- Introduces a single-bootstrap-driver ordering dependency (SaveService bootstrap before TDELifecycleAdapter) that the driver must own explicitly — a latent misconfiguration surface if the driver is bypassed.
 - A new `ISaveService` interface to define and keep in sync with F5's concrete `SaveService`.
 
 ### Risks
-- **MEDIUM: Script Execution Order fragility.** If the ordering between `SaveServiceBootstrap` and `TDELifecycleAdapter` is not enforced, the gate reads before load. **Mitigation**: enforce via `[DefaultExecutionOrder]` attributes (or a single explicit bootstrap driver that calls both in sequence), and keep the `Debug.Assert(_saveService.IsInitialized)` gate as a fail-fast guard. Cover with a PlayMode AC.
+- **MEDIUM: Bootstrap-driver bypass.** If a scene wires `SaveServiceBootstrap` and `TDELifecycleAdapter` without routing them through the single bootstrap driver, the gate could read before load. **Mitigation**: a single explicit bootstrap driver is the *committed* ordering mechanism (Script Execution Order is not relied upon); it calls the phases in sequence, and the release-active `if (!_saveService.IsInitialized) FailFast()` runtime guard (NOT `Debug.Assert`, which is stripped from shipped builds) converts any bypass into a loud, testable failure. Cover with a PlayMode AC.
 - **LOW: FE3 contract drift.** FE3's future GDD must honour "sole runtime writer." **Mitigation**: register the ownership stance in `architecture.yaml` so `/architecture-review` flags any FE3 GDD that violates it.
-- **LOW: `Initialize()` exceeds the Awake→Start budget on a slow platform.** **Mitigation**: the `IsInitialized` assertion converts a silent race into a loud, testable failure; if a platform genuinely exceeds budget, that is a separate perf issue surfaced by Verification Required #1, not a correctness gap.
+- **LOW: `Initialize()` exceeds the Awake→Start budget on a slow platform.** **Mitigation**: the release-active `IsInitialized` runtime guard converts a silent race into a loud, testable failure; if a platform genuinely exceeds budget, that is a separate perf issue surfaced by Verification Required #1, not a correctness gap.
 
 ## GDD Requirements Addressed
 
@@ -183,7 +208,7 @@ public class TDELifecycleAdapter : MonoBehaviour {
 | save-persistence.md (F5) | `:127/:221/:316` `LoadLatencyCalibration()` caller | Moves the caller from F2 `BeatClock.Start()` to the F6 `TDELifecycleAdapter` startup coordinator (D-5); F5 interactions table updated accordingly |
 | audio-beat-clock.md (F2) | Core Rule 7 / Rule 10: `LatencyOffsetMs` injection + single-writer invariant | Re-scopes Rule 10 to a two-phase model: boot-inject by F6 (once), FE3 sole runtime writer; removes F2 self-load; preserves the runtime invariant (D-5) |
 | audio-beat-clock.md (F2) | `:425/:455-458` dependency text (frozen) | Unfreezes: F2 declares no runtime F5 dependency (injected by F6); dependency text revised in the same-round pass |
-| tde-integration.md (F6) | Startup chain + lifecycle authority (Core Rule 4) | Adds the boot-load + boot-inject step to `TDELifecycleAdapter.Start()`, ordered before `Play()` and `EnableGameplayInput()`; new **AC-F6-23** (F5-init gate + offset inject, headless via `MockSaveService`) |
+| tde-integration.md (F6) | Startup chain + lifecycle authority (Core Rule 4) | Inserts the one-time boot-load + boot-inject into the first `OnSceneLoaded(Single)` pass, immediately before the first `Play()`; `Play()` / `EnableGameplayInput()` remain in `OnSceneLoaded(Single)` per ADR-D1 (NOT moved to `Start()`). `Start()` gains only the release-active `IsInitialized` runtime guard. New **AC-F6-23** (F5-init gate + offset inject, headless via `MockSaveService`) |
 | so-data-layer.md | `latencyCalibrationOffsetMs` `[NonSerialized]` field, F5→SO one-way fill | Unchanged; source remains F5's `LatencyCalibrationDTO`; the *consumer* of the loaded value at boot is now F6, not F2 |
 
 ## Performance Implications
@@ -197,7 +222,7 @@ Greenfield — no code to migrate. The deliverable this ADR unblocks is the **F2
 
 1. **F5** `save-persistence.md`: stamp `Initialize()` explicitly synchronous; add `ISaveService` interface (consumer seam) alongside existing `IFileStorage`; move the documented `LoadLatencyCalibration()` caller from F2 to F6 (`:127/:221/:316`).
 2. **F2** `audio-beat-clock.md`: re-scope Rule 10 to the two-phase writer model; remove the F2 self-load from Rule 7 / dependency text (`:425/:455-458`); F2 declares no runtime F5 dependency.
-3. **F6** `tde-integration.md`: add the boot-load + boot-inject step to `TDELifecycleAdapter.Start()` (ordered before `Play()` and `EnableGameplayInput()`); add **AC-F6-23**; require Script Execution Order (or explicit bootstrap driver) between SaveService bootstrap and TDELifecycleAdapter.
+3. **F6** `tde-integration.md`: insert the one-time boot-load + boot-inject into the first `OnSceneLoaded(Single)` pass, immediately before the first `Play()` — do NOT move `Play()` / `EnableGameplayInput()` into `Start()`; they stay in `OnSceneLoaded(Single)` exactly as ADR-D1 specifies. `Start()` gains only the release-active `IsInitialized` runtime guard + `sceneLoaded` subscription. Add **AC-F6-23**; require a single explicit bootstrap driver (not Script Execution Order) to order SaveService bootstrap before TDELifecycleAdapter.
 4. Update `audio-beat-clock.md` OQ-4 to Resolved (cite this ADR); update the F2 review log.
 5. Registry: add the `LatencyOffsetMs` two-phase ownership stance, the `ISaveService` interface contract, and the "F2 must not self-load latency from F5" forbidden pattern to `docs/registry/architecture.yaml`.
 
@@ -205,9 +230,9 @@ Greenfield — no code to migrate. The deliverable this ADR unblocks is the **F2
 
 ## Validation Criteria
 1. **D-4 sync**: an EditMode/PlayMode test asserts `SaveService.IsInitialized == true` immediately after `Initialize()` returns (no yield), and that a consumer calling `LoadLatencyCalibration()` in the next `Start()` receives the loaded DTO.
-2. **D-5 boot-inject ordering (AC-F6-23)**: a PlayMode test with `MockSaveService` returning `{latencyOffsetMs=42.5f, isCalibrated=true}` asserts `BeatClock.LatencyOffsetMs == 42.5f` *before* the first `OnBeatExact` broadcast and *before* gameplay input is enabled.
+2. **D-5 boot-inject ordering (AC-F6-23)**: a PlayMode test with `MockSaveService` returning `{latencyOffsetMs=42.5f, isCalibrated=true}` asserts `BeatClock.LatencyOffsetMs == 42.5f` *before* the first `BeatClock.Play()` (which stays in `OnSceneLoaded(Single)` per ADR-D1), hence *before* the first `OnBeatExact` broadcast and *before* gameplay input is enabled.
 3. **D-5 runtime single-writer**: a test asserts that after boot, only an FE3-path write changes `LatencyOffsetMs` (BeatClock exposes no self-load path; `LoadLatencyCalibration()` is not called from `BeatClock`).
-4. **Ordering guard**: a test with a deliberately un-initialized `MockSaveService` triggers the `IsInitialized` assertion (fail-fast), proving the gate is not silently skipped.
+4. **Ordering guard**: a test with a deliberately un-initialized `MockSaveService` triggers the release-active `IsInitialized` runtime guard (fail-fast: logs `[F6-FATAL]` and disables the adapter), proving the gate is not silently skipped. The test must run against a release-config build path (not Debug-only), since the guard must fire in shipped builds where `Debug.Assert` would be stripped.
 5. **First-launch default**: with `MockSaveService` returning `{0f, isCalibrated=false}`, `BeatClock.LatencyOffsetMs == 0f` and no error is raised.
 
 ## Related Decisions
