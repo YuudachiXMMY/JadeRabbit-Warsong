@@ -46,7 +46,7 @@ F2 音频/拍点时钟系统是《玉兔：破阵》节奏战斗体系的时序�
 
 6. **BPM/拍号切换边界对齐**: 所有 BPM 或拍号的切换请求，等待**当前小节完全结束后**（最后一拍的 Exact 事件广播后）才生效。过渡状态（`PendingBPMChange` / `PendingTimeSignatureChange`）期间继续以当前 BPM/拍号正常运行，不中断节拍流。
 
-7. **玩家延迟偏移内化**: F2 持有从 FE3 注入的 `LatencyOffsetMs`（默认 0ms）。所有向上层广播的事件时间戳（`BeatEventData.beat_dsp_time`）均已应用偏移（`adjusted_beat_time = raw + offset/1000`），处于「玩家感知时间域」。**仅消费 F2 时间戳的系统**（P1 HUD、PL2 VFX、C4 战斗导演）无需自行处理延迟补偿。**跨域比较场景**：C1 需将 F3 的原始 DSP 时间戳（`inputDspTime`，未含偏移）与 F2 的已调整时间戳（`beat_dsp_time`，已含偏移）对齐——C1 须在 F3 时间戳上加 `latency_offset_s` 完成坐标系对齐（见 F3 GDD F3-F2 公式）。这不是"上层自行补偿延迟"，而是对齐两个不同时间域的标准操作。
+7. **玩家延迟偏移内化（两阶段写者，ADR-D10 D-5）**: F2 持有被外部注入的 `LatencyOffsetMs`（默认 0ms），**BeatClock 自身从不加载此值**——它是纯持有者（pure holder），遵循两阶段写者模型：**启动期**由 F6 `TDELifecycleAdapter` 在首个 `OnSceneLoaded(Single)` 内、首次 `BeatClock.Play()` 之前，从 F5 `LatencyCalibrationDTO` 一次性 boot-inject（`isCalibrated=false` 时注入默认 0ms）；**运行期**由 FE3 校准流程作为唯一写者更新（见 Rule 10）。BeatClock **禁止**自 load（registry forbidden pattern `f2_self_load_latency_from_f5`）。所有向上层广播的事件时间戳（`BeatEventData.beat_dsp_time`）均已应用偏移（`adjusted_beat_time = raw + offset/1000`），处于「玩家感知时间域」。**仅消费 F2 时间戳的系统**（P1 HUD、PL2 VFX、C4 战斗导演）无需自行处理延迟补偿。**跨域比较场景**：C1 需将 F3 的原始 DSP 时间戳（`inputDspTime`，未含偏移）与 F2 的已调整时间戳（`beat_dsp_time`，已含偏移）对齐——C1 须在 F3 时间戳上加 `latency_offset_s` 完成坐标系对齐（见 F3 GDD F3-F2 公式）。这不是"上层自行补偿延迟"，而是对齐两个不同时间域的标准操作。
 
 8. **游戏暂停规则**: 收到暂停信号时，停止广播新事件并保存当前进度（小节号、拍内序号、已播放 DSP 时间）。恢复时重新锚定 DSP 基准（暂停期间底层 DSP 仍在运行），从暂停位置无缝续播，下一个应广播的拍点事件在恢复后按正确时序继续。
 
@@ -54,7 +54,7 @@ F2 音频/拍点时钟系统是《玉兔：破阵》节奏战斗体系的时序�
    - **BPM=0 兜底**：关卡配置 `bpm=0` 时，F2 回退到固定 120 BPM 的内部 DSP 时钟正常运行；HUD 节奏指示器继续工作；记录 Warning 日志。
    - **音频设备不可用降级**：`IAudioPlayer.PlayScheduled()`（生产实现 `FMODAudioPlayerImpl`，见 ADR-D6）失败或音频设备断开时，F2 执行以下降级序列：(1) 立即暂停游戏（1 帧内，等同于发出 `Pause()` 信号）；(2) 发出 `OnAudioUnavailable` 事件，UI 层订阅后显示 "Audio Unavailable" Toast；(3) 同步发出 `OnVisualMetronomeActivated` 事件，P1（HUD）订阅后启动视觉节拍指示器（屏幕边缘随 `Time.unscaledTime` 闪烁；音频不可用时 FMOD DSP 时钟（经 `IDSPClock.GetCurrentTime()` 读取，生产实现 `FMODDSPClockImpl`）可能冻结，须以墙上时钟 `Time.unscaledTime` 驱动视觉动画）；(4) DSP 时钟在 `Paused` 状态下仍可查询，节奏判定（C1）暂停期间不触发；(5) 玩家恢复音频输出后可调用 `Resume()` 从暂停位置续播。**理由**：「节奏即战斗」支柱要求节奏判定仅在玩家可感知拍点时生效；无音频时不可隐式惩罚玩家（游戏暂停，判定亦暂停）。
 
-10. **DontDestroyOnLoad 单例**: BeatClock 使用 `DontDestroyOnLoad` 模式跨场景存活。房间切换时 F6 调用 `Stop()` 后再 `Play(newClip, newBpm, newTimeSig)` 重置。`Stop()` 将 `global_beat_index` 归零、清除所有 Pending 状态、释放 BGM AudioSource 引用（由 F6 在下一次 `Play()` 前重新注入）。**`LatencyOffsetMs` 不受 `Stop()` 影响**——延迟校准数据为设备级属性，跨房间、跨关卡保持有效，仅由 FE3 校准流程更新。下游系统不应假定 `global_beat_index` 或 `measure_index` 在跨房间场景中连续。
+10. **DontDestroyOnLoad 单例**: BeatClock 使用 `DontDestroyOnLoad` 模式跨场景存活。房间切换时 F6 调用 `Stop()` 后再 `Play(newClip, newBpm, newTimeSig)` 重置。`Stop()` 将 `global_beat_index` 归零、清除所有 Pending 状态、释放 BGM AudioSource 引用（由 F6 在下一次 `Play()` 前重新注入）。**`LatencyOffsetMs` 不受 `Stop()` 影响**——延迟校准数据为设备级属性，跨房间、跨关卡保持有效。其写者遵循两阶段模型（ADR-D10 D-5）：**启动期**由 F6 gate 一次性 boot-inject，受 `_offsetInjected` 一次性 guard 保护——重入的 `OnSceneLoaded(Single)`（复活/换关）不重复注入、不覆盖运行期 FE3 写入；**运行期唯一写者为 FE3 校准流程**，Rule 10 的单一写者不变量在运行期完整保留。BeatClock 自身**禁止**调用 `SaveService.LoadLatencyCalibration()` 或以任何方式自 load（registry forbidden pattern `f2_self_load_latency_from_f5`）。下游系统不应假定 `global_beat_index` 或 `measure_index` 在跨房间场景中连续。
 
 11. **订阅者生命周期合约**: 所有订阅 F2 事件的系统**必须**在自身销毁时（`OnDestroy()` 或等价清理路径）解除订阅。F6 在触发房间卸载前**须先**广播房间卸载预信号，确保非持久化系统在 `BeatClock.Stop()` 之前完成取消订阅。F2 的事件类型为 C# `event`（非 UnityEvent），`BeatEventData` 为 `readonly struct`，避免装箱和 GC 分配。
 
@@ -62,7 +62,7 @@ F2 音频/拍点时钟系统是《玉兔：破阵》节奏战斗体系的时序�
 - `double GetConfirmedDSPStart()`：返回最近一次 `ConfirmDSPStart()` 写入的 `dsp_start_time` 值；**`Play()` 后、首次 `ConfirmDSPStart()` 调用前返回 `-1.0` 作为零状态标志**（`AudioSettings.dspTime` 始终 ≥ 0，`-1.0` 唯一标识"尚未确认"状态，与 `double.MaxValue` 的 `nextBeatDspTime` 零状态对称设计）。
 - `bool IsStartConfirmed`：`ConfirmDSPStart()` 至少调用过一次后为 `true`；消费方在使用 `GetConfirmedDSPStart()` 前**须**先检查此属性，`false` 时不得以返回值构造时序计算（避免以 `-1.0` 作为 DSP 锚点）。
 
-   > **⚠ 线程安全约束（ADR-D6 必要前提）**：若 ADR-D6 选用 `OnAudioFilterRead` 作为调度机制，C# 事件**禁止**从音频线程直接触发。`OnAudioFilterRead` 在 Unity 的独立音频线程运行，订阅者回调若调用任何 Unity API（`AudioSource.Play()`、`Instantiate()`、`Transform.position` 等）将抛出 `UnityException`。正确实现须通过 `ConcurrentQueue<BeatEventData>` 将事件数据从音频线程写入，由主线程 `Update()` 消费并分发事件（增加约 1 帧调度延迟，但保持主线程安全）。此约束须作为 ADR-D6 的**强制后果**写入 ADR 文档，并在 EditMode 测试（MockDSPClock 在主线程）无法覆盖此场景时额外进行 PlayMode 线程安全验证。
+   > **线程模型（ADR-D6 Addendum，2026-08-08，normative — 解决 OQ-6）**：BeatClock 调度已确定为 **FMODUnity RuntimeManager + 主线程 `Update()` 轮询** FMOD DSP 时钟；ADR-D6 明确**否决** `OnAudioFilterRead`。`BeatClock.Update()`（主线程）经 `IDSPClock.GetCurrentTime()` 读取 DSP 时钟后**直接**分发 `DispatchBeatEvent()`——无队列、无跨线程 marshalling；**`ConcurrentQueue<BeatEventData>` 不需要、且禁止引入**（徒增约 1 帧延迟、零收益）。所有 C# 拍点事件分发，以及 `LatencyOffsetMs` 的全部写者（F6 boot-inject 与 FE3 运行期校准，ADR-D10 D-5），均在主线程执行，无需任何同步原语。**下游合约（持久有效，与调度机制无关）**：订阅 F2 事件的系统**必须**使用负载中的 `BeatEventData.beat_dsp_time` 进行时序判定；**禁止**在回调触发时读取 `AudioSettings.dspTime`。PlayMode 线程安全测试仍保留并必需（Validation：1000 次快速 `BeatClock.Update()` → 零 `UnityException`），作为主线程不变量的守卫（非跨线程队列覆盖）。
 
 13. **DSP 时间坐标系强制标注（raw/adjusted 命名规则）**: 所有跨模块传递的 DSP 时间戳字段与事件 payload **必须**在命名上显式标注坐标系后缀——`...Raw`（未应用延迟偏移，用于音频硬件调度调用，如 `IAudioPlayer.PlayScheduled()`、`ConfirmDSPStart()`、BGM 换片）或 `...Adjusted`（已应用 F2-F5 偏移，用于玩家判定/呈现消费，如 C1 判定窗口、P1/PL2 节奏呈现）。**禁止**使用裸 `dspTime` 字段名。理由：raw 与 adjusted 混用是本项目递归出现的缺陷类（F2-F3 暂停恢复公式、F2-F7 HUD 公式已两次修订，见 B2 修订警告），最大引入 ±200ms 坐标系误差。**契约铁律**：音频调度调用一律使用 raw（物理输出延迟在硬件层已自然发生，叠加 offset 将双重应用，产生随玩家校准值漂移的可听接缝）；面向玩家的时间对齐一律使用 adjusted。
 
@@ -71,7 +71,7 @@ F2 音频/拍点时钟系统是《玉兔：破阵》节奏战斗体系的时序�
     - **`OnMeterChanged`（生效时广播）**：在 `PendingBPMChange` / `PendingTimeSignatureChange → Playing` 于小节边界生效的**同帧**广播，顺序上位于**边界拍 `OnBeatExact` 之后、新段第 0 拍调度之前**。供 C1 重锚定量化网格、C4 调整令牌密度、HUD/状态刷新。
     - **合并语义**：同帧 BPM + 拍号合并生效时（Edge Case + AC-F2-15），`OnMeterChangeAccepted` 与 `OnMeterChanged` **各恰好触发 1 次**（不因合并被吞或双发），payload 的 `bpmChanged` / `timeSigChanged` 布尔标志指示本次变更涵盖的维度。此设计同时覆盖 Boss 序列 3/4→5/8 这类**仅拍号变化、BPM 不变**的场景——单纯的 `OnBpmChanged` 会漏掉此事件（F6 BGM 换片、C4 令牌密度将收不到通知）。
     - **状态一致性**：内部状态字段（bpm/numerator/dsp_start 等）**必须**在事件广播**之前**完成翻转，保证事件回调内同步查询 `BeatStateSnapshot` 读到新值。
-    - **线程安全**：若 ADR-D6 调度机制最终确定为异步回调（见 Rule 12 ⚠ 约束），本双事件与 `OnBeatExact` 须经**同一** dispatch pass 分发以保证跨事件相对顺序（同一 pass 内先 flush Exact 队列，再 flush Meter 事件队列），并显式测试断言此顺序。
+    - **线程安全与分发顺序**：调度为主线程 `Update()` 轮询（ADR-D6 Addendum，无异步回调、无队列）。本双事件与 `OnBeatExact` 在**同一** `Update()` dispatch pass 内确定性分发以保证跨事件相对顺序（同一 pass 内先分发 Exact 事件、再分发 Meter 事件），并由 AC-F2-25 显式断言此顺序。
     - **消费方反向引用（跟进项）**：F6 GDD § BGM 过渡策略、C1 GDD F2 依赖章节、C4 GDD 须反向引用本双事件——本轮仅在 F2 侧声明契约，F6/C1/C4 文档的反向引用为后续跟进。
 
 ---
@@ -454,8 +454,7 @@ F2-F8 (beat_index_in_measure)          [依赖 time_sig_segment_beat_index + num
 
 F2 是 Foundation 层系统，**编译期无上游依赖**（不 `using` 其他游戏系统的命名空间）。
 
-**运行时软依赖（可选）**：
-- **F5 SaveService**：F2 在 `Start()` 中调用 `SaveService.LoadLatencyCalibration()` 读取玩家延迟校准偏移量并赋值 `LatencyOffsetMs`。若 F5 尚未初始化或返回 `isCalibrated=false`（首次游玩），F2 以 `LatencyOffsetMs=0` 默认值正常运行。**初始化顺序**：F5 `SaveService.Awake()` → F2 `BeatClock.Start()`（Unity 保证所有 `Awake()` 在第一个 `Start()` 前完成，无需 Script Execution Order 配置）。
+**运行时依赖**：**无 F5 直接依赖**（ADR-D10 D-5）。BeatClock 不调用 `SaveService.LoadLatencyCalibration()`、不自 load 任何延迟校准数据——它是纯持有者（pure holder）。启动期 `LatencyOffsetMs` 由 F6 `TDELifecycleAdapter` 从 F5 读取后一次性 boot-inject（详见 F6 GDD 启动链路与 F2 Core Rule 7/Rule 10）；`isCalibrated=false`（首次游玩）时注入默认 0ms。此前「F2 在 `Start()` 中自 load」的写法已废止（registry forbidden pattern `f2_self_load_latency_from_f5`）。
 
 ---
 
@@ -465,7 +464,7 @@ F2 是 Foundation 层系统，**编译期无上游依赖**（不 `using` 其他�
 |---------|---------|----------------|------|
 | **C1** 节奏量化攻击系统 | **硬依赖** | `OnHalfBeatLookahead`（半拍网格时间戳）+ `BeatStateSnapshot` | 事件订阅 + 查询 |
 | **C4** 战斗导演 | **硬依赖** | `OnBeatLookahead`（时间戳 + 小节号 + 拍内序号） | 事件订阅 |
-| **FE3** 延迟校准系统 | **硬依赖** | `GetCurrentDSPTime()` + 向 F2 注入 `LatencyOffsetMs` | 双向：FE3 查询 F2，FE3 向 F2 注入偏移 |
+| **FE3** 延迟校准系统 | **硬依赖** | `GetCurrentDSPTime()` + 向 F2 注入 `LatencyOffsetMs`（**运行期唯一写者**，ADR-D10 D-5） | 双向：FE3 查询 F2，FE3 向 F2 注入偏移 |
 | **FE4** Boss 战系统 | **软依赖** | `RequestBPMChange()` / `RequestTimeSignatureChange()` | 方法调用（通过 C4 间接依赖，但也直接调用切换接口） |
 | **P1** HUD | **硬依赖** | `OnBeatExact` + `BeatProgress`（帧查询） | 事件订阅 + 帧查询 |
 | **PL2** VFX 节奏反馈 | **软依赖** | `OnBeatLookahead` / `OnHalfBeatLookahead` | 事件订阅（无节拍事件时降级为无节奏动画，不崩溃） |
@@ -497,7 +496,7 @@ F2 的实例化必须在 F6 完成 BGM 加载之后。F6 GDD 须在接口合约�
 
 - **C1 GDD**：须引用 F2-F2（半拍间隔约束）作为判定窗口上界
 - **FE3 GDD**：须与 F2-F5 的 `latency_offset` 符号约定对齐（正值 = 玩家听到音频有延迟，如无线耳机；调整后时间戳 = raw + offset/1000）
-- **F5 GDD**：已声明 F2 在 `Start()` 中主动调用 `LoadLatencyCalibration()` ✅（F5 Dependencies 节已列出 F2 为下游消费方）
+- **F5 GDD**：`LoadLatencyCalibration()` 的调用方已由 F2 迁移至 F6 `TDELifecycleAdapter`（ADR-D10 D-5）；F5 Dependencies 节须列 **F6** 为启动期消费方，F2 不再是 F5 的下游消费方
 - **F6 GDD**：须在接口合约中说明向 F2 提供 BGM FMOD asset 的责任及启动顺序
 
 ---
@@ -705,7 +704,7 @@ F2 无运行时 UI。
 **AC-F2-25：OnMeterChanged 生效时广播、顺序与 raw 坐标** `[EditMode]` `[BLOCKING]`
 - **Given** 复用 AC-F2-13 场景（`MockDSPClock`，BPM=120 / 4/4）；在 `beatIndexInMeasure == 3`（末拍）的 `OnBeatExact` 回调中调用 `RequestBPMChange(180)`；同时订阅 `OnMeterChanged` 与 `OnBeatExact`，各记录单调递增的全局调用序号
 - **When** `MockDSPClock` 推进跨越小节边界，进入新 BPM 段
-- **Then** (1) `OnMeterChanged` **恰好触发 1 次**；(2) 顺序：其调用序号 **>** 触发切换的末拍 `OnBeatExact`，且 **<** 新 BPM 段第 0 拍 `OnBeatExact`（保证收到 `OnMeterChanged` 时新段尚无 Exact 先行广播）；(3) payload `newBpm == 180`、`newBeatIntervalS == 60.0/180`（误差 < 0.001ms），且与生效后 `GetBeatIntervalSeconds()` 一致；(4) `predictedEffectiveDspTimeRaw` 为 **raw**，与 AC-F2-13 结论中的边界时刻（旧末拍 raw DSP 时刻）相等，误差 < 0.1ms（非 adjusted）；(5) 回调内查询 `BeatStateSnapshot.bpm` 已 == 180（状态先于广播翻转）
+- **Then** (1) `OnMeterChanged` **恰好触发 1 次**；(2) 顺序（同一主线程 `Update()` dispatch pass 内确定性保证，ADR-D6 Addendum）：其调用序号 **>** 触发切换的末拍 `OnBeatExact`，且 **<** 新 BPM 段第 0 拍 `OnBeatExact`（保证收到 `OnMeterChanged` 时新段尚无 Exact 先行广播）；(3) payload `newBpm == 180`、`newBeatIntervalS == 60.0/180`（误差 < 0.001ms），且与生效后 `GetBeatIntervalSeconds()` 一致；(4) `predictedEffectiveDspTimeRaw` 为 **raw**，与 AC-F2-13 结论中的边界时刻（旧末拍 raw DSP 时刻）相等，误差 < 0.1ms（非 adjusted）；(5) 回调内查询 `BeatStateSnapshot.bpm` 已 == 180（状态先于广播翻转）
 
 **AC-F2-26：合并 BPM+拍号变更下双事件各触发一次** `[EditMode]` `[BLOCKING]`
 - **Given** 复用 AC-F2-15 场景（120 BPM / 4/4）；订阅 `OnMeterChangeAccepted` 与 `OnMeterChanged`
@@ -753,6 +752,6 @@ F2 无运行时 UI。
 | OQ-1 | M0 Spike：量化档位（Off / HalfBeat / Beat）的判定窗口数据（Perfect/Good 各占 half_beat_interval 的比例）尚未实测 | 阻塞 C1 GDD Formulas 节 | C1 设计者 | M0 Spike 完成后更新 C1 GDD；F2 公式 F2-F2 提供上界，C1 须在范围内设定 |
 | ~~OQ-2~~ | ~~ADR-D6（FMOD vs Unity Audio）~~ | **已解决** — ADR-D6 Accepted (2026-07-14)，选定 FMOD Studio 2.x | — | `docs/architecture/adr-d6-audio-middleware.md`；F2 实现阻塞已解除 |
 | OQ-3 | BeatAccentMap（5/8 节奏分组 2+3 或 3+2）是否作为 F2 可选配置 | 不阻塞 F2；影响 C4 设计 | C4 设计者 | 待 C4 GDD 明确需求后决定是否在 F2 Tuning Knobs 增加 `accentPattern` 参数 |
-| OQ-4 | **B2b 初始化时序**：F2 延迟校准加载与 F5 Bootstrap 初始化对齐（W-4-01）。用户已选「F6 启动协议统一 gate」方向，但落地依赖两项前置决策——D-4（F5.Initialize() 同步 or 异步）、D-5（LatencyOffsetMs 写者归属，涉 Core Rule 10 单一写者不变量）。**本轮未修订 `:425`**（保留原文，避免半提交）| 阻塞 F2 `:425` 修正 + F5 `:127/:221/:316` + F6 启动链路 | technical-director（主）+ F5/F6 设计者 | 定 D-4/D-5 后一次性三文档同轮修订，gate AC 归属 F6 |
+| ~~OQ-4~~ | **B2b 初始化时序**（W-4-01）。**已解决** — ADR-D10 Accepted (2026-08-09)：D-4 定 `SaveService.Initialize()` 同步阻塞 + `ISaveService` 消费 seam；D-5 定 `LatencyOffsetMs` 两阶段写者（F6 gate 一次性 boot-inject + FE3 运行期唯一写者），F2 不再自 load。Rule 7/10 已按两阶段模型修订，依赖文案同轮更新 | — | technical-director | `docs/architecture/adr-d10-bootstrap-sequencing.md`；F5 `:127/:221/:316` + F6 启动链路（AC-F6-23）已同轮修订 |
 | OQ-5 | **B2a 暂停/恢复事件**：`OnBeatClockPaused` / `OnBeatClockResumed` 本轮**延后**。依赖 `IAudioPlayer.Pause()/Resume()`（当前接口缺失，Core Rule 12 仅有 `PlayScheduled/Stop/IsPlaying`）、C1/C2 消费需求确认、`Stopped` 态转移补全 | 不阻塞 B1；阻塞 Scenario 3（暂停中充能恢复）跨系统语义 | C2 设计者 + audio（IAudioPlayer 契约） | C1/C2 GDD 编写时确认消费需求，同轮补 `IAudioPlayer` 暂停能力与 AC 后再定事件 |
-| OQ-6 | **ADR-D6 线程模型回填**：Core Rule 12 `:65` 的 `ConcurrentQueue` 强制令仍挂在「若选 OnAudioFilterRead」条件句上，但 ADR-D6 已选 FMOD。BeatClock 调度是 Update 轮询还是 FMOD 异步回调，决定 OnMeter* 双事件是否需 ConcurrentQueue 跨队列排序 | 阻塞 OnMeter* 事件线程安全 AC 的最终形态 | technical-director + ADR-D6 Addendum | ADR-D6 增补调度机制结论后回填 `:65`，据结论决定新事件是否需 PlayMode 线程安全 AC |
+| ~~OQ-6~~ | **ADR-D6 线程模型回填**。**已解决** — ADR-D6 Threading Model Addendum (2026-08-08)：调度确定为 FMODUnity RuntimeManager + 主线程 `Update()` 轮询，否决 `OnAudioFilterRead`；`ConcurrentQueue` 不需要且禁止引入。Core Rule 12 `:65` / Rule 14 的条件句已删除并改为 normative 主线程模型；AC-F2-25 断言主线程单 dispatch pass 确定性顺序 | — | technical-director + ADR-D6 Addendum | `docs/architecture/adr-d6-audio-middleware.md` § Addendum；F2 Rule 12/14 已同轮回填 |
