@@ -106,7 +106,24 @@ items: []
 #   output_range[min, max], added
 # Optional: expression (the actual formula), notes
 
-formulas: []
+formulas:
+  - name: perk_multiplier
+    status: active
+    source: design/gdd/perk-system.md      # C3 拥有；伤害公式第四项
+    referenced_by:
+      - design/gdd/perk-system.md
+      - design/gdd/game-concept.md          # final_damage = base × rating × combo × perk 概念公式第四项
+      # C2 GDD 编写时须在此追加：design/gdd/combo-system.md（final_damage 直接消费 perk_multiplier）
+    variables:
+      - v_i           # 单 DamageModifier 心法每层加成 [0.02, 0.15]
+      - s_i           # 当前叠加数 [1, maxStacks_i]
+      - maxStacks_i   # DamageModifier 分档 5/4/3/2 (Common/Uncommon/Rare/Legendary)
+    output_range: [0.5, 2.0]
+    expression: "clamp(prod_i(1 + v_i * min(s_i, maxStacks_i)), 0.5, 2.0)"
+    notes: "C3 心法系统拥有。按种类分治聚合的乘法类聚合结果，经 IRhythmModifierProvider.GetDamageMultiplier() 暴露。\
+      MVP 现实构筑落 ~1.3–1.6×；PERK_MULT_MAX=2.0 硬 clamp 防数值膨胀（支柱四）。C2 final_damage 直接消费。"
+    added: 2026-08-10
+    revised: ""
 
 # Example:
 #
@@ -204,6 +221,19 @@ constants:
       ADR-D5 引入 per-node 字段（tde-integration.md R3 修订，2026-07-19）。"
     added: 2026-07-18
     revised: "2026-07-19"
+
+  - name: perk_rarity_roll_weights
+    status: active
+    source: design/gdd/perk-system.md      # C3 PerkRollService 加权抽取权重，C3 拥有最终数字
+    referenced_by:
+      - design/gdd/perk-system.md
+      - design/gdd/so-data-layer.md         # F4 只定义 PerkRarity 枚举，Tuning 给参考权重；C3 锁定最终值
+    value: "Common:60, Uncommon:30, Rare:8, Legendary:2"
+    unit: weight
+    notes: "PerkRollService 稀有度加权无放回抽取（三选一）的权重。F4 Tuning 给参考 60/30/8/2；C3 GDD 公式 4 锁定为最终值。\
+      MVP 池仅 5 心法时 ~75% 抽到 Common，池扩过 MVP 后建议 lean 复检。"
+    added: 2026-08-10
+    revised: ""
 
 # Example:
 #
