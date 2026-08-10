@@ -84,14 +84,17 @@ state_ownership:
     status: active
     owner_system: fe3-latency-calibration
     adr: docs/architecture/adr-d10-bootstrap-sequencing.md
-    interface: "BeatClock.LatencyOffsetMs (float ms, range [-200,200]). Two-phase writer (ADR-D10 D-5): BOOT = f6-tde-lifecycle-adapter injects once from F5 LatencyCalibrationDTO before BeatClock.Play() and EnableGameplayInput(); RUNTIME = fe3-latency-calibration is the sole writer. Persisted by F5 (global/calibration.es3); source field so-data-layer latencyCalibrationOffsetMs."
+    interface: "BeatClock.LatencyOffsetMs (float ms, range [-200,200]). Two-phase writer (ADR-D10 D-5): BOOT = f6-tde-lifecycle-adapter injects once from F5 LatencyCalibrationDTO before BeatClock.Play() and EnableGameplayInput(); RUNTIME = fe3-latency-calibration is the sole writer. Both writers execute on the Unity MAIN THREAD (ADR-D6 Threading Addendum, 2026-08-08, item 6) — no synchronization primitive required. Persisted by F5 (global/calibration.es3); source field so-data-layer latencyCalibrationOffsetMs."
     write_access: boot-f6-tde-lifecycle-adapter-once__runtime-fe3-latency-calibration-only
+    fe3_forward_stance: "FE3 (Latency Calibration System) GDD, when authored, MUST honour two prospective stances flowing from ADR-D10 D-5 + ADR-D6 Addendum: (1) SOLE RUNTIME WRITER of BeatClock.LatencyOffsetMs (boot-inject is F6-only, once); (2) MAIN-THREAD INJECTION — all runtime writes occur on the Unity main thread, coherent with main-thread beat dispatch. /architecture-review flags any FE3 GDD violating either."
     referenced_by:
       - docs/architecture/adr-d10-bootstrap-sequencing.md
+      - docs/architecture/adr-d6-audio-middleware.md
       - design/gdd/audio-beat-clock.md
       - design/gdd/save-persistence.md
       - design/gdd/tde-integration.md
     added: 2026-08-08
+    revised: 2026-08-09
     revised: ""
 
 # Example:

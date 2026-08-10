@@ -85,7 +85,22 @@ F5 服务于支柱四（构筑驱动复盘）的底层保障：玩家愿意花�
 
 13. **主线程 ID 捕获**：`SaveService.Awake()` 中捕获 `Thread.CurrentThread.ManagedThreadId` 并存为私有静态字段 `_mainThreadId`。所有公开方法入口比对当前线程 ID；非主线程调用通过 `ConcurrentQueue` 缓存错误描述（由主线程 `Update()` flush 后以 `Debug.LogError` 输出），不执行任何 `IFileStorage` 操作，不抛出异常，`SaveService` 状态保持不变。禁止使用 `Thread.CurrentThread.IsBackground` 或 `Thread.CurrentThread.Name` 作为主线程判断依据（Unity 中不可靠）。
 
-14. **Awake() 与 Initialize() 分离**：`SaveService.Awake()` 仅完成三项工作：(a) 单例注册（`_instance = this` + `DontDestroyOnLoad`），(b) 主线程 ID 捕获（Rule 13），(c) 注入默认 `IFileStorage`（`InjectStorage(new ES3Storage())`）。`Awake()` **不**调用 `Initialize()`。`Initialize()` 由场景 Bootstrap 脚本或首个需要 F5 数据的下游系统在 `Start()` 中显式调用（推荐方式：场景中放置一个 `SaveServiceBootstrap` MonoBehaviour，其 `Start()` 调用 `SaveService.Instance.Initialize()`）。下游系统（如 F2 BeatClock）须在 `Initialize()` 完成后调用 `LoadX()`，不得在 `Awake()` 中调用 F5 API。Unity 保证所有 `Awake()` 在第一个 `Start()` 前完成，Bootstrap 的 `Start()` 先于其他系统的 `Start()`（通过场景加载顺序或 `DefaultExecutionOrder` attribute 保证）。此分离设计的目的是让测试可以在 `[SetUp]` 中替换 `IFileStorage` 后再调用 `Initialize()`（见 Rule 11 测试路径）。
+14. **Awake() 与 Initialize() 分离**：`SaveService.Awake()` 仅完成三项工作：(a) 单例注册（`_instance = this` + `DontDestroyOnLoad`），(b) 主线程 ID 捕获（Rule 13），(c) 注入默认 `IFileStorage`（`InjectStorage(new ES3Storage())`）。`Awake()` **不**调用 `Initialize()`。`Initialize()` 由场景 Bootstrap 脚本或首个需要 F5 数据的下游系统在 `Start()` 中显式调用（推荐方式：场景中放置一个 `SaveServiceBootstrap` MonoBehaviour，其 `Start()` 调用 `SaveService.Instance.Initialize()`）。下游消费方（如 F6 `TDELifecycleAdapter` 启动协调器）须在 `Initialize()` 完成后调用 `LoadX()`，不得在 `Awake()` 中调用 F5 API。Unity 保证所有 `Awake()` 在第一个 `Start()` 前完成；`SaveServiceBootstrap.Start()` 先于 `TDELifecycleAdapter.Start()` 由**单一显式 bootstrap driver** 保证顺序（ADR-D10，**不依赖** Script Execution Order / `DefaultExecutionOrder`）。**`Initialize()` 为同步、主线程、阻塞调用，返回 `void`（ADR-D10 D-4）**——在 Awake→Start 窗口内完成全部 GlobalData + 激活槽位加载（含 `LatencyCalibrationDTO`），无协程、无 `Task`、无 timeout/fallback 机制；返回后 `IsInitialized` 立即为 `true`（即 `state == Idle`，无 yield）。加载预算 < 50ms PC / < 100ms Mobile（启动闪屏成本）。此分离设计的目的是让测试可以在 `[SetUp]` 中替换 `IFileStorage` 后再调用 `Initialize()`（见 Rule 11 测试路径）。
+
+15. **`ISaveService` 消费者 seam（ADR-D10 D-4）**：为使 F6 启动 gate 可确定性 headless 测试，F5 对外暴露**消费者面向的 `ISaveService` 接口**作为 F2/F6 的 mock seam。**与 Rule 11 的 `IFileStorage` 严格区分**：`IFileStorage` mock 的是**存储后端**（供 F5 自身测试），`ISaveService` mock 的是**整个服务**（供 F2/F6 消费方测试），二者并存、不互相替代。
+
+    ```csharp
+    // 消费者面向 seam，区别于 F5 内部的 IFileStorage
+    public interface ISaveService {
+        void Initialize();                               // 同步、阻塞、主线程（Rule 14 / D-4）
+        bool IsInitialized { get; }                      // Initialize() 完成（state == Idle）后为 true
+        LatencyCalibrationDTO LoadLatencyCalibration();  // 缺失时返回默认 {0f, isCalibrated=false}
+        void SaveLatencyCalibration(LatencyCalibrationDTO dto);
+        // 其余 Load* 方法（LoadSettings() / LoadSlotProgress(int) / GetActiveSlotIndex() 等）按 F5 既有定义
+    }
+    // 生产：SaveService : ISaveService        （单例，DontDestroyOnLoad）
+    // 测试：MockSaveService : ISaveService    （返回预置 DTO，无文件 I/O；供 F6 AC-F6-23）
+    ```
 
 ---
 
@@ -124,7 +139,7 @@ F5 服务于支柱四（构筑驱动复盘）的底层保障：玩家愿意花�
 | FE5 → F5 | 局外成长系统 | `PlayerProgressDTO`（write） | `SaveSlotProgress(int slotIndex, PlayerProgressDTO)` | 局结算 |
 | F5 → FE5 | 局外成长系统 | `PlayerProgressDTO`（read） | `LoadSlotProgress(int slotIndex): PlayerProgressDTO` | 游戏启动 / 槽位激活 |
 | FE3 → F5 | 延迟校准系统 | `LatencyCalibrationDTO`（write） | `SaveLatencyCalibration(LatencyCalibrationDTO)` | 校准完成（FE3 构建完整 DTO，含 `isCalibrated=true`） |
-| F5 → F2 | 音频/拍点时钟 | `LatencyCalibrationDTO`（read） | `LoadLatencyCalibration(): LatencyCalibrationDTO` | **F2（BeatClock）在 `Start()` 中主动调用**，读取后自行赋值 `LatencyOffsetMs`（若 `isCalibrated=true`） |
+| F5 → F6 | TDE 集成层（启动协调器） | `LatencyCalibrationDTO`（read） | `LoadLatencyCalibration(): LatencyCalibrationDTO` | **F6 `TDELifecycleAdapter` 在首个 `OnSceneLoaded(Single)`、首次 `Play()` 前一次性调用**（ADR-D10 D-5），读取后 boot-inject 至 `BeatClock.LatencyOffsetMs`（`isCalibrated=false` 时注入默认 0ms）。F2 不再自 load |
 | P7 → F5 | 主菜单 | `slotIndex: int` | `SetActiveSlotIndex(int)` | 玩家在主菜单选择存档槽位 |
 | P7 → F5 | 主菜单 | `slotIndex: int` | `DeleteSlot(int)` | 玩家确认删除存档槽位后调用 |
 | FE7 → F5 | 游戏设置系统 | `GameSettingsDTO`（write） | `SaveSettings(GameSettingsDTO)` | 设置更改 |
@@ -218,7 +233,7 @@ public enum SlotState
 
 ### F5-D3：LatencyCalibrationDTO（延迟校准数据）
 
-全局数据，绑定设备，存储于 `global/calibration.es3`；由 FE3（延迟校准系统）在校准完成后调用 `SaveLatencyCalibration(LatencyCalibrationDTO)` 写入完整 DTO；游戏启动时由 **F2（BeatClock）在 `Start()` 中主动调用 `LoadLatencyCalibration()`** 获取并应用延迟偏移（`isCalibrated=true` 时赋值 `BeatClock.LatencyOffsetMs`）。
+全局数据，绑定设备，存储于 `global/calibration.es3`；由 FE3（延迟校准系统）在校准完成后调用 `SaveLatencyCalibration(LatencyCalibrationDTO)` 写入完整 DTO；游戏启动时由 **F6 `TDELifecycleAdapter` 在首个 `OnSceneLoaded(Single)`、首次 `BeatClock.Play()` 前一次性调用 `LoadLatencyCalibration()`**（ADR-D10 D-5）获取并 boot-inject 至 `BeatClock.LatencyOffsetMs`（`isCalibrated=false` 时注入默认 0ms）。F2 不再自 load。
 
 | 字段 | 类型 | 范围 | 描述 |
 |------|------|------|------|
@@ -313,13 +328,14 @@ public enum SlotState
 F5 是 Foundation 层系统，**无构建期上游依赖**，可独立存在并最先开发。
 
 **运行时软依赖（单向读取）**：
-- **F2 BeatClock**：F2 在 `Start()` 中主动调用 `SaveService.LoadLatencyCalibration()` 读取延迟偏移并自行初始化。F5 无需持有 F2 引用；依赖方向为 F2 → F5（F2 读取 F5），无循环依赖。须保证 F5 的 `Initialize()` 在 F2 的 `Start()` 之前完成——Rule 14 通过「所有 `Awake()` 在第一个 `Start()` 前完成」的 Unity 引擎契约实现此保证，**不依赖 Script Execution Order 配置**（与 Rule 14 一致；SEO 在跨场景和动态实例化场景下不可靠）。
+- **F6 `TDELifecycleAdapter`（启动协调器）**：F6 在首个 `OnSceneLoaded(Single)`、首次 `BeatClock.Play()` 前一次性调用 `SaveService.LoadLatencyCalibration()` 读取延迟偏移，并 boot-inject 至 `BeatClock.LatencyOffsetMs`（ADR-D10 D-5）。F5 无需持有 F6 引用；依赖方向为 F6 → F5，无循环依赖。须保证 F5 的 `Initialize()` 在 F6 消费之前完成——由**单一显式 bootstrap driver** 排序 `SaveServiceBootstrap.Start()` 先于 `TDELifecycleAdapter.Start()`（ADR-D10；**不依赖** Script Execution Order），叠加 Unity「所有 `Awake()` 在第一个 `Start()` 前完成」契约。**F2 BeatClock 不再自 load**（registry forbidden pattern `f2_self_load_latency_from_f5`）。
 
 ### 下游依赖（依赖 F5 的系统）
 
 | 下游系统 | 依赖类型 | 从 F5 获取 / 写入 F5 的数据 | 接口 |
 |---------|---------|--------------------------|------|
-| **FE3** 延迟校准系统 | 硬依赖 | 读取 `latencyOffsetMs`（游戏启动时）；写入 `LatencyCalibrationDTO`（校准完成时） | `LoadLatencyCalibration(): LatencyCalibrationDTO` / `SaveLatencyCalibration(LatencyCalibrationDTO)` |
+| **F6** TDE 集成层（启动协调器） | 硬依赖 | 启动期读取 `LatencyCalibrationDTO`（boot-load，注入 BeatClock，ADR-D10 D-5） | `LoadLatencyCalibration(): LatencyCalibrationDTO` |
+| **FE3** 延迟校准系统 | 硬依赖 | 运行期写入 `LatencyCalibrationDTO`（校准完成时）；运行期读取当前校准值 | `SaveLatencyCalibration(LatencyCalibrationDTO)` / `LoadLatencyCalibration()` |
 | **FE7** 游戏设置系统 | 硬依赖 | 读取 `GameSettingsDTO`（游戏启动时）；写入（设置更改时） | `LoadSettings()` / `SaveSettings(dto)` |
 | **FE5** 局外成长系统 | 硬依赖 | 读取 `PlayerProgressDTO`（槽位激活时）；写入（局结算时） | `LoadSlotProgress(int)` / `SaveSlotProgress(int, dto)` |
 | **PL4** 无障碍设置 | 软依赖 | 读取 `AccessibilityDTO`（游戏启动时）；写入（设置更改时） | `LoadAccessibility()` / `SaveAccessibility(dto)` |
@@ -330,6 +346,7 @@ F5 是 Foundation 层系统，**无构建期上游依赖**，可独立存在并�
 - F2 GDD `latency_offset_ms` 范围 `[-200, 200]` 与 F5-D3 `latencyOffsetMs [-200.0, 200.0]` 一致 ✅
 - **F4 GDD**：F4-S7 PlayerInfoSO ↔ F5 DTO 字段映射表已建立（见 F4 GDD「Interactions」节 § F4-S7 ↔ F5 DTO 字段映射表）；`latencyCalibrationOffsetMs` 和 `audioVolumeMaster` 在 F4 侧标注为 `[NonSerialized]` 运行时缓存，权威来源为 F5 Global DTOs ✅
 - **F5-D1 metaUpgradeLevels**：已与 F4-S7 `metaUpgradeLevels` 字段对齐（`MetaUpgradeEntry[]`），确保局外升级数据持久化往返完整 ✅
+- **F6 GDD**：已在启动链路声明对 `SaveService.Initialize()` gate + `LoadLatencyCalibration()` boot-load 的依赖（ADR-D10 D-4/D-5，见 F6 AC-F6-23）✅
 - FE3、FE5、P7 各自 GDD（设计完成后）须回引 F5，声明对 `SaveService` 的依赖
 
 ---

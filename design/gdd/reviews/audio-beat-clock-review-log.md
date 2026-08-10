@@ -147,3 +147,34 @@ Prior verdict resolved: 部分 — 本轮源自 gdd-cross-review-2026-07-19（W-
 - OQ-6 ADR-D6 线程模型：`:65` ConcurrentQueue 条件句待回填（ADR-D6 已选 FMOD），决定 OnMeter* 是否需 PlayMode 线程安全 AC
 
 **跟进项**：F6/C1/C4 GDD 须反向引用 `OnMeterChangeAccepted`/`OnMeterChanged`（本轮仅 F2 侧声明契约）。
+
+---
+
+## Revision — 2026-08-09 — ADR-D10 / ADR-D6 Addendum 同轮回填（F2/F5/F6 三文档 + registry）
+
+Trigger: ADR-D10（Bootstrap Sequencing & Latency Injection Topology）Accepted 2026-08-09 + ADR-D6 Threading Model Addendum Accepted 2026-08-08 —— 解除 OQ-4（W-4-01）与 OQ-6 冻结。
+Scope: L（三文档同轮协调修订，对 Round-8 工作副本；F2 6 处、F5 7 处、F6 3 处 + registry 1 处）。
+
+**F2 audio-beat-clock.md**
+- Core Rule 7（延迟偏移内化）→ 两阶段写者：启动期 F6 boot-inject 一次、运行期 FE3 唯一写者；BeatClock 纯持有者，禁止自 load。
+- Core Rule 10（DontDestroyOnLoad 单例）：「仅由 FE3 更新」重新界定为两阶段；运行期单一写者不变量保留 + `_offsetInjected` 一次性 guard。
+- Core Rule 12（时间戳精度）⚠ 线程约束：删除 OnAudioFilterRead/ConcurrentQueue 条件句 → ADR-D6 Addendum 主线程 Update 轮询 normative；保留下游 `beat_dsp_time` 合约。
+- Core Rule 14 线程安全子条：删除异步前提 → 主线程单 dispatch pass 确定性顺序（AC-F2-25 断言）。
+- Dependencies：移除 F2→F5 运行时自 load 软依赖（改为无 F5 直接依赖）；FE3 行标注运行期唯一写者；双向注记 F5 caller 迁 F6。
+- Open Questions：OQ-4、OQ-6 标记 **Resolved**（引 ADR-D10 D-4/D-5、ADR-D6 Addendum）。
+
+**F5 save-persistence.md**
+- Rule 14：`Initialize()` 显式同步/阻塞/void 戳记 + `IsInitialized`；启动顺序改为单一显式 bootstrap driver（不依赖 SEO）；下游消费方 F2 → F6。
+- 新增 Rule 15：`ISaveService` 消费者 seam（区别于 IFileStorage），供 F2/F6 mock 测试。
+- LoadLatencyCalibration caller 从 F2 迁 F6（:127 交互表 / :221 DTO 描述 / :316 上游软依赖 / 下游表新增 F6 行）；双向注记增 F6 回引。
+
+**F6 tde-integration.md**
+- 新增 Core Rule 13：F5 初始化 gate（release-active `IsInitialized` runtime guard，非 `Debug.Assert`）+ `LatencyOffsetMs` boot-load/boot-inject（首个 `OnSceneLoaded(Single)`、首次 `Play()` 前、一次性 guard）；Play()/输入仍在 `OnSceneLoaded(Single)`，遵 ADR-D1。
+- 上游依赖表新增 SaveService（F5, `ISaveService`）行。
+- 新增 **AC-F6-23**：F5 初始化 gate + boot-inject headless（`MockSaveService`，5 子用例，覆盖 ADR-D10 Validation 1–5）。
+
+**registry docs/registry/architecture.yaml**
+- `latency_offset_ms` 条目补 FE3 前瞻 stance（运行期唯一写者 + 主线程注入）+ 主线程写者约束（ADR-D6 Addendum §6）+ referenced_by 增 ADR-D6 + revised 2026-08-09。
+- （LatencyOffsetMs 两阶段归属、ISaveService 契约、`f2_self_load_latency_from_f5` forbidden pattern 已于 ADR-D10 PR 先行登记。）
+
+**跟进项**：F2/F5/F6 三文档 status → Pending Re-review；建议 `/review-all-gdds` 复核同轮一致性；FE3/C1/C4 GDD 编写时反向引用两阶段写者与 `ISaveService` 契约。

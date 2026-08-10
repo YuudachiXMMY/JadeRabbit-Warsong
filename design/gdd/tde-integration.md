@@ -102,6 +102,14 @@ F6 的玩家幻想是**天衣无缝的动作应噬**——每一次出招、侧�
 
     同步模式下 F3 的 DSP 时间戳将在无 `RuntimeManager.Update()` 的帧内停滞，C1 节拍判定将产生系统性误差。
 
+13. **F5 初始化 gate + `LatencyOffsetMs` boot-inject（ADR-D10 D-4/D-5）**
+    `TDELifecycleAdapter` 通过 `ISaveService` seam（生产为 `SaveService.Instance`，测试注入 `MockSaveService`，见 `save-persistence.md` Rule 15）消费 F5，承担启动期延迟偏移的 boot-load + boot-inject 职责：
+    - **启动顺序（单一显式 bootstrap driver）**：`SaveServiceBootstrap.Start()` 调用 `saveService.Initialize()`（同步阻塞，D-4）须先于 `TDELifecycleAdapter.Start()` 执行——由**单一显式 bootstrap driver** 保证顺序，**不依赖** Script Execution Order。
+    - **release-active 初始化 gate**：`TDELifecycleAdapter.Start()` 开头校验 `if (!_saveService.IsInitialized)` → 记录 fatal `[F6-FATAL] SaveService not initialized before TDELifecycleAdapter.Start()`、置 `enabled = false`、`return`（场景冻结）。此为 **release-active runtime guard，非 `Debug.Assert`**（后者在发布构建被剥离），必须在 shipped build 中响亮失败。
+    - **boot-inject（首次 `Play()` 前，一次性）**：首个 `OnSceneLoaded(LoadSceneMode.Single)` 内、进入 Rule 11/Rule 12 的 `Play()` 路径**之前**，以 `_offsetInjected` 一次性 guard 保护执行 `var cal = _saveService.LoadLatencyCalibration(); _beatClock.LatencyOffsetMs = cal.latencyOffsetMs; _offsetInjected = true;`（`isCalibrated=false` 时注入默认 0ms）。重入的 `OnSceneLoaded(Single)`（复活/换关）跳过注入，**不覆盖运行期 FE3 写入**。由于 `Play()` 由 Rule 12 的 FMOD 异步验证协程执行（或缓存至 `_pendingSceneStart`），注入须置于该协程/缓存分支之前，保证顺序「boot-inject → 首个 `Play()` → 首个 `OnBeatExact` → `EnableGameplayInput()`」（Play()/输入仍在 `OnSceneLoaded(Single)`，遵 ADR-D1，未迁至 `Start()`）。
+    - **BeatClock 是纯持有者**：F2 不自 load（见 `audio-beat-clock.md` Rule 7/Rule 10、registry forbidden pattern `f2_self_load_latency_from_f5`）；运行期 `LatencyOffsetMs` 唯一写者为 FE3。
+    - 验收见 **AC-F6-23**。
+
 ---
 
 ### States and Transitions
@@ -286,6 +294,7 @@ attackAnimSpeed = clamp(currentBPM / authoredBpm, SPEED_MIN, SPEED_MAX)
 | TopDownEngine | 外部插件 | `InputSystemManagerEventsBased` / `TopDownEngineEvent` / `MMEventListener<T>` / TDE Animator Controller 基础设施 | `JadeRabbitInputManager` 继承 TDE 输入类；`TDELifecycleAdapter` 订阅 TDE 事件总线 |
 | Animancer | 外部插件 | `HybridAnimancerComponent` / `AnimancerState.Speed` / `PlayController()` | F6 在角色 Prefab 上配置 `HybridAnimancerComponent` 和 `AnimancerAttackPlayer`，暴露 `AnimancerAttackPlayer` 引用供 C2 调用 |
 | FMOD | 外部插件 | `FMODUnity.RuntimeManager`（初始化状态验证） | `TDELifecycleAdapter.Start()` 验证 FMOD 已初始化后才允许 `BeatClock.Play()` |
+| SaveService | F5 | `ISaveService.Initialize()` / `IsInitialized` / `LoadLatencyCalibration()` | 启动期消费（ADR-D10 D-4/D-5）：`Start()` 校验 `IsInitialized`（release-active gate），首个 `OnSceneLoaded(Single)` 内一次性 boot-load `LatencyCalibrationDTO` 并注入 `BeatClock.LatencyOffsetMs`；生产为 `SaveService.Instance`，测试注入 `MockSaveService` |
 
 ### 依赖 F6 的系统（下游）
 
@@ -587,10 +596,27 @@ EditMode 测试中注入返回 `false` 的 mock `IFMODRuntimeChecker`：断言 `
 
 ---
 
+### AC-F6-23 — F5 初始化 gate + LatencyOffsetMs boot-inject（headless via MockSaveService）
+
+**类型**: Integration | **测试方式**: PlayMode 自动化测试（注入 `MockSaveService : ISaveService`，无真实文件 I/O）
+
+覆盖 ADR-D10 D-4/D-5 启动链路。5 项子用例：
+
+1. **boot-inject 顺序（D-5）**：`MockSaveService` 返回 `{latencyOffsetMs=42.5f, isCalibrated=true}`。断言 `BeatClock.LatencyOffsetMs == 42.5f` **早于**首次 `BeatClock.Play()`（`Play()` 仍在 `OnSceneLoaded(Single)`，遵 ADR-D1）——即早于首个 `OnBeatExact` 广播、早于 `EnableGameplayInput()`。
+2. **首次启动默认（D-5）**：`MockSaveService` 返回 `{0f, isCalibrated=false}`，断言 `BeatClock.LatencyOffsetMs == 0f` 且不抛错。
+3. **一次性 guard（D-5）**：连续两次 `OnSceneLoaded(Single)`（模拟复活/换关），断言 `LoadLatencyCalibration()` 仅被调用 1 次，`_offsetInjected` 阻止重复注入（不覆盖运行期 FE3 写入）。
+4. **release-active 初始化 gate（D-4）**：注入未初始化的 `MockSaveService`（`IsInitialized == false`），断言 `TDELifecycleAdapter.Start()` fail-fast——记录 `[F6-FATAL] SaveService not initialized...`、`enabled == false`、`BeatClock.Play()` 调用次数 == 0。**须在 release-config 构建路径执行**（该 guard 非 `Debug.Assert`，须在发布构建生效）。
+5. **同步契约（D-4）**：断言 `saveService.Initialize()` 返回后 `IsInitialized == true`（无 yield），后续 `Start()` 内消费方能立即读到已加载 DTO。
+
+**通过条件**：5 项子用例全部通过。`ISaveService` seam 使全部子用例 headless（无真实 ES3 文件 I/O）。
+
+---
+
 **依赖说明（执行阻断）**：
 - AC-F6-12 / AC-F6-15：需 C2 最小 stub 实现（提供可执行 `PlayAttack()` / `UpdateBpm()` 调用的测试替身），不依赖完整 C2 连招图逻辑
 - AC-F6-04 / AC-F6-21：需与 lead programmer 确认 `IFMODRuntimeChecker` 接口定义及程序集内部访问权限（`[InternalsVisibleTo]` 目标）
 - AC-F6-20：仅在原型阶段执行，须 C2 + AnimancerAttackPlayer 联调完成后安排人工盲测
+- AC-F6-23：需 F5 提供 `ISaveService` 消费者 seam + `MockSaveService` 测试替身（见 `save-persistence.md` Rule 15），并与 lead programmer 确认单一显式 bootstrap driver 的落地组件；子用例 4 须在 release-config 构建路径执行（fail-fast guard 非 Debug-only）
 
 ---
 
