@@ -105,3 +105,27 @@ lean 模式稳定性复查：8/8 章节完整，边界值逐一复算通过（C1
   须锚定该数值来源；Tuning Knobs 表 latency_offset_s 范围 [-0.2,0.2] 需加一致性注解。
 - **[ADR-D3]** R3 — 明确评级锚定到 beat_dsp_time 而非事件接收时刻（GDD 已正确，ADR 伪代码待同步）。
 - **[C1 文档-可选]** R2 — States and Transitions 表可补一条 Beat 模式 skip 相位屏蔽注释（纯可读性）。
+
+---
+
+## Review — 2026-08-10 — Verdict: APPROVED
+
+Scope signal: S
+Specialists: 定向 solo 复查（两处指定修复，无专家子代理）
+Blocking items: 0 | Recommended: 2
+Prior verdict resolved: Yes（/review-all-gdds 2026-08-09 FAIL 所 flag 的 B1 + D1/3c-1 两项已解决）
+
+### Summary
+
+第六轮定向修复复查，落地 `/review-all-gdds 2026-08-09` 判 FAIL 时对 C1 的两处 flag：
+
+- **Fix 1（B1 悬空引用）**：C1 订阅的已删除事件 `OnBpmChanged` 迁移至 F2 的 `OnMeterChanged`（边界生效事件，Core Rule 14），而非 `OnMeterChangeAccepted`（接受时事件）——理由：C1 判定网格须对齐实际生效的拍格。覆盖 F5 handler、调用时机段、Debug.Assert、E8、Dependencies/Interactions 表、AC-C1-15/20 共 6 处；拍号-only 变更（bpmChanged==false）处理为幂等重算 + 缓冲清空。grep 确认零残留。
+
+- **Fix 2（D1 + 3c-1 Off 隔离）**：Off 无障碍合约由 3 项扩至 5 项，形成三重隔离——① 连招深度封顶：Off 的 CancelTier 由 Advanced→Standard，修复与 game-concept.md:402（不可豁免约束）的硬冲突（原 AC-C1-06 授予 Off 全员 Advanced）；② 功勋折算：新增 `meritMultiplierOff ∈ (0,1)` 系数，Off 击杀功勋折算，C1 仅暴露激活模式、执行委托 C5/FE5；③ 排行/成就隔离沿用。覆盖 Rule 1、Rule 10（含填充逻辑 Off 例外）、E9、AC-C1-06/21、Tuning Knobs、下游依赖行、双向合约；新增 Open Question Q3（阻塞 C5/FE5 经济 GDD）。
+
+设计决策由用户裁定：功勋隔离采「折算系数」方案（非全额剔除），连招深度采「Off→CancelTier=Standard」（保手感、封进阶）。两处 flag 均已消解，无新增阻塞。
+
+### Carry-Forward（非阻塞，落点在下游）
+
+- **[ADR-D3]** `RhythmJudgmentEvent` 填充逻辑须同步 Off 例外（Perfect→Standard），文档已在 Rule 10 标注更新需求。
+- **[C5/FE5]** 经济 GDD 创建时须对称记录 `meritMultiplierOff` 折算并锁定 Q3 具体值（当前占位 0.5）。

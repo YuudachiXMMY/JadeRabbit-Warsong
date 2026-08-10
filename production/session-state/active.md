@@ -3,8 +3,8 @@
 ## Current Focus
 
 - **Epic**: Pre-Production
-- **Feature**: C1 节奏量化攻击系统 GDD — ✅ APPROVED（2026-07-21，第五轮 lean 复查）
-- **Task**: 下一步 C2 连招图 (/design-system combo-system) 或 C4 战斗导演（可并行）
+- **Feature**: C1 节奏量化攻击系统 GDD — ✅ APPROVED（2026-08-10，第六轮定向修复复查）
+- **Task**: 下一步 C2 连招图 (/design-system combo-system) 或 C4 战斗导演（可并行）；C5/FE5 经济 GDD 创建时须锁定 `meritMultiplierOff`（Q3，占位 0.5）
 
 ---
 
@@ -383,8 +383,8 @@
 
 <!-- STATUS -->
 Epic: Pre-Production
-Feature: C1 GDD rhythm-core.md — Revised Round 4 Pending Re-review
-Task: /clear 后运行 /design-review design/gdd/rhythm-core.md 第五轮重审（lean mode）
+Feature: C1 GDD rhythm-core.md — ✅ APPROVED (Round 6, B1+D1 fixed)
+Task: 推进 C2 combo-system 或 C4；C5/FE5 锁定 meritMultiplierOff (Q3)
 <!-- /STATUS -->
 
 ## Session Extract — /review-all-gdds 2026-08-08
