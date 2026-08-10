@@ -25,7 +25,7 @@
 | F4 | ScriptableObject 数据层（推断） | Foundation | **MVP** | **Approved** | `design/gdd/so-data-layer.md` | — |
 | F5 | 存档/持久化系统 | Foundation | **MVP** | **Revised (ADR-D10 同轮) — Pending Re-review** | `design/gdd/save-persistence.md` | ADR-D7 (Accepted), ADR-D10 (Accepted) |
 | F6 | TopDownEngine & Animancer 集成层 | Foundation | **MVP** | **Amended (ADR-D10 同轮) — Pending Re-review** | `design/gdd/tde-integration.md` | ADR-D1 (Accepted), ADR-D5 (Accepted), ADR-D10 (Accepted) |
-| C1 | 节奏量化攻击系统 | Core | **MVP** | **Approved** | `design/gdd/rhythm-core.md` | F2, F3 |
+| C1 | 节奏量化攻击系统 | Core | **MVP** | Needs Revision | `design/gdd/rhythm-core.md` | F2, F3 |
 | C2 | 连招图系统 | Core | **MVP** | Not Started | `design/gdd/combo-system.md` | F4, C1 |
 | C3 | 心法构筑系统 | Core | **MVP** | Not Started | `design/gdd/perk-system.md` | F4, C1 |
 | C4 | 战斗导演 | Core | **MVP** | Not Started | `design/gdd/combat-director.md` | F2 |
@@ -198,8 +198,8 @@
 | 识别的系统总数 | 31 |
 | 设计文档已开始 | 5 |
 | 设计文档已审查 | 6 |
-| 设计文档已 Approved | 4 |
-| 设计文档 Needs Revision | 2 |
+| 设计文档已 Approved | 3 |
+| 设计文档 Needs Revision | 3 |
 | MVP 系统已设计 | 6 / 27 |
 | Vertical Slice 系统已设计 | 0 / 1 |
 | Alpha 系统已设计 | 0 / 1 |
