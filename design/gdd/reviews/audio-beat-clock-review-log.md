@@ -147,3 +147,20 @@ Prior verdict resolved: 部分 — 本轮源自 gdd-cross-review-2026-07-19（W-
 - OQ-6 ADR-D6 线程模型：`:65` ConcurrentQueue 条件句待回填（ADR-D6 已选 FMOD），决定 OnMeter* 是否需 PlayMode 线程安全 AC
 
 **跟进项**：F6/C1/C4 GDD 须反向引用 `OnMeterChangeAccepted`/`OnMeterChanged`（本轮仅 F2 侧声明契约）。
+
+---
+
+## Fix — 2026-08-09 — FMOD 迁移遗留（Rule 9 :55 API 名对齐 ADR-D6）
+
+Scope signal: XS（单行措辞修正，无契约/AC/事件名变更）
+Trigger: 用户标记 Rule 9 `:55` 残留 Unity 原生音频 API，与 ADR-D6（FMOD Studio 2.x 取代 `AudioSource`/`AudioSettings.dspTime`）冲突。
+
+**背景**：2026-07-15 TB-2 已将 Rule 9 视觉节拍器时钟源由 `AudioSettings.dspTime` 改为 `Time.unscaledTime`，但降级序列的**触发条件**与**括注**两处 API 名当时漏改，构成 FMOD 迁移遗留。
+
+**修订（`audio-beat-clock.md:55`）**：
+- 触发条件 `AudioSource.PlayScheduled()` → `IAudioPlayer.PlayScheduled()`（生产实现 `FMODAudioPlayerImpl`，见 ADR-D6）——与 Rule 12/13 已在用的 DI 抽象接口名一致。
+- 括注 `AudioSettings.dspTime 可能冻结` → `FMOD DSP 时钟（经 IDSPClock.GetCurrentTime() 读取，生产实现 FMODDSPClockImpl）可能冻结`；墙上时钟显式标为 `Time.unscaledTime`。
+
+**未改（有意保留）**：Rule 12 `:61` 里 `禁止…读取 AudioSettings.dspTime` 为**禁令语境**，ADR-D6 Addendum（2026-08-08）§下游契约变更明确要求保留此禁令，不属遗留。
+
+**相邻观察（未在本轮修改）**：Rule 12 子项 `:62` `GetConfirmedDSPStart()` 描述中 `AudioSettings.dspTime 始终 ≥ 0` 的 rationale 仍用 Unity API 名——属同类遗留但位于 Rule 12 块内，留待用户确认后单独处理（FMOD DSP 采样计数 ulong→double 同样恒 ≥ 0，rationale 不受影响）。
