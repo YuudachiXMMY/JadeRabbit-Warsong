@@ -37,7 +37,7 @@
 #   Each entry: name, status, source, referenced_by[], attributes{}, added, revised
 
 version: 1
-last_updated: "2026-07-19"
+last_updated: "2026-08-10"
 
 # ─── ENTITIES ────────────────────────────────────────────────────────────────
 # Named game-world objects: enemies, NPCs, characters, factions, bosses.
@@ -106,7 +106,23 @@ items: []
 #   output_range[min, max], added
 # Optional: expression (the actual formula), notes
 
-formulas: []
+formulas:
+  - name: combo_multiplier
+    status: active
+    source: design/gdd/combo-system.md    # C2 F1 定义
+    referenced_by:
+      - design/gdd/combo-system.md
+      # C3 心法/C5 武器/balance 侧引用 final_damage 时须回引此条
+    variables:
+      - count        # 来自 C1 ComboCountAfter，只读，[0, 999]
+    output_range: [1.0, 5.0]
+    expression: "min(cap, 1.0 + k * count^p)"
+    notes: "C2 连招段数→伤害倍率。k=0.01, p=1.2, cap=5.0。count=0→1.0；count=147≈4.988（未封顶）；\
+      count=148→5.0（首个被 min() 封顶的整数）；148→999 平台段恒 5.0。乘入 final_damage = \
+      base_damage × rating_multiplier × combo_multiplier × perk_multiplier。约束（F6）：perk_multiplier \
+      输入不得含 count / combo_multiplier（防 combo² 爆炸）。定义域上界 999 = ComboMax 常量。"
+    added: 2026-08-10
+    revised: ""
 
 # Example:
 #
@@ -158,7 +174,7 @@ constants:
     source: design/gdd/so-data-layer.md   # WeaponSO.baseDamage 由 F4 定义
     referenced_by:
       - design/gdd/so-data-layer.md
-      # C2 GDD 编写时须在此追加：design/gdd/combo-system.md
+      - design/gdd/combo-system.md          # C2 final_damage 公式的 base_damage 变量来源
     value_range: [1.0, 100.0]
     unit: damage_units
     notes: "WeaponSO.baseDamage；C2 final_damage 公式的 base_damage 变量来源。MVP 苗刀参考值 25.0。"
@@ -204,6 +220,20 @@ constants:
       ADR-D5 引入 per-node 字段（tde-integration.md R3 修订，2026-07-19）。"
     added: 2026-07-18
     revised: "2026-07-19"
+
+  - name: combo_max
+    status: active
+    source: design/gdd/combo-system.md      # ComboMax 由 C2 F3 定义
+    referenced_by:
+      - design/gdd/combo-system.md
+      - design/gdd/rhythm-core.md            # C1 拥有 CurrentCombo 段数计数；须将 clamp 由 50 抬至 999（下游债务，见 C2 Open Questions OQ1）
+    value: 999
+    unit: combo_count
+    notes: "连招段数上限 = combo_multiplier 定义域上界 = HUD 连击天花板。跨系统债务：C1 rhythm-core 当前将 \
+      CurrentCombo clamp 在 50，须同步抬至 999，否则 combo_multiplier 运行时被截到 ×2.09 而非设计的 ×5.0。\
+      C1 文档修订为 follow-up（本次仅登记 registry）。"
+    added: 2026-08-10
+    revised: ""
 
 # Example:
 #
