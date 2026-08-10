@@ -37,7 +37,7 @@
 #   Each entry: name, status, source, referenced_by[], attributes{}, added, revised
 
 version: 1
-last_updated: "2026-07-19"
+last_updated: "2026-08-10"
 
 # ─── ENTITIES ────────────────────────────────────────────────────────────────
 # Named game-world objects: enemies, NPCs, characters, factions, bosses.
@@ -113,7 +113,7 @@ formulas:
     referenced_by:
       - design/gdd/perk-system.md
       - design/gdd/game-concept.md          # final_damage = base × rating × combo × perk 概念公式第四项
-      # C2 GDD 编写时须在此追加：design/gdd/combo-system.md（final_damage 直接消费 perk_multiplier）
+      - design/gdd/combo-system.md          # C2 final_damage 直接消费 perk_multiplier
     variables:
       - v_i           # 单 DamageModifier 心法每层加成 [0.02, 0.15]
       - s_i           # 当前叠加数 [1, maxStacks_i]
@@ -121,7 +121,26 @@ formulas:
     output_range: [0.5, 2.0]
     expression: "clamp(prod_i(1 + v_i * min(s_i, maxStacks_i)), 0.5, 2.0)"
     notes: "C3 心法系统拥有。按种类分治聚合的乘法类聚合结果，经 IRhythmModifierProvider.GetDamageMultiplier() 暴露。\
-      MVP 现实构筑落 ~1.3–1.6×；PERK_MULT_MAX=2.0 硬 clamp 防数值膨胀（支柱四）。C2 final_damage 直接消费。"
+      MVP 现实构筑落 ~1.3–1.6×；PERK_MULT_MAX=2.0 硬 clamp 防数值膨胀（支柱四）。C2 final_damage 直接消费。\
+      约束（C2 F6）：perk_multiplier 输入不得含 count / combo_multiplier（防 combo² 爆炸）。"
+    added: 2026-08-10
+    revised: ""
+
+  - name: combo_multiplier
+    status: active
+    source: design/gdd/combo-system.md    # C2 F1 定义
+    referenced_by:
+      - design/gdd/combo-system.md
+      - design/gdd/perk-system.md          # C3 final_damage 第三项；perk_multiplier 输入不得含此值
+      # C5 武器/balance 侧引用 final_damage 时须回引此条
+    variables:
+      - count        # 来自 C1 ComboCountAfter，只读，[0, 999]
+    output_range: [1.0, 5.0]
+    expression: "min(cap, 1.0 + k * count^p)"
+    notes: "C2 连招段数→伤害倍率。k=0.01, p=1.2, cap=5.0。count=0→1.0；count=147≈4.988（未封顶）；\
+      count=148→5.0（首个被 min() 封顶的整数）；148→999 平台段恒 5.0。乘入 final_damage = \
+      base_damage × rating_multiplier × combo_multiplier × perk_multiplier。约束（F6）：perk_multiplier \
+      输入不得含 count / combo_multiplier（防 combo² 爆炸）。定义域上界 999 = ComboMax 常量。"
     added: 2026-08-10
     revised: ""
 
@@ -175,7 +194,7 @@ constants:
     source: design/gdd/so-data-layer.md   # WeaponSO.baseDamage 由 F4 定义
     referenced_by:
       - design/gdd/so-data-layer.md
-      # C2 GDD 编写时须在此追加：design/gdd/combo-system.md
+      - design/gdd/combo-system.md          # C2 final_damage 公式的 base_damage 变量来源
     value_range: [1.0, 100.0]
     unit: damage_units
     notes: "WeaponSO.baseDamage；C2 final_damage 公式的 base_damage 变量来源。MVP 苗刀参考值 25.0。"
@@ -232,6 +251,20 @@ constants:
     unit: weight
     notes: "PerkRollService 稀有度加权无放回抽取（三选一）的权重。F4 Tuning 给参考 60/30/8/2；C3 GDD 公式 4 锁定为最终值。\
       MVP 池仅 5 心法时 ~75% 抽到 Common，池扩过 MVP 后建议 lean 复检。"
+    added: 2026-08-10
+    revised: ""
+
+  - name: combo_max
+    status: active
+    source: design/gdd/combo-system.md      # ComboMax 由 C2 F3 定义
+    referenced_by:
+      - design/gdd/combo-system.md
+      - design/gdd/rhythm-core.md            # C1 拥有 CurrentCombo 段数计数；须将 clamp 由 50 抬至 999（下游债务，见 C2 Open Questions OQ1）
+    value: 999
+    unit: combo_count
+    notes: "连招段数上限 = combo_multiplier 定义域上界 = HUD 连击天花板。跨系统债务：C1 rhythm-core 当前将 \
+      CurrentCombo clamp 在 50，须同步抬至 999，否则 combo_multiplier 运行时被截到 ×2.09 而非设计的 ×5.0。\
+      C1 文档修订为 follow-up（本次仅登记 registry）。"
     added: 2026-08-10
     revised: ""
 
