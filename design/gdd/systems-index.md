@@ -28,7 +28,7 @@
 | C1 | 节奏量化攻击系统 | Core | **MVP** | Needs Revision | `design/gdd/rhythm-core.md` | F2, F3 |
 | C2 | 连招图系统 | Core | **MVP** | Not Started | `design/gdd/combo-system.md` | F4, C1 |
 | C3 | 心法构筑系统 | Core | **MVP** | Not Started | `design/gdd/perk-system.md` | F4, C1 |
-| C4 | 战斗导演 | Core | **MVP** | Not Started | `design/gdd/combat-director.md` | F2 |
+| C4 | 战斗导演 | Core | **MVP** | **Designed — Pending Review** | `design/gdd/combat-director.md` | F2, F4 |
 | C5 | 武器系统（推断） | Core | **MVP** | Not Started | `design/gdd/weapon-system.md` | F4, C2 |
 | C6 | Hitbox/受击判定系统（推断） | Core | **MVP** | Not Started | `design/gdd/hitbox-system.md` | C2, F6 |
 | FE3 | 延迟校准系统 | Feature | **MVP** | Not Started | `design/gdd/latency-calibration.md` | F2, F5 |
