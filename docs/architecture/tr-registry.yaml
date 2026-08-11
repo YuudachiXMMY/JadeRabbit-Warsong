@@ -823,9 +823,9 @@ requirements:
   - id: TR-rhythm-015
     system: rhythm
     gdd: design/gdd/rhythm-core.md
-    requirement: "IBeatClock/IInputEventBus declared as interfaces via field-injection + property-wrapper to support pure-C# NUnit tests; SetBeatClockForTesting in #if block. NOTE: interface OWNERSHIP still unassigned at ADR level (review A2 gap, ADR-D8 pending)"
+    requirement: "IBeatClock/IInputEventBus declared as interfaces via field-injection + property-wrapper to support pure-C# NUnit tests; SetBeatClockForTesting in #if block. OWNERSHIP resolved: interfaces + Mock contracts owned by ADR-D8 (DI/test-seam contracts). NOTE: ADR-D8 still Proposed — stories auto-blocked until D8 Accepted (needs /test-setup + InternalsVisibleTo)."
     created: 2026-08-11
-    revised: ""
+    revised: 2026-08-11
     status: active
 
   - id: TR-rhythm-016
