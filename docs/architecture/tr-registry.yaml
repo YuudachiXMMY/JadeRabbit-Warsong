@@ -24,8 +24,8 @@
 #
 # STATUS VALUES: active | deprecated | superseded-by: TR-[system]-NNN
 
-version: 1
-last_updated: "2026-07-19"
+version: 2
+last_updated: "2026-08-11"
 
 requirements:
 
@@ -702,5 +702,521 @@ requirements:
     gdd: design/gdd/tde-integration.md
     requirement: "BeatClock.ScheduleBGMTransition() API for Boss phase BGM crossfade at measure boundary (Post-MVP)"
     created: 2026-07-19
+    revised: ""
+    status: active
+
+  # ── rhythm / C1 (design/gdd/rhythm-core.md) ───────────────────────────────
+  # Added 2026-08-11 by /architecture-review (first Core-layer registration). Arch ref: ADR-D3.
+
+  - id: TR-rhythm-001
+    system: rhythm
+    gdd: design/gdd/rhythm-core.md
+    requirement: "Attack judgment uses precise DSP timestamps from F3 (InputAction.performed), never Update() frame timestamps"
+    created: 2026-08-11
+    revised: ""
+    status: active
+
+  - id: TR-rhythm-002
+    system: rhythm
+    gdd: design/gdd/rhythm-core.md
+    requirement: "RhythmJudger : MonoBehaviour uses beat-anchor + single-slot pre-buffer (last-in-wins) architecture (ADR-D3)"
+    created: 2026-08-11
+    revised: ""
+    status: active
+
+  - id: TR-rhythm-003
+    system: rhythm
+    gdd: design/gdd/rhythm-core.md
+    requirement: "Single-slot _pendingInput buffer stores input DSP timestamp; second input overwrites first within window"
+    created: 2026-08-11
+    revised: ""
+    status: active
+
+  - id: TR-rhythm-004
+    system: rhythm
+    gdd: design/gdd/rhythm-core.md
+    requirement: "Three quantization modes (HalfBeat/Beat/Off) injected at runtime by FE7, switchable mid-combat"
+    created: 2026-08-11
+    revised: ""
+    status: active
+
+  - id: TR-rhythm-005
+    system: rhythm
+    gdd: design/gdd/rhythm-core.md
+    requirement: "Beat-offset formula (judgment_time + latency_offset_s - beat_dsp_time)x1000; cross-time-domain alignment in perception domain"
+    created: 2026-08-11
+    revised: ""
+    status: active
+
+  - id: TR-rhythm-006
+    system: rhythm
+    gdd: design/gdd/rhythm-core.md
+    requirement: "Runtime window clamp cascade recomputed on every BPM change; writes runtime fields _effectivePerfect/GoodMs, never back to SO (ADR-D4 D4-1)"
+    created: 2026-08-11
+    revised: ""
+    status: active
+
+  - id: TR-rhythm-007
+    system: rhythm
+    gdd: design/gdd/rhythm-core.md
+    requirement: "Platform-specific platformMinPerfectMs (PC 16.7 / iOS 39 / Android 80 ms) assigned via runtime Application.platform, not compile-time macros"
+    created: 2026-08-11
+    revised: ""
+    status: active
+
+  - id: TR-rhythm-008
+    system: rhythm
+    gdd: design/gdd/rhythm-core.md
+    requirement: "BPM registered range [80,240]; window-invariant Debug.Assert wrapped in #if UNITY_EDITOR || DEVELOPMENT_BUILD (stripped in Release)"
+    created: 2026-08-11
+    revised: ""
+    status: active
+
+  - id: TR-rhythm-009
+    system: rhythm
+    gdd: design/gdd/rhythm-core.md
+    requirement: "Clock-ready gate: no judgment until BeatClock.IsStartConfirmed==true (Off mode exempt)"
+    created: 2026-08-11
+    revised: ""
+    status: active
+
+  - id: TR-rhythm-010
+    system: rhythm
+    gdd: design/gdd/rhythm-core.md
+    requirement: "Pause immediately clears buffer + closes LateWindow; resume via OnBeatClockResumed (no ghost judgment)"
+    created: 2026-08-11
+    revised: ""
+    status: active
+
+  - id: TR-rhythm-011
+    system: rhythm
+    gdd: design/gdd/rhythm-core.md
+    requirement: "2s timeout on unconfirmed-clock buffered input -> silent discard + Warning log"
+    created: 2026-08-11
+    revised: ""
+    status: active
+
+  - id: TR-rhythm-012
+    system: rhythm
+    gdd: design/gdd/rhythm-core.md
+    requirement: "RhythmJudgmentEvent readonly struct (Rating, AttackType, CancelTier, ComboCountBefore/After, OffsetMs) broadcast via event Action<RhythmJudgmentEvent> OnRhythmJudgment"
+    created: 2026-08-11
+    revised: ""
+    status: active
+
+  - id: TR-rhythm-013
+    system: rhythm
+    gdd: design/gdd/rhythm-core.md
+    requirement: "LateWindow expiry authoritatively judged by DSP-time comparison inputDspTime - beatDspTime > LateWindowMs/1000, frame-rate independent"
+    created: 2026-08-11
+    revised: ""
+    status: active
+
+  - id: TR-rhythm-014
+    system: rhythm
+    gdd: design/gdd/rhythm-core.md
+    requirement: "Perk delta queried only on low-freq events (OnMeterChanged/OnPerkStackChanged) and cached; judgment hot-path (OnHalfBeatLookahead) has zero provider-query overhead"
+    created: 2026-08-11
+    revised: ""
+    status: active
+
+  - id: TR-rhythm-015
+    system: rhythm
+    gdd: design/gdd/rhythm-core.md
+    requirement: "IBeatClock/IInputEventBus declared as interfaces via field-injection + property-wrapper to support pure-C# NUnit tests; SetBeatClockForTesting in #if block. NOTE: interface OWNERSHIP still unassigned at ADR level (review A2 gap, ADR-D8 pending)"
+    created: 2026-08-11
+    revised: ""
+    status: active
+
+  - id: TR-rhythm-016
+    system: rhythm
+    gdd: design/gdd/rhythm-core.md
+    requirement: "ComboMax=999 (registry combo_max); delta-combo clamp [0, ComboMax]; Miss delta-combo asserted ==0 (hard)"
+    created: 2026-08-11
+    revised: ""
+    status: active
+
+  - id: TR-rhythm-017
+    system: rhythm
+    gdd: design/gdd/rhythm-core.md
+    requirement: "E7 window-collapse inline logic must run before Assert (Android BPM>=186); binary Perfect/Miss degrade accepted"
+    created: 2026-08-11
+    revised: ""
+    status: active
+
+  - id: TR-rhythm-018
+    system: rhythm
+    gdd: design/gdd/rhythm-core.md
+    requirement: "Latency offset [-0.2, 0.2]s; range-clamp enforcement delegated to FE7 (C1 trusts F2-read value, no re-clamp)"
+    created: 2026-08-11
+    revised: ""
+    status: active
+
+  # ── combo / C2 (design/gdd/combo-system.md) ───────────────────────────────
+  # Added 2026-08-11 by /architecture-review. Arch ref: ADR-D3, ADR-D5, ADR-D4.
+
+  - id: TR-combo-001
+    system: combo
+    gdd: design/gdd/combo-system.md
+    requirement: "Data-driven combo state machine consuming ComboGraphSO/AttackNodeSO/ComboEdge; nodes built into Dictionary<string, AttackNodeSO> at weapon-equip"
+    created: 2026-08-11
+    revised: ""
+    status: active
+
+  - id: TR-combo-002
+    system: combo
+    gdd: design/gdd/combo-system.md
+    requirement: "Subscribes C1 RhythmJudgmentEvent, read-only (never writes back)"
+    created: 2026-08-11
+    revised: ""
+    status: active
+
+  - id: TR-combo-003
+    system: combo
+    gdd: design/gdd/combo-system.md
+    requirement: "Edge traversal matches fromNodeId==_currentNodeId && requiredInput==AttackType"
+    created: 2026-08-11
+    revised: ""
+    status: active
+
+  - id: TR-combo-004
+    system: combo
+    gdd: design/gdd/combo-system.md
+    requirement: "Timing gate via normalized-time cancel window [cancelWeight, 1.0]; input buffer bufferSeconds = inputBufferBeats x 60/currentBpm (BPM-scaled)"
+    created: 2026-08-11
+    revised: ""
+    status: active
+
+  - id: TR-combo-005
+    system: combo
+    gdd: design/gdd/combo-system.md
+    requirement: "Rating gate compares cancelWindowType vs CancelTier (Advanced>Standard>Closed)"
+    created: 2026-08-11
+    revised: ""
+    status: active
+
+  - id: TR-combo-006
+    system: combo
+    gdd: design/gdd/combo-system.md
+    requirement: "Animancer variable-speed AnimancerState.Speed = currentBpm / node.authoredBpm; no hardcoded frame counts (ADR-D5)"
+    created: 2026-08-11
+    revised: ""
+    status: active
+
+  - id: TR-combo-007
+    system: combo
+    gdd: design/gdd/combo-system.md
+    requirement: "Soft reset affects graph position (_currentNodeId=rootNodeId) only; must never write C1 CurrentCombo (invariant; F6 boundary)"
+    created: 2026-08-11
+    revised: ""
+    status: active
+
+  - id: TR-combo-008
+    system: combo
+    gdd: design/gdd/combo-system.md
+    requirement: "Combo-hold window holdSeconds = comboHoldBeats x 60/currentBpm (BPM-scaled grace)"
+    created: 2026-08-11
+    revised: ""
+    status: active
+
+  - id: TR-combo-009
+    system: combo
+    gdd: design/gdd/combo-system.md
+    requirement: "combo_multiplier(count)=min(cap, 1.0+k x count^p) (k=0.01, p=1.2, cap=5.0); domain [0,999]; caps at count=148"
+    created: 2026-08-11
+    revised: ""
+    status: active
+
+  - id: TR-combo-010
+    system: combo
+    gdd: design/gdd/combo-system.md
+    requirement: "Data fault tolerance: empty nodes -> InvalidDataException; bad rootNodeId -> fallback nodes[0]+LogError; invalid/self-loop edges -> skip+Error (AC-F4-12/31)"
+    created: 2026-08-11
+    revised: ""
+    status: active
+
+  - id: TR-combo-011
+    system: combo
+    gdd: design/gdd/combo-system.md
+    requirement: "BPM change (OnMeterChangeAccepted) recomputes Animancer Speed live; normalized cancel window unaffected; buffer/hold seconds re-derived"
+    created: 2026-08-11
+    revised: ""
+    status: active
+
+  - id: TR-combo-012
+    system: combo
+    gdd: design/gdd/combo-system.md
+    requirement: "Deterministic tie-break: duplicate fromNodeId+requiredInput edges take first match + LogWarning"
+    created: 2026-08-11
+    revised: ""
+    status: active
+
+  - id: TR-combo-013
+    system: combo
+    gdd: design/gdd/combo-system.md
+    requirement: "Emits attack-node-active signal at hitboxStartNormalizedTime for hitboxDurationNormalized to C6"
+    created: 2026-08-11
+    revised: ""
+    status: active
+
+  - id: TR-combo-014
+    system: combo
+    gdd: design/gdd/combo-system.md
+    requirement: "perk_multiplier input set must exclude count/combo_multiplier (anti combo^2 explosion); exceptions via ADR"
+    created: 2026-08-11
+    revised: ""
+    status: active
+
+  # ── perk / C3 (design/gdd/perk-system.md) ─────────────────────────────────
+  # Added 2026-08-11 by /architecture-review. Arch ref: ADR-D4 (PerkSO clone), C1 (IRhythmModifierProvider consumer).
+
+  - id: TR-perk-001
+    system: perk
+    gdd: design/gdd/perk-system.md
+    requirement: "PerkSO runtime lifecycle via Instantiate() clone per-run into _activeClones registry; Destroy() all at run-end, no persistence (ADR-D4 D4-2)"
+    created: 2026-08-11
+    revised: ""
+    status: active
+
+  - id: TR-perk-002
+    system: perk
+    gdd: design/gdd/perk-system.md
+    requirement: "Clone is shallow copy sharing AssetReferenceT<Sprite>; C3 forbidden to ReleaseAsset()/LoadAssetAsync() on clone.iconSprite (P2 manages original)"
+    created: 2026-08-11
+    revised: ""
+    status: active
+
+  - id: TR-perk-003
+    system: perk
+    gdd: design/gdd/perk-system.md
+    requirement: "PerkParameter must be value-type or string (F4 D4-9) - else shallow-copy shared-reference pollutes original"
+    created: 2026-08-11
+    revised: ""
+    status: active
+
+  - id: TR-perk-004
+    system: perk
+    gdd: design/gdd/perk-system.md
+    requirement: "PerkEffectType locked 5-value enum (Damage/Combo/RhythmRule/Movement/Meta); adding 6th without ADR ref -> CI fail (ADR-D4 gating deliverable)"
+    created: 2026-08-11
+    revised: ""
+    status: active
+
+  - id: TR-perk-005
+    system: perk
+    gdd: design/gdd/perk-system.md
+    requirement: "PerkModifierStack aggregates by target x kind: additive->SUM, multiplicative->PRODUCT, override->last-applied-wins"
+    created: 2026-08-11
+    revised: ""
+    status: active
+
+  - id: TR-perk-006
+    system: perk
+    gdd: design/gdd/perk-system.md
+    requirement: "Implements IRhythmModifierProvider (read-only): window deltas, GetComboDelta, damage mult, rating-damage override, hitstun mult"
+    created: 2026-08-11
+    revised: ""
+    status: active
+
+  - id: TR-perk-007
+    system: perk
+    gdd: design/gdd/perk-system.md
+    requirement: "Guardrails double-enforced: Odin CI validator (blocking) + runtime clamp/assert fallback; GetComboDelta(Miss) hard-locked 0"
+    created: 2026-08-11
+    revised: ""
+    status: active
+
+  - id: TR-perk-008
+    system: perk
+    gdd: design/gdd/perk-system.md
+    requirement: "PerkRollService weighted no-replacement draw (weights 60/30/8/2), re-normalized each slot, no pity (MVP)"
+    created: 2026-08-11
+    revised: ""
+    status: active
+
+  - id: TR-perk-009
+    system: perk
+    gdd: design/gdd/perk-system.md
+    requirement: "perk_multiplier = clamp(product(1+v_i x min(s_i,maxStacks_i)), 0.5, 2.0)"
+    created: 2026-08-11
+    revised: ""
+    status: active
+
+  - id: TR-perk-010
+    system: perk
+    gdd: design/gdd/perk-system.md
+    requirement: "Window delta clamp(sum d_i, -20, +60)ms; C3 emits delta only, C1 owns clamp cascade; C3 never writes RhythmConfigSO (D4-1/D3)"
+    created: 2026-08-11
+    revised: ""
+    status: active
+
+  - id: TR-perk-011
+    system: perk
+    gdd: design/gdd/perk-system.md
+    requirement: "Broadcasts OnPerkStackChanged on perk add/remove to trigger C1 window recompute"
+    created: 2026-08-11
+    revised: ""
+    status: active
+
+  - id: TR-perk-012
+    system: perk
+    gdd: design/gdd/perk-system.md
+    requirement: "Pause freezes PerkModifierStack (no trigger, no double-count on resume)"
+    created: 2026-08-11
+    revised: ""
+    status: active
+
+  - id: TR-perk-013
+    system: perk
+    gdd: design/gdd/perk-system.md
+    requirement: "Runtime clamps for out-of-range PerkParameter.value, duplicate PerkSO.id (Error), Passive+maxStacks>1"
+    created: 2026-08-11
+    revised: ""
+    status: active
+
+  # ── director / C4 (design/gdd/combat-director.md) ─────────────────────────
+  # Added 2026-08-11 by /architecture-review. Arch ref: ADR-D2 (token/AI), ADR-D6 (threading), ADR-D10 (bootstrap).
+
+  - id: TR-director-001
+    system: director
+    gdd: design/gdd/combat-director.md
+    requirement: "Token is sole gate for enemy attacks; attack ability must sit behind CombatDirectorTokenAction BT node; no token -> no hitbox (game-concept Rule 4 enforcement)"
+    created: 2026-08-11
+    revised: ""
+    status: active
+
+  - id: TR-director-002
+    system: director
+    gdd: design/gdd/combat-director.md
+    requirement: "CombatDirector.RequestAttackToken(enemy) enqueues to pending queue; BT node blocks Status.Running"
+    created: 2026-08-11
+    revised: ""
+    status: active
+
+  - id: TR-director-003
+    system: director
+    gdd: design/gdd/combat-director.md
+    requirement: "Subscribes F2 OnBeatLookahead; evaluates pending queue per beat-slot"
+    created: 2026-08-11
+    revised: ""
+    status: active
+
+  - id: TR-director-004
+    system: director
+    gdd: design/gdd/combat-director.md
+    requirement: "Beat-slot capacity from CapacityTable[meter][beatIndex] (data-driven, per-meter); OnMeterChanged recomputes"
+    created: 2026-08-11
+    revised: ""
+    status: active
+
+  - id: TR-director-005
+    system: director
+    gdd: design/gdd/combat-director.md
+    requirement: "Priority = ThreatWeight (segmented by distance) + StarvationBonus (linear, capped BONUS_MAX); starvation ceiling forces top priority"
+    created: 2026-08-11
+    revised: ""
+    status: active
+
+  - id: TR-director-006
+    system: director
+    gdd: design/gdd/combat-director.md
+    requirement: "OnTokenGranted(targetLandingBeat) callback; landing = grantBeat+W (W in beats -> on-beat is mathematical necessity)"
+    created: 2026-08-11
+    revised: ""
+    status: active
+
+  - id: TR-director-007
+    system: director
+    gdd: design/gdd/combat-director.md
+    requirement: "SnapToEligible ceiling-only (never floor) snapping per subdivisionMode (FullBeat/HalfBeat/DownbeatOnly)"
+    created: 2026-08-11
+    revised: ""
+    status: active
+
+  - id: TR-director-008
+    system: director
+    gdd: design/gdd/combat-director.md
+    requirement: "Pure F2 downstream consumer: read-only BeatEventData.beat_dsp_time; forbidden AudioSettings.dspTime; forbidden BeatClock lifecycle calls; no latency compensation"
+    created: 2026-08-11
+    revised: ""
+    status: active
+
+  - id: TR-director-009
+    system: director
+    gdd: design/gdd/combat-director.md
+    requirement: "Single-threaded main-thread Update polling (ADR-D6); no cross-thread queues/sync primitives"
+    created: 2026-08-11
+    revised: ""
+    status: active
+
+  - id: TR-director-010
+    system: director
+    gdd: design/gdd/combat-director.md
+    requirement: "BeatClockBridge DefaultExecutionOrder -100 runs before BehaviorGraphAgent -50 to write Blackboard (ADR-D2). NOTE: review E1 flags this same-frame guarantee as unsound; pending ADR-D2 revision"
+    created: 2026-08-11
+    revised: ""
+    status: active
+
+  - id: TR-director-011
+    system: director
+    gdd: design/gdd/combat-director.md
+    requirement: "Token state machine (None/Pending/Granted/Consumed/Expired/Cancelled); illegal transitions caught by Debug.Assert in Editor"
+    created: 2026-08-11
+    revised: ""
+    status: active
+
+  - id: TR-director-012
+    system: director
+    gdd: design/gdd/combat-director.md
+    requirement: "Deterministic 4-key stable sort (priority desc -> waitBeats desc -> tReq asc -> enemyInstanceId asc) for reproducible tests"
+    created: 2026-08-11
+    revised: ""
+    status: active
+
+  - id: TR-director-013
+    system: director
+    gdd: design/gdd/combat-director.md
+    requirement: "BONUS_MAX derived value auto-recomputed by Odin Validator (no hardcoded cache)"
+    created: 2026-08-11
+    revised: ""
+    status: active
+
+  - id: TR-director-014
+    system: director
+    gdd: design/gdd/combat-director.md
+    requirement: "Odin Validator 5 constraints (weight ordering, D_mid>D_near, capacity>=1 per meter, ceiling<TimeoutBeats, TimeoutBeats>=ceil(W)+maxSnapDelta) block bad EnemyInfoSO from packaging"
+    created: 2026-08-11
+    revised: ""
+    status: active
+
+  - id: TR-director-015
+    system: director
+    gdd: design/gdd/combat-director.md
+    requirement: "TimeoutBeats/waitBeats counted in beats - freeze on beat-event pause, no token loss on resume (ADR-D10: subscribe after BeatClock ready)"
+    created: 2026-08-11
+    revised: ""
+    status: active
+
+  - id: TR-director-016
+    system: director
+    gdd: design/gdd/combat-director.md
+    requirement: "CI static scan of Assets/Scripts/Gameplay/CombatDirector/ for forbidden AudioSettings.dspTime / BeatClock-lifecycle patterns"
+    created: 2026-08-11
+    revised: ""
+    status: active
+
+  - id: TR-director-017
+    system: director
+    gdd: design/gdd/combat-director.md
+    requirement: "#if UNITY_EDITOR debug overlay only; must not reference Odin Sirenix.* in runtime path; read-only snapshot"
+    created: 2026-08-11
+    revised: ""
+    status: active
+
+  - id: TR-director-018
+    system: director
+    gdd: design/gdd/combat-director.md
+    requirement: "No persisted state - pure runtime scheduler, token lifecycle doesn't cross save (no F5 dependency)"
+    created: 2026-08-11
     revised: ""
     status: active
