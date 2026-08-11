@@ -30,7 +30,7 @@
 - **发现感（Discovery）**：玩家主动去找「改变规则」的心法，并在局内撞见协同——「原来『Good 也进连击』配上『高连击拓宽 Perfect 窗』能滚起来」。这种 aha 时刻是复盘冲动的燃料。
 - **自我表达（Expression）**：同一把苗刀，激进玩家堆「Perfect 高回报」构筑，稳健玩家堆「Miss 减伤 + Good 补偿」构筑——心法让玩家的节奏偏好外化成一套可辨认的打法。
 
-**锚定的玩家时刻**：Boss 二阶段拍号从 4/4 切到 3/8，玩家心里一紧——但他这局选的心法正好是「拍号切换后 2 拍内判定窗加宽」。他没有慌，反而笑了：*「我为这一刻准备过。」* 那一瞬间，构筑选择、节奏精通、临场决策三者合一——这就是心法系统存在的理由。
+**锚定的玩家时刻**：Boss 二阶段拍号从 4/4 切到 3/4，玩家心里一紧——但他这局选的心法正好是「拍号切换后 2 拍内判定窗加宽」。他没有慌，反而笑了：*「我为这一刻准备过。」* 那一瞬间，构筑选择、节奏精通、临场决策三者合一——这就是心法系统存在的理由。
 
 **反面幻想（本系统明确不提供）**：心法**不**提供「让我忽略节奏也能满额输出」的解脱感。任何让玩家觉得「拿到这个就不用踩拍了」的心法都违背支柱一，是设计红线（见规则五护栏）。心法带来的爽，永远是「我的精通被放大了」的爽。
 
@@ -77,7 +77,7 @@ C3 实现，C1 属性注入并在计算 effective-window / 评级后果时查询
 | `GetRatingDamageOverride(RhythmRating)` | `float?` | 覆盖 | 单维覆盖评级伤害倍率，`null`=不覆盖 |
 | `GetHitstunMultiplier()` | `float` | 乘法 | Perfect 动力学硬直缩放 |
 
-- **查询时机**：C1 在 `OnBpmChanged` 与每次 `Evaluate` 时查询，保证 effective-window 重算含 perk delta；**绝不写回 `RhythmConfigSO`**（遵守 D4-1 / ADR-D3）。
+- **查询时机**：C1 在 `OnMeterChanged`（拍号/BPM 生效重锚）与 perk 栈变更（`OnPerkStackChanged`，选/弃心法时）后重算 effective-window 并缓存，重算时查询本 Provider 纳入 perk delta；**绝不写回 `RhythmConfigSO`**（遵守 D4-1 / ADR-D3）。详见 BC-2 契约（C1 `IRhythmModifierProvider` 消费点）。
 - **方向**：C1 只依赖 `IRhythmModifierProvider` 抽象，不依赖 C3 具体类型——保持 C1 单向、可测试。
 
 **C3-R8 规则五护栏强制（不可逾越）**：三条护栏 + Miss 不清零，双层强制——
@@ -117,7 +117,7 @@ C3 实现，C1 属性注入并在计算 effective-window / 评级后果时查询
 
 | 系统 | 方向 | 数据流入 | 数据流出 | 接口所有者 |
 |---|---|---|---|---|
-| **C1 节奏核心** | 双向（解耦） | 订阅 `OnRhythmJudgment`（触发器来源） | 实现 `IRhythmModifierProvider`（C1 查询聚合修改量） | 接口由 C3 定义，C1 消费 |
+| **C1 节奏核心** | 双向（解耦） | 订阅 `OnRhythmJudgment`（触发器来源） | 实现 `IRhythmModifierProvider`（C1 查询聚合修改量）+ 增删心法时广播 `OnPerkStackChanged` 触发 C1 窗口重算 | 接口由 C3 定义，**C1 在 C1-F7 消费（BC-2 已接线）** |
 | **F4 SO 数据层** | C3→F4 | `PerkSO` schema（F4-S3）、克隆规则（F4 Rule 3） | 无（只读 schema） | F4 |
 | **F2 音频时钟** | 间接 | 经 C1（BPM/拍号变化触发窗口重算） | 无 | — |
 | **C2 连招图** | 待对齐 | `OnComboEnd` 判定、`CancelTier` 语义 | `rhythm.cancel.*` 修改量（受护栏 3） | Open Question（与 C2 同轮对齐） |
@@ -209,7 +209,7 @@ C3 实现，C1 属性注入并在计算 effective-window / 评级后果时查询
 - **若量化档位 = Off**（无障碍，恒 Perfect）：`rhythm.window.*` 拓宽无意义（Off 无窗口概念），C1 在 Off 下忽略窗口 delta；但 `DamageModifier`/`ComboModifier` 仍生效——**Off 档下心法数值增益是否计入功勋/merit 须与 Off 无障碍隔离契约对齐**（见 Open Questions，关联 C1/D1 裁定）。
 - **若 BPM=0**（关卡配置错误）：C1 回退 120 BPM 内部时钟；C3 窗口 delta 照常经 C1 级联，无特殊处理。
 - **若音频设备断开**（游戏暂停）：C3 修改器栈冻结、不触发；恢复后续算——克隆叠加状态不受影响。
-- **若 Boss 拍号切换（4/4→3/8）且玩家持 `rhythm.meter.*` 心法**：心法在切换后按其定义拍数窗口生效；进行中的攻击按原拍号完成（game-concept 边界），新判定窗从下一拍起算 + perk delta。
+- **若 Boss 拍号切换（4/4→3/4）且玩家持 `rhythm.meter.*` 心法**：心法在切换后按其定义拍数窗口生效；进行中的攻击按原拍号完成（game-concept 边界），新判定窗从下一拍起算 + perk delta。
 - **若 `Additive` 心法已达 `maxStacks` 仍触发**：`Capped` 停止触发；`Additive` clamp 到顶；`Replace` 刷新时限。
 
 ## Dependencies
@@ -219,7 +219,7 @@ C3 实现，C1 属性注入并在计算 effective-window / 评级后果时查询
 | 依赖 | 类型 | 数据接口 | 状态 |
 |---|---|---|---|
 | **F4 SO 数据层** | 硬 | `PerkSO` schema（F4-S3）、`PerkParameter`/`PerkRarity`/`PerkEffectType`/`PerkTrigger`/`StackBehavior` 枚举、克隆规则 F4 Rule 3、Odin 双模校验 | Approved |
-| **C1 节奏量化攻击** | 硬 | 订阅 `OnRhythmJudgment(RhythmJudgmentEvent{Rating,AttackType,CancelTier,ComboCountBefore,ComboCountAfter,OffsetMs})`；C3 实现 `IRhythmModifierProvider` 供 C1 查询 | **Needs Revision**⚠️（以 C1-F6 权威结构为准） |
+| **C1 节奏量化攻击** | 硬 | 订阅 `OnRhythmJudgment(RhythmJudgmentEvent{Rating,AttackType,CancelTier,ComboCountBefore,ComboCountAfter,OffsetMs})`；C3 实现 `IRhythmModifierProvider` 供 C1 查询 | **BC-2 已接线**（载体以 C1-F6、消费契约以 C1-F7 为准；C1-F4/F5 已纳入 perk delta）；Off 下是否生效待 **BD-1** 裁定 |
 | **F2 音频时钟** | 软（间接） | 经 C1；BPM/拍号变化触发 effective-window 重算 | Revised-Pending |
 | **game-concept 规则五** | 设计约束 | 心法设计空间三护栏 + 伤害公式 `perk_multiplier` 项 | Approved（基准） |
 

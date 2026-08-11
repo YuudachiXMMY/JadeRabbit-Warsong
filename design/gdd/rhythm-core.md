@@ -184,6 +184,7 @@ C1 在 `BeatClock.IsStartConfirmed == true` 之前不对任何输入进行节奏
 | C1 **→** C2 | 连招图系统 | `RhythmJudgmentEvent`（Rating, AttackType, CancelTier, ComboCountBefore, ComboCountAfter） | 事件广播（C2 订阅） |
 | C1 **→** P1 | HUD | `RhythmJudgmentEvent`（Rating, OffsetMs, ComboCountBefore 用于连击显示） | 事件广播 |
 | C1 **→** PL2 | VFX 节奏反馈 | `RhythmJudgmentEvent`（Rating=Perfect 触发冻帧/编钟/摄像机微切序列） | 事件广播 |
+| C3 **↔** C1 | 心法构筑系统 | C1 消费 C3 实现的 `IRhythmModifierProvider`（窗口 delta / ΔCombo delta，见 C1-F7）；C3 订阅 C1 `OnRhythmJudgment` 作触发器 | 属性注入（C1 查询）+ 事件订阅（C3 侧）；**BC-2** |
 | C1 **→** F6/Animancer | 攻击动画 | `AnimancerAttackPlayer.Play(attackType, beatDspTime)` | 方法调用（ADR-D5） |
 | FE7 **→** C1 | 游戏设置 | `QuantizationMode`（Off/HalfBeat/Beat；运行时可切换） | 属性注入 |
 | FE3/F2 **→** C1 | 延迟校准 | `latency_offset_s`（由 F2 内化后，C1 从 F2 读取；用于跨时间域对齐） | 同步查询（`BeatClock.LatencyOffsetMs`） |
@@ -321,7 +322,9 @@ else:                                            rating = Miss
 **用途**：按评级更新连击计数器，向 C2 和 P1 广播最新连击数。
 
 ```
-ΔCombo = ΔCombo_table[rating]
+baseDelta = ΔCombo_table[rating]
+perkDelta = RhythmModifierProvider?.GetComboDelta(rating) ?? 0   // C3 ComboModifier 聚合量（BC-2）；null=无 C3/无心法
+ΔCombo    = (rating == Miss) ? baseDelta : baseDelta + perkDelta  // Miss 恒 = baseDelta(=0)，心法不可改写（护栏，见下）
 CurrentCombo_new = clamp(CurrentCombo + ΔCombo, 0, ComboMax)
 ```
 
@@ -339,7 +342,7 @@ CurrentCombo_new = clamp(CurrentCombo + ΔCombo, 0, ComboMax)
 |------|------|--------|------|
 | `CurrentCombo` | int | 0 | 当前连击数（由 C1 持有并广播） |
 | `ΔCombo` | int | 见表 | 本次评级对应的连击增量 |
-| `ComboMax` | int | **50**（临时值，待 Q1 联合 C2/C3 最终确认） | 连击上限；待平衡测试确认后写入 RhythmConfigSO |
+| `ComboMax` | int | **999**（对齐 registry `combo_max`；Q1 以 registry 权威值为准） | 连击上限；写入 RhythmConfigSO。注：`combo_multiplier` 曲线于 count=148 触顶 ×5.0（C2），148→999 为平台段 |
 | `CurrentCombo_new` | int | — | 更新后写入 `RhythmJudgmentEvent.ComboCountAfter` |
 
 **Miss 不清零依据**：game-concept.md 规则五合约；此行为不可通过心法（Perk）覆盖。
@@ -365,8 +368,13 @@ void OnMeterChanged(MeterChangeEventData data):    // 订阅 F2 的 OnMeterChang
     fullBeatMs              = halfBeatMs × 2
     gridIntervalMs          = (_quantizationMode == Beat) ? fullBeatMs : halfBeatMs
     
-    _effectiveGoodMs        = min(GoodHalfWindowMs_authored,    gridIntervalMs / 2 - 1)
-    _effectivePerfectMs     = min(PerfectHalfWindowMs_authored, _effectiveGoodMs)
+    // perk 窗口修正（BC-2）：查询 C3 聚合 window delta，叠加到 authored 值后再进入 clamp 级联；null=无 C3/无心法→delta 0
+    perkPerfectDeltaMs      = RhythmModifierProvider?.GetPerfectWindowDeltaMs() ?? 0
+    perkGoodDeltaMs         = RhythmModifierProvider?.GetGoodWindowDeltaMs()    ?? 0
+    // W-05 级联位点：weapon.perfectWindowModifier（F4 字段）应在此处、perk delta 之后 clamp 之前作为乘数接线，
+    //             随 F4/C1 同轮消费（当前 C1 尚无 weapon 上下文来源，暂不接线，见评审 W-05）
+    _effectiveGoodMs        = min(GoodHalfWindowMs_authored    + perkGoodDeltaMs,    gridIntervalMs / 2 - 1)
+    _effectivePerfectMs     = min(PerfectHalfWindowMs_authored + perkPerfectDeltaMs, _effectiveGoodMs)
     _effectivePerfectMs     = max(_effectivePerfectMs, platformMinPerfectMs)
     
     // E7 内联坍缩——须在 Assert 之前执行（Android BPM ≥ 186 时 platformMinPerfectMs 超过压缩后的
@@ -396,6 +404,8 @@ void OnMeterChanged(MeterChangeEventData data):    // 订阅 F2 的 OnMeterChang
 ```
 
 **调用时机**：订阅 F2 的 `OnMeterChanged`（拍号/BPM 变更**生效**事件，F2 Core Rule 14）。F2 在小节边界翻转内部状态后同帧广播，顺序上位于边界拍 `OnBeatExact` 之后、新段第 0 拍调度之前，早于下一个 `OnHalfBeatLookahead` 事件。
+
+> **BC-2 追加触发**：C1 另订阅 `OnPerkStackChanged`（心法栈增删时由 C3/心法管理器广播）——此时仅执行**步骤 1**（窗口重算，重新查询 `RhythmModifierProvider` 纳入最新 perk delta 并缓存），**不执行步骤 2**（缓冲清空）：选/弃心法发生在房间之间，无进行中攻击输入需丢弃。缓存策略确保判定热路径（`OnHalfBeatLookahead`）零 provider 查询开销——perk delta 只在 meter/perk 变更这两个低频事件时重算一次（BC-2 契约见 C1-F7）。
 
 > **为何订阅 `OnMeterChanged` 而非 `OnMeterChangeAccepted`**：F2 暴露两个事件——`OnMeterChangeAccepted`（接受时广播，供 C2 立即 `UpdateBpm()` 体感、F6 预调度 BGM）与 `OnMeterChanged`（小节边界生效时广播，供 C1 重锚定量化网格、C4 调整令牌密度）。C1 的判定网格必须与**实际生效**的拍点对齐，故只订阅 `OnMeterChanged`；不订阅 `OnMeterChangeAccepted`（若在接受时提前重锚，会导致边界前的输入按未来网格判定）。`OnMeterChanged` 对拍号-only 变更（`bpmChanged == false`，`newBpm == oldBpm`）同样触发——此时重算窗口幂等无害，缓冲清空仍适用（小节边界已跨越）。
 
@@ -430,6 +440,40 @@ public readonly struct RhythmJudgmentEvent
 | `OffsetMs` | float | ms | (−∞, +∞)；Off=0 | 负值=提前拍，正值=晚于拍；Off 模式强制 0；P1 HUD 偏移量指示器数据源 |
 
 > **ADR-D3 同步需求**：`CancelTier`、`ComboCountAfter` 字段须同步加入 ADR-D3 `RhythmJudgmentEvent` struct 定义（ADR-D3 §3 当前版本缺失）；`AttackType` 须确认包含 `HeavyAttack` 值（当前 ADR-D3 §3 仅列 LightAttack / ChargedAttack）。
+
+> **广播事件名（W-04 规范化）**：C1 以事件 **`OnRhythmJudgment`**（`event Action<RhythmJudgmentEvent>`）广播上述载体。**此为唯一规范事件名**——C3 订阅 `OnRhythmJudgment`（一致）；C2 文中「订阅 `RhythmJudgmentEvent`」指订阅该事件、消费同名载体结构（载体类型名 = `RhythmJudgmentEvent`，事件名 = `OnRhythmJudgment`，二者不冲突）。ADR-D3 §3 须登记事件名 `OnRhythmJudgment`。
+
+---
+
+### C1-F7：`IRhythmModifierProvider` 消费契约（BC-2）
+
+**用途**：定义 C1 消费 C3 心法运行时修改量的**唯一契约**，解决 BC-2「C3 整个 RhythmRuleModifier / ComboModifier 机制在 C1 无消费点 → 心法运行时零效果」。C3 实现本接口（C3-R7），C1 通过属性注入持有 `RhythmModifierProvider`（`IRhythmModifierProvider?`，**可空**——无 C3 / 无激活心法时为 null，各查询走 `?? 默认值`）。C1 只依赖抽象、不依赖 C3 具体类型（保持单向、可测）。
+
+```csharp
+// C1 只读消费；实现方 = C3 PerkModifierStack（namespace 由 ADR-D3/D4 规定）
+public interface IRhythmModifierProvider
+{
+    float  GetPerfectWindowDeltaMs();               // 加法：并入 _effectivePerfectMs 重算（C1-F5）
+    float  GetGoodWindowDeltaMs();                  // 加法：并入 _effectiveGoodMs 重算（C1-F5）
+    int    GetComboDelta(RhythmRating rating);      // 加法：叠加至 ΔCombo（C1-F4）；Miss 恒 0（护栏）
+    float  GetDamageMultiplier();                   // 乘法：= perk_multiplier（C1 不乘入，由下游伤害系统消费）
+    float? GetRatingDamageOverride(RhythmRating r); // 覆盖：评级伤害倍率单维覆盖，null=不覆盖
+    float  GetHitstunMultiplier();                  // 乘法：Perfect 动力学硬直缩放
+}
+```
+
+**C1 各查询点与节拍：**
+
+| 方法 | 消费方 & 点位 | 查询节拍 |
+|---|---|---|
+| `GetPerfectWindowDeltaMs` / `GetGoodWindowDeltaMs` | **C1** — C1-F5 窗口重算 | **缓存**：仅 `OnMeterChanged` / `OnPerkStackChanged` 时各查询一次，结果存 `_effectivePerfect/GoodMs` |
+| `GetComboDelta(rating)` | **C1** — C1-F4 ΔCombo | **每次判定**（轻量整型，随评级传参） |
+| `GetDamageMultiplier` / `GetRatingDamageOverride` | 下游伤害系统（C2/C6）— **非 C1** | 消费方自持节拍；C1 仅广播 Rating |
+| `GetHitstunMultiplier` | PL2 / Perfect 动力学反馈 — 具体归属随 PL2 GDD | 消费方自持节拍 |
+
+> **窗口 delta 为何缓存而非每次 Evaluate 查询（BC-2 节拍收敛）**：C3-R7 原表述「计算 effective-window 后查询」易被误读为每击查询。实际 perk 栈仅在房间之间选/弃心法时变化（Roguelike 流程），故 C1 在两个低频事件（meter 生效、perk 栈变更）后重算并缓存，判定热路径（`OnHalfBeatLookahead`）零 provider 查询开销。此为对「C3-R7 每次 Evaluate vs C1 仅 OnMeterChanged 缓存」冲突的收敛决定——工程正确解，不改变体感。ΔCombo 例外走每判定查询（整型、无重算成本）。
+
+> **Off 模式接线（BD-1 未决，不在本契约裁定）**：Off 模式下是否查询 `RhythmModifierProvider`（即 perk 是否在 Off 下生效）取决于 **BD-1 owner 裁定**（见跨评审 BD-1：Off 从功勋漏洞升级为战力漏洞）。本契约只定义**接线机制**，不预设 Off 分支策略——待 C1 Q3（`meritMultiplierOff`）与 C3 OQ-C3-3 同批锁定后，实现须据裁定在 Off 下**短路 provider**（perk 不生效，纳入「节奏模式独占」护栏）或**保留查询**（明确无障碍优先于平衡）。**在裁定落地前，AC-C1-26 标为阻塞桩，不可判 pass/fail。**
 
 ---
 
@@ -576,6 +620,7 @@ if GoodHalfWindowMs_effective > gridIntervalMs / 2 - 1:
 | **F3 输入管线** | `AttackInputEvent`（`attackType`, `inputDspTime`, `chargeStartDspTime`） | 事件订阅（`OnAttackInput`） | **必需** — 无 F3 则 C1 无输入来源 |
 | **FE7 游戏设置** | `QuantizationMode`（Off / HalfBeat / Beat） | 属性注入（运行时可切换） | **必需** — 决定评级模式 |
 | **ADR-D4 SO 数据层** | `RhythmConfigSO`（窗口默认值、ComboMax） | ScriptableObject 读取 | **必需** — 策划配置数据来源 |
+| **C3 心法构筑系统** | `IRhythmModifierProvider`（`GetPerfectWindowDeltaMs` / `GetGoodWindowDeltaMs` / `GetComboDelta`；见 C1-F7）+ `OnPerkStackChanged` 重算触发 | 属性注入（C1 查询抽象接口） | **可选** — 无 C3/无心法时 provider = null，各查询走默认值；C1 不硬依赖 C3（BC-2） |
 
 ### 下游被依赖（C1 广播）
 
@@ -607,7 +652,7 @@ if GoodHalfWindowMs_effective > gridIntervalMs / 2 - 1:
 | `GoodHalfWindowMs` | `RhythmConfigSO.GoodHalfWindowMs` | float | 120 ms | [50, 200] | 缩小 → Miss 更易出现，惩罚感↑；放大 → 整体更宽松。受运行时钳位约束（C1-F3），BPM>125 时自动缩减 |
 | `EarlyWindowMs` | `RhythmConfigSO.EarlyWindowMs` | float | 120 ms | [50, 200] | 缩小 → 玩家必须更精确地等待拍点，"抢拍"惩罚↑；放大 → 提前输入更被容忍 |
 | `LateWindowMs` | `RhythmConfigSO.LateWindowMs` | float | 100 ms | [50, 200] | 缩小 → 慢半拍的玩家更容易被丢弃；放大 → 后拍容忍度↑ |
-| `ComboMax` | `RhythmConfigSO.ComboMax` | int | **50**（临时值，待 Q1 最终确认） | [10, 200] | 影响连击系统的心理上限和 UI 显示设计；过低则高手无成就感，过高则数字膨胀失去意义 |
+| `ComboMax` | `RhythmConfigSO.ComboMax` | int | **999**（对齐 registry `combo_max`） | [148, 999] | 影响连击系统的心理上限和 UI 显示设计；下界 148 = `combo_multiplier` 触顶点（低于此会提前截断倍率），上界 999 = registry 权威平台段 |
 | `LookaheadMs` | `RhythmConfigSO.LookaheadMs` | float | 来自 ADR-D3 | [50, 200] | F2 提前广播拍点事件的时间量；C1 用它确定 EarlyWindow 起始边界 |
 | `platformMinPerfectMs` | 平台配置（非 SO） | float | PC=16.7, iOS=39, Android=80 | [0, 120] | 平台保底 Perfect 窗口；过小则该平台玩家物理上无法打出 Perfect |
 | `ΔCombo` 表 | `RhythmConfigSO.DeltaCombo_*` | int×3 | Perfect=+2, Good=+1, Miss=0 | Perfect∈[1,5], Good∈[0,3], Miss=[0,0]（硬编码，不可负） | 调整连击增速；提高 Perfect 奖励可强化节奏激励循环。Miss ΔCombo **不可为负**——Miss 不清零是 game-concept.md 规则五合约，实现层须断言 `ΔCombo_Miss == 0` |
@@ -616,7 +661,7 @@ if GoodHalfWindowMs_effective > gridIntervalMs / 2 - 1:
 **调参指南**：
 - 先调 `PerfectHalfWindowMs` 和 `GoodHalfWindowMs` 确定基础手感，再调 `EarlyWindowMs` / `LateWindowMs` 确定缓冲宽容度。
 - BPM 跨度大的关卡（80–240）必须在最高 BPM 下测试运行时钳位后的实际有效窗口。
-- `ComboMax` 的最终值须在 C2 连招图和 C3 伤害系统设计完成后联合确定。
+- `ComboMax` 最终值 = **999**（Q1 已解决：C2/C3 设计完成，以 registry `combo_max=999` 为权威；`combo_multiplier` 于 count=148 触顶，故 148 以上纯为连击数平台段）。
 
 > **`platformMinPerfectMs` 实现指引**（"平台配置，非 SO"）：**推荐实现方式**：`RhythmJudger.Awake()` 或 `Start()` 中使用 `Application.platform` 运行时判断赋值（`RuntimePlatform.Android / IPhonePlayer / WindowsPlayer` 等），而非 `#if UNITY_ANDROID` 等编译期宏——宏在 Editor Play Mode 下始终走 PC 分支，无法验证 Android/iOS 路径。在 `#if UNITY_EDITOR || DEVELOPMENT_BUILD` 块内暴露 `SetPlatformMinForTesting(float valueMs)` 注入方法，与 M3 接口注入方案对称，确保 Editor 内可单独覆盖测试各平台保底窗口。
 
@@ -670,7 +715,7 @@ if GoodHalfWindowMs_effective > gridIntervalMs / 2 - 1:
 - **AC-C1-11**：`chargeStartDspTime > -1.0` → 判定使用 `chargeStartDspTime`（无论 `attackType` 为 ChargedAttack 或 LightAttack）；`chargeStartDspTime == -1.0`（普通轻攻击）→ 使用 `inputDspTime`。
 - **AC-C1-12**：`beat_offset_ms` 计算：给定 `judgment_time=T`, `latency_offset_s=L`, `beat_dsp_time=B` → 结果 = `(T+L−B)×1000`（正负号正确）。
 - **AC-C1-13**：BPM=160 时，`GoodHalfWindowMs_authored=120` → 运行时钳位为 `min(120, 93.75-1) = 92.75ms`。
-- **AC-C1-14**：Perfect → ComboCount += 2；Good → += 1；Miss → += 0（不归零）。ComboCount 不超过 ComboMax（临时值 50，待 Q1 最终确认）。
+- **AC-C1-14**：Perfect → ComboCount += 2；Good → += 1；Miss → += 0（不归零）。ComboCount 不超过 ComboMax（**999**，对齐 registry `combo_max`）。
 - **AC-C1-15**：`OnMeterChanged` 事件（`data.bpmChanged==true`，新 BPM 有效）→ 有效窗口重算 + `_pendingInput` 清空 + `_lateWindowActive` 关闭 + `_skipToggle` 重置为"处理"相位。**Beat 模式额外断言**：事件后立即注入攻击输入，触发一次 `OnHalfBeatLookahead` → 应产生 `RhythmJudgmentEvent`（skip toggle 已重置为处理相位，首拍不被跳过）。**拍号-only 变更断言**：`OnMeterChanged` 携 `data.bpmChanged==false, data.newBpm==oldBpm` → `currentBpm` 不变、窗口重算幂等（值不变）、缓冲仍清空。
 
 ### 边界情况（E1–E9）
@@ -690,6 +735,8 @@ if GoodHalfWindowMs_effective > gridIntervalMs / 2 - 1:
 - **AC-C1-22**：`RhythmJudgmentEvent { Rating=Perfect, CancelTier=Advanced }` 正确广播；Perfect 动力学（冻帧/编钟/摄像机微切）由 PL2 订阅验证（集成 AC）。
 - **AC-C1-23**：`RhythmJudgmentEvent { Rating=Good, CancelTier=Standard }` 正确广播；标准取消权限由 C2 订阅验证（集成 AC）。
 - **AC-C1-24**：`RhythmJudgmentEvent { Rating=Miss, CancelTier=Closed, ComboCountAfter==ComboCountBefore }` 正确广播；连击不变且不清零（C1 层可独立验证）。
+- **AC-C1-25（BLOCKING，BC-2 perk delta 消费）**：注入 mock `IRhythmModifierProvider`，令 `GetPerfectWindowDeltaMs()==+20`、`GetComboDelta(Perfect)==+3`。GIVEN `OnPerkStackChanged` 触发后，THEN `_effectivePerfectMs` == clamp(authored+20, …)（窗口重算含 delta）；WHEN Perfect 判定，THEN `ComboCountAfter == Before + 2 + 3`。GIVEN provider == null（无心法），THEN 窗口/ΔCombo 退化为无 perk 基线（`?? 0`）。**Miss 护栏**：provider `GetComboDelta(Miss)` 无论返回何值，Miss 的 ΔCombo 恒 = 0（C1-F4 短路，不查询 perkDelta）。
+- **AC-C1-26（阻塞桩，Off perk 隔离——待 BD-1 裁定）**：Off 模式下 perk 是否经 `RhythmModifierProvider` 生效，取决于 BD-1 owner 裁定与 C1 Q3 / C3 OQ-C3-3 联合锁定。**裁定落地前本 AC 不可判 pass/fail**（阻塞桩，见 C1-F7 Off 接线注记）。
 
 ---
 
@@ -699,6 +746,6 @@ if GoodHalfWindowMs_effective > gridIntervalMs / 2 - 1:
 |----|------|------|------------|
 | **M3** | **已解决**：`IBeatClock` / `IInputEventBus` 正式声明为接口，采用**字段注入 + 属性包装**方案：① `[SerializeField] private MonoBehaviour _beatClockRef` 持有 Unity 组件引用；② `private IBeatClock BeatClock => _beatClockRef as IBeatClock`（属性包装）；③ 单元测试中通过 `SetBeatClockForTesting(IBeatClock mock)` 方法注入 mock，setter 仅在 `#if UNITY_EDITOR \|\| DEVELOPMENT_BUILD` 块内暴露。此方案满足 Unity 6.3 LTS 的 `[SerializeField]` 字段限制，同时支持纯 C# NUnit 单元测试。ADR-D3 M3 注记须同步更新。 | 已解决 | ✅ 2026-07-21 |
 | **M0** | M0 Spike 窗口值验证（PerfectHalfWindowMs=50, GoodHalfWindowMs=120）——这些是估算值，需原型阶段实测确认 | 原型验证 | M0 Spike |
-| **Q1** | `ComboMax` 最终值（当前临时值 50）——须联合 C2 连招图和 C3 伤害系统最终确认后写入 RhythmConfigSO | C2/C3 GDD | C2/C3 设计完成后 |
+| **Q1** | **已解决**：`ComboMax` = **999**（对齐 registry `combo_max`；C2/C3 已成文，`combo_multiplier` 于 count=148 触顶 ×5.0，148→999 为平台段），写入 RhythmConfigSO | C2/C3 GDD | ✅ 2026-08-10 |
 | **Q2** | E2 时钟未确认 2s 超时值——是否需要平台差异化（移动端启动更慢）？ | 平台测试 | 移动端原型 |
 | **Q3** | `meritMultiplierOff` 最终值（Off 模式功勋折算系数，占位建议 0.5，安全范围 (0,1) 开区间）——由无障碍公平性与经济防刷两方权衡确定。**须先于 C5/FE5 经济 GDD 锁定**（Off 合约第 4 条为规范性要求，执行方 C5/FE5）。 | **C5/FE5 经济 GDD（阻塞下游）** | C5/FE5 设计启动前 |

@@ -115,15 +115,15 @@ C2 连招状态机（图位置维度，独立于 C1 的评级状态）：
 
 总公式（game-concept）：`final_damage = base_damage × rating_multiplier × combo_multiplier × perk_multiplier`。C2 只定义 `combo_multiplier`，其余为只读输入。
 
-**边界示例**（苗刀 `base_damage=25.0`，Perfect `rating_multiplier=1.5`，`perk_multiplier=1.0`）：
+**边界示例**（苗刀 `base_damage=25.0`，Perfect `rating_multiplier=1.0`，`perk_multiplier=1.0`）：
 
 | count | combo_multiplier | final_damage |
 |---|---|---|
-| 0 | 1.00 | 25×1.5×1.0×1.0 = **37.5** |
-| 50 | 2.09 | 25×1.5×2.09×1.0 = **78.5** |
-| 999（触顶）| 5.00 | 25×1.5×5.0×1.0 = **187.5** |
+| 0 | 1.00 | 25×1.0×1.0×1.0 = **25.0** |
+| 50 | 2.09 | 25×1.0×2.09×1.0 = **52.25** |
+| 999（触顶）| 5.00 | 25×1.0×5.0×1.0 = **125.0** |
 
-**复合上限**（perk 顶格 2.0、count 触顶）：`25×1.5×5.0×2.0 = 375.0`（裸 base 的 15×）——供 balance 侧制定 Boss/精英 HP 曲线时作为「极限连招+满配心法」压力基准。
+**复合上限**（perk 顶格 2.0、count 触顶）：`25×1.0×5.0×2.0 = 250.0`（裸 base 的 10×）——供 balance 侧制定 Boss/精英 HP 曲线时作为「极限连招+满配心法」压力基准。（Perfect `rating_multiplier` 权威值为 **1.0**，对齐 C1 `rhythm-core.md` 与 game-concept 值域 [0.5,1.0]；BC-1 修订）
 
 ### F3｜ComboMax（段数上限）
 
