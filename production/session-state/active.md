@@ -403,3 +403,7 @@ Task: 对 C2 跑 /design-review；follow-up 修 C1 clamp 50→999 (OQ1)
 - 可立即修 (与 ADR 无关): C1 的 OnBpmChanged → OnMeterChangeAccepted/OnMeterChanged (F2/F6 已就位, C1/C4 未跟进)
 - Recommended next: /design-review design/gdd/rhythm-core.md 修 C1 悬空引用+Off 隔离; 并推进 technical-director 裁定 OQ-4(D-4/D-5)+OQ-5 解锁 B2 三文档同轮修订
 - Report: design/gdd/gdd-cross-review-2026-08-09.md
+
+<!-- CONSISTENCY-CHECK: 2026-08-10 | GDDs checked: 9 | Registry entries: 9 (2 formulas, 7 constants) | Conflicts found: 2 (RESOLVED: rating_multiplier Perfect 1.5→1.0 in combo-system.md + registered; TRACKED: combo_max 999 vs rhythm-core ComboMax 50, pending C1 revision) | Missing-registry candidates: 11 | Log: docs/consistency-failures.md -->
+<!-- CONSISTENCY-CHECK-FOLLOWUP: rhythm-core.md ComboMax 50→999 (C1 债务, 已批准待修订); 建议登记 11 条跨系统事实 (final_damage 总公式, attackAnimSpeed 公式, beat_offset_ms, half_beat 30000/bpm, platformMinPerfectMs, 0.1ms 精度承诺, BPM=0→120 回退, CancelTier 映射, 拍号定义域, 500ms BGM 提前量, 5ms 重锚阈值) -->
+
