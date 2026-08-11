@@ -127,13 +127,17 @@ TDE TopDownEngineEvent(UnPause) ──→  TDELifecycleAdapter
 
 ```
 TDE TopDownEngineEvent(PlayerDeath) ──→  TDELifecycleAdapter
-    └→ BeatClock.Stop()                ← F2: → Stopped
+    └→ BeatClock.Stop()                ← F2: → Stopped  (run-ending clock stop)
        InputEventBus.DisableAllInput() ← F3: → AllDisabled
+       (broadcast OnPlayerDeath — domain event for CombatCore consumers)
 
 TDE TopDownEngineEvent(RespawnComplete) ──→  TDELifecycleAdapter
-    └→ BeatClock.Play(bgmPath, bpm, timeSig)    ← F2: → Playing (restart)
-       InputEventBus.EnableGameplayInput()      ← F3: → GameplayActive
+    └→ [MVP: in-place respawn DISABLED — dormant diagnostic guard]
+       log Fatal "[F6-FATAL] RespawnComplete fired but in-place respawn
+                   is disabled in MVP"  →  return (NO in-place BeatClock.Play)
 ```
+
+> **死亡 = 换新局（MVP）**：MVP 采用 run-ends-on-death 语义——`PlayerDeath`（lives=1，无同局复活）停止时钟并禁输入后，由 FE5/C5 承接结算，「下一局」经全新 `LoadSceneMode.Single` 走既有 boot 路径干净起局。TDE 原生 `RespawnComplete → BeatClock.Play()` 的**原地重启路径在 MVP 休眠**（经 TDE Inspector 关闭原地复活；误触发仅记 fatal 诊断、不原地重启时钟）。死亡 = 换新局的完整语义见 **ADR-D12（Death & Run-Lifecycle Semantics）**。
 
 ### Architecture Diagram
 
@@ -160,11 +164,12 @@ TDE TopDownEngineEvent(RespawnComplete) ──→  TDELifecycleAdapter
           ├── TopDownEngineEvent     ► BeatClock.Resume()
           │   (UnPause)                InputEventBus.EnableGameplayInput()
           │
-          ├── TopDownEngineEvent     ► BeatClock.Stop()
+          ├── TopDownEngineEvent     ► BeatClock.Stop() (run-ending)
           │   (PlayerDeath)            InputEventBus.DisableAllInput()
+          │                            broadcast OnPlayerDeath
           │
-          └── TopDownEngineEvent     ► BeatClock.Play(bgmPath, bpm, timeSig)
-              (RespawnComplete)        InputEventBus.EnableGameplayInput()
+          └── TopDownEngineEvent     ► [MVP dormant] log Fatal + return
+              (RespawnComplete)        (in-place respawn disabled — see ADR-D12)
 
 
 [Character Prefab — Modified]
@@ -317,16 +322,19 @@ public sealed class TDELifecycleAdapter : MonoBehaviour,
                 _inputEventBus.EnableGameplayInput();
                 break;
             case TopDownEngineEventTypes.PlayerDeath:
-                _beatClock.Stop();
+                // Run-ends-on-death (MVP). See ADR-D12.
+                _beatClock.Stop();                 // run-ending clock stop
                 _inputEventBus.DisableAllInput();
+                _lifecycleEvents.RaisePlayerDeath();  // broadcast OnPlayerDeath (CombatCore domain event)
                 break;
             case TopDownEngineEventTypes.RespawnComplete:
-                _beatClock.Play(
-                    _levelConfig.BgmFilePath,
-                    _levelConfig.Bpm,
-                    _levelConfig.TimeSignature);
-                _inputEventBus.EnableGameplayInput();
-                break;
+                // MVP: in-place respawn is DISABLED (death = new run, ADR-D12).
+                // TDE in-place respawn should be turned off in the Inspector; if this
+                // event still fires, do NOT restart the clock in place — a fresh
+                // LoadSceneMode.Single reload drives the next run via OnSceneLoaded.
+                Debug.LogError(
+                    "[F6-FATAL] RespawnComplete fired but in-place respawn is disabled in MVP");
+                return;  // dormant diagnostic guard — no in-place BeatClock.Play()
         }
     }
 }

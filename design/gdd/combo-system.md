@@ -192,6 +192,7 @@ BPM 变更事件 `OnMeterChanged`（BPM: `bpm_before → bpm_after`）后的适�
 | EC12 | 自环边（`fromNodeId==toNodeId`）| F4 已禁止；C2 加载期若遇到则跳过 + `Error` |
 | EC13 | 连招图含非自环环路（A→B→A）| 允许（连招可循环），正常遍历，无特殊处理 |
 | EC14 | 输入缓冲期内连续多次输入 | 缓冲窗内保留**最后一次**输入（覆盖），窗口开启时用它匹配 |
+| EC15 | Perfect 冻帧期间的取消窗（SG-1）| 冻帧为**表现层**效果，**不冻结玩家攻击 Animancer 时钟**：取消窗归一化时间照常随 BPM 锁定的攻击动画推进（规则 6/F4），与 C1 的 DSP 判定保持**同一时域**，冻帧后**不产生取消窗滞后**。**禁止**冻帧对玩家攻击层 `AnimancerState.Speed` 置 0（否则每次 Perfect 累加 33–66ms「动画 vs 音乐」漂移，多次后节奏体验崩溃、破坏连招接续）。登记 registry forbidden pattern `freeze_zeroes_player_attack_speed`。与 C1 E11 / F2 冻帧 Edge Case 对称（SG-1 三系统同时基合约）|
 
 ## Dependencies
 
