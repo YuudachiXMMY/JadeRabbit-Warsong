@@ -206,7 +206,7 @@ constants:
     source: design/gdd/so-data-layer.md   # EnemyInfoSO.attackWindupBeats 由 F4 定义
     referenced_by:
       - design/gdd/so-data-layer.md
-      # C4 GDD 编写时须在此追加：design/gdd/combat-director.md
+      - design/gdd/combat-director.md      # C4 令牌授予后读取 W=attackWindupBeats 计算 targetLandingBeat（F-5）
     value_range: [0.5, 8.0]              # 旧值 [1, 4]；2026-07-14 F4 GDD 修订后更新（0.5 拍支持 Elite/Boss 极限压迫感）
     unit: beats
     notes: "EnemyInfoSO.attackWindupBeats；C4 战斗导演的 Beat-Locked 令牌分配使用此值判断敌人攻击前摇拍数。\
