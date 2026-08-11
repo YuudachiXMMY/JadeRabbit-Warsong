@@ -3,8 +3,8 @@
 ## Current Focus
 
 - **Epic**: Pre-Production
-- **Feature**: C1 节奏量化攻击系统 GDD — ✅ APPROVED（2026-07-21，第五轮 lean 复查）
-- **Task**: 下一步 C2 连招图 (/design-system combo-system) 或 C4 战斗导演（可并行）
+- **Feature**: C2 连招图系统 GDD — ✅ 全 11 章草拟完成，Status: In Review（2026-08-10，待 /design-review）
+- **Task**: 下一步对 C2 跑 `/design-review design/gdd/combo-system.md`；随后 C3 心法 或 C4 战斗导演。**未决**：OQ1 C1 段数 clamp 50→999 须开 follow-up 修订 C1（本 worktree 未改 C1 文档，仅登记 registry）；OQ4 lead-programmer 须为 C1 定义只读 `IComboCounter` 供 C2 单测 mock
 
 ---
 
@@ -383,8 +383,8 @@
 
 <!-- STATUS -->
 Epic: Pre-Production
-Feature: C1 GDD rhythm-core.md — Revised Round 4 Pending Re-review
-Task: /clear 后运行 /design-review design/gdd/rhythm-core.md 第五轮重审（lean mode）
+Feature: C2 GDD combo-system.md — ✅ 草拟完成 (In Review, 11/11 章 + 39 AC)
+Task: 对 C2 跑 /design-review；follow-up 修 C1 clamp 50→999 (OQ1)
 <!-- /STATUS -->
 
 ## Session Extract — /review-all-gdds 2026-08-08

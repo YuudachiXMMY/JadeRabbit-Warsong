@@ -25,9 +25,9 @@
 | F4 | ScriptableObject 数据层（推断） | Foundation | **MVP** | **Approved** | `design/gdd/so-data-layer.md` | — |
 | F5 | 存档/持久化系统 | Foundation | **MVP** | **Revised (ADR-D10 同轮) — Pending Re-review** | `design/gdd/save-persistence.md` | ADR-D7 (Accepted), ADR-D10 (Accepted) |
 | F6 | TopDownEngine & Animancer 集成层 | Foundation | **MVP** | **Amended (ADR-D10 同轮) — Pending Re-review** | `design/gdd/tde-integration.md` | ADR-D1 (Accepted), ADR-D5 (Accepted), ADR-D10 (Accepted) |
-| C1 | 节奏量化攻击系统 | Core | **MVP** | Needs Revision | `design/gdd/rhythm-core.md` | F2, F3 |
-| C2 | 连招图系统 | Core | **MVP** | Not Started | `design/gdd/combo-system.md` | F4, C1 |
-| C3 | 心法构筑系统 | Core | **MVP** | Not Started | `design/gdd/perk-system.md` | F4, C1 |
+| C1 | 节奏量化攻击系统 | Core | **MVP** | Approved | `design/gdd/rhythm-core.md` | F2, F3 |
+| C2 | 连招图系统 | Core | **MVP** | **In Review** | `design/gdd/combo-system.md` | F4, C1 |
+| C3 | 心法构筑系统 | Core | **MVP** | **Designed**（pending review） | `design/gdd/perk-system.md` | F4, C1 |
 | C4 | 战斗导演 | Core | **MVP** | **Designed — Pending Review** | `design/gdd/combat-director.md` | F2, F4 |
 | C5 | 武器系统（推断） | Core | **MVP** | Not Started | `design/gdd/weapon-system.md` | F4, C2 |
 | C6 | Hitbox/受击判定系统（推断） | Core | **MVP** | Not Started | `design/gdd/hitbox-system.md` | C2, F6 |
@@ -91,7 +91,7 @@
 ### Core Layer（依赖 Foundation）
 
 1. **C1 节奏量化攻击系统** — 依赖：F2（拍点时序）+ F3（输入时间戳）
-2. **C4 战斗导演** — 依赖：F2（拍槽分配）
+2. **C4 战斗导演** — 依赖：F2（拍槽分配 / 拍点时序）+ F4（EnemyInfoSO.attackWindupBeats，令牌落拍计算）
 3. **C2 连招图系统** — 依赖：F4（AttackNodeSO/ComboGraphSO schema）+ C1（评级控制取消窗）
 4. **C3 心法构筑系统** — 依赖：F4（PerkSO schema）+ C1（心法修改节奏规则）
 5. **C5 武器系统** — 依赖：F4（WeaponSO schema）+ C2（连招图运行时容器）
@@ -196,11 +196,11 @@
 | 指标 | 数量 |
 |------|------|
 | 识别的系统总数 | 31 |
-| 设计文档已开始 | 5 |
+| 设计文档已开始 | 6 |
 | 设计文档已审查 | 6 |
 | 设计文档已 Approved | 3 |
 | 设计文档 Needs Revision | 3 |
-| MVP 系统已设计 | 6 / 27 |
+| MVP 系统已设计 | 7 / 27 |
 | Vertical Slice 系统已设计 | 0 / 1 |
 | Alpha 系统已设计 | 0 / 1 |
 | Full Vision 系统已设计 | 0 / 1 |

@@ -46,14 +46,16 @@ C1 正常工作时，玩家不会意识到它的存在。他们只会感受到�
 |---------|---------|---------|---------|------------|
 | **HalfBeat**（默认） | F2 广播每半拍节点 | 预缓冲 → `OnHalfBeatLookahead` 触发时以 beat_dsp_time 计算偏移评级；或后拍点 LateWindow 内即时评级 | Perfect / Good / Miss（按偏移量） | 拍点 DSP 时间（吸附） |
 | **Beat** | F2 仍广播每半拍节点（Core Rule 3 不变）；C1 内部 skip toggle 每隔一次 `OnHalfBeatLookahead` 处理，等效全拍网格 | 同 HalfBeat，但 gridIntervalMs = fullBeatMs（间隔加倍，Perfect 更容易） | Perfect / Good / Miss | 拍点 DSP 时间（吸附） |
-| **Off**（无障碍） | 无节拍依赖 | 输入到达时立即评级，偏移量强制为 0 | 始终 Perfect | 输入到达时（即时） |
+| **Off**（无障碍） | 无节拍依赖 | 输入到达时立即评级，偏移量强制为 0 | 始终 Perfect（但 `CancelTier` 封顶为 Standard，见 Off 合约第 5 条 + Rule 10） | 输入到达时（即时） |
 
 量化模式由 FE7（游戏设置系统）在运行时注入，战斗中可切换。
 
-> **Off 模式无障碍合约**（三项约束，缺一不可）：
+> **Off 模式无障碍合约**（五项约束，缺一不可）：
 > 1. **入口限制**：Off 模式仅可通过「无障碍设置」面板开启，不出现在「战斗设置」或快捷切换菜单中。
 > 2. **持续提示**：Off 模式激活期间，HUD 全程显示「无障碍模式」标识，玩家不可关闭此指示。
 > 3. **排行/成就隔离**：Off 模式下的得分、连击数不计入排行榜，不触发需要节奏精准度的成就。
+> 4. **功勋折算隔离**：Off 模式下击杀敌人所得的**功勋（merit，永久货币，PlayerInfoSO）**按系数 `meritMultiplierOff` 折算（0 < `meritMultiplierOff` < 1，具体值见 Open Questions，须先于 C5/FE5 经济 GDD 锁定）。理由：Off 模式恒定 Perfect（零节奏技巧）若以全额功勋计入永久进度，将形成「零技巧最优刷取」漏洞，击穿 game-concept.md:213 反支柱（不得存在绕过节奏的破坏性收益）与「节奏即战斗」支柱。**C1 不直接发放功勋**——C1 仅在 `RhythmJudgmentEvent`/激活模式中暴露当前 `QuantizationMode`，功勋折算由下游功勋结算系统（C5/FE5）读取激活模式后应用于 `EnemyInfoSO.rewardMeritBase`。此约束为 C1 的规范性要求，执行方为 C5/FE5（类比延迟钳制委托给 FE7）。
+> 5. **连招深度封顶**：Off 模式下 `CancelTier` 强制为 **Standard**，**不授予 Advanced**（即便评级恒为 Perfect）。理由：game-concept.md:402 明确「高级取消窗口为大师级技巧专属，不可无条件向所有评级开放」——此约束**不可豁免**。Off 模式的 Perfect 是无障碍补偿而非技巧证明，因此评级与连招层级在此**解耦**：Off 玩家可流畅战斗（Standard 取消保证手感），但进阶连招深度（Advanced 取消）仍须通过 HalfBeat/Beat 模式下的真实节奏精准度赢取。
 >
 > **ADR-D3 实现注意**：ADR-D3 的 `OnAttackInput` 伪代码存在 Off 模式路径缺陷——Off 模式下 `_lateWindowActive` 始终为 false（没有拍点事件），导致 `EmitAndClear(0)` 永远不被调用。实现时须为 Off 模式添加独立分支：输入到达时立即以 `offset=0` 调用 `EmitAndClear(0)`，绕过所有拍点等待逻辑。此修正须同步更新 ADR-D3 伪代码。
 
@@ -138,13 +140,15 @@ C1 在 `BeatClock.IsStartConfirmed == true` 之前不对任何输入进行节奏
 
 | CancelTier | 对应评级 | C2 权限 |
 |-----------|---------|--------|
-| **Advanced** | Perfect | 开放高级取消窗口（可取消任意招式进入高级连招节点） |
-| **Standard** | Good | 仅允许标准取消（高级连招节点不可达） |
+| **Advanced** | Perfect（**仅 HalfBeat / Beat 模式**） | 开放高级取消窗口（可取消任意招式进入高级连招节点） |
+| **Standard** | Good；**或 Off 模式的 Perfect**（见下方 Off 覆盖规则） | 仅允许标准取消（高级连招节点不可达） |
 | **Closed** | Miss | 关闭所有额外取消窗口（连招图锁定，只有正常动画结束后才能继续） |
 
 > **设计意图**：CancelTier 将节奏精准度直接映射到战斗可能性。Perfect 解锁最强连招路径，Miss 关闭捷径，形成"踩准节奏 → 获得战术优势"的正反馈循环。CancelTier 是对 C2 暴露的接口合约，不是 UI 概念——P1 HUD 无需直接展示此字段（由 Rating 的视觉反馈隐式传达）。
 >
-> **ADR-D3 更新需求**：`RhythmJudgmentEvent` struct 须新增 `CancelTier CancelTier` 字段（`CancelTier` enum: Advanced / Standard / Closed）。C1 在 `EmitAndClear` 时按评级填充：Perfect → Advanced，Good → Standard，Miss → Closed。
+> **Off 模式覆盖（不可豁免）**：Off 模式下评级恒为 Perfect，但 `CancelTier` **强制封顶为 Standard**，不授予 Advanced（见 Off 合约第 5 条）。依据 game-concept.md:402——高级取消窗口为大师级技巧专属，不可无条件向所有评级开放。因此 C1 填充逻辑须在 Off 模式下将 Perfect→Advanced 的默认映射**覆盖**为 Perfect→Standard；评级字段仍为 Perfect（无障碍反馈不变），仅连招层级解耦下调。
+>
+> **ADR-D3 更新需求**：`RhythmJudgmentEvent` struct 须新增 `CancelTier CancelTier` 字段（`CancelTier` enum: Advanced / Standard / Closed）。C1 在 `EmitAndClear` 时按评级填充：Perfect → Advanced，Good → Standard，Miss → Closed；**例外**：当 `QuantizationMode == Off` 时，Perfect → Standard（Off 覆盖规则）。
 
 ---
 
@@ -175,7 +179,7 @@ C1 在 `BeatClock.IsStartConfirmed == true` 之前不对任何输入进行节奏
 
 | 方向 | 系统 | 数据内容 | 接口类型 |
 |------|------|---------|---------|
-| F2 **→** C1 | 音频时钟 | `OnHalfBeatLookahead`（`BeatEventData.beat_dsp_time`）；`BeatClock.IsStartConfirmed` | 事件订阅 + 属性查询 |
+| F2 **→** C1 | 音频时钟 | `OnHalfBeatLookahead`（`BeatEventData.beat_dsp_time`）；`OnMeterChanged`（`MeterChangeEventData`，边界生效时重锚定网格）；`BeatClock.IsStartConfirmed` | 事件订阅 + 属性查询 |
 | F3 **→** C1 | 输入管线 | `AttackInputEvent`（attackType, inputDspTime, chargeStartDspTime） | 事件订阅（`OnAttackInput`） |
 | C1 **→** C2 | 连招图系统 | `RhythmJudgmentEvent`（Rating, AttackType, CancelTier, ComboCountBefore, ComboCountAfter） | 事件广播（C2 订阅） |
 | C1 **→** P1 | HUD | `RhythmJudgmentEvent`（Rating, OffsetMs, ComboCountBefore 用于连击显示） | 事件广播 |
@@ -284,7 +288,7 @@ EarlyWindowMs_effective = min(EarlyWindowMs_authored, GoodHalfWindowMs_effective
 PerfectHalfWindowMs_effective ≤ GoodHalfWindowMs_effective ≤ gridIntervalMs/2 - 1
 EarlyWindowMs_effective       ≤ GoodHalfWindowMs_effective
 ```
-违反此不变量意味着实现 Bug——可由 `RhythmJudger` 在 `OnBpmChanged` 末尾 `Assert` 检验。
+违反此不变量意味着实现 Bug——可由 `RhythmJudger` 在 `OnMeterChanged` 末尾 `Assert` 检验。
 
 **平台最小 Perfect 窗口：**
 
@@ -347,7 +351,13 @@ CurrentCombo_new = clamp(CurrentCombo + ΔCombo, 0, ComboMax)
 **用途**：Boss 阶段转换或关卡切换导致 BPM 变化时，C1 须立即重算有效窗口并清理悬挂状态。
 
 ```
-void OnBpmChanged(float newBpm):
+void OnMeterChanged(MeterChangeEventData data):    // 订阅 F2 的 OnMeterChanged（边界生效事件，见 F2 Core Rule 14）
+    float newBpm = data.newBpm                     // MeterChangeEventData.newBpm；拍号-only 变更时 == oldBpm（重算幂等，安全）
+
+    // E8 守卫：无效 BPM（0 / 负值）回退——保持当前 BPM，不重算窗口、不清空缓冲、记录 Warning 后返回
+    if newBpm <= 0:
+        return
+
     currentBpm = newBpm
     
     // 1. 重算有效窗口（见 C1-F3）
@@ -385,7 +395,9 @@ void OnBpmChanged(float newBpm):
     _skipToggle = false                    // Beat 模式：重置为"处理"相位，确保 BPM 变化后首个 OnHalfBeatLookahead 始终触发判定窗口开放
 ```
 
-**调用时机**：订阅 F2 的 BPM 变化事件（`OnBpmChanged`），在 `BeatClock` 广播新 BPM 时同步触发，早于下一个 `OnHalfBeatLookahead` 事件。
+**调用时机**：订阅 F2 的 `OnMeterChanged`（拍号/BPM 变更**生效**事件，F2 Core Rule 14）。F2 在小节边界翻转内部状态后同帧广播，顺序上位于边界拍 `OnBeatExact` 之后、新段第 0 拍调度之前，早于下一个 `OnHalfBeatLookahead` 事件。
+
+> **为何订阅 `OnMeterChanged` 而非 `OnMeterChangeAccepted`**：F2 暴露两个事件——`OnMeterChangeAccepted`（接受时广播，供 C2 立即 `UpdateBpm()` 体感、F6 预调度 BGM）与 `OnMeterChanged`（小节边界生效时广播，供 C1 重锚定量化网格、C4 调整令牌密度）。C1 的判定网格必须与**实际生效**的拍点对齐，故只订阅 `OnMeterChanged`；不订阅 `OnMeterChangeAccepted`（若在接受时提前重锚，会导致边界前的输入按未来网格判定）。`OnMeterChanged` 对拍号-only 变更（`bpmChanged == false`，`newBpm == oldBpm`）同样触发——此时重算窗口幂等无害，缓冲清空仍适用（小节边界已跨越）。
 
 ---
 
@@ -535,7 +547,7 @@ if GoodHalfWindowMs_effective > gridIntervalMs / 2 - 1:
 **场景**：F2 广播 BPM=0（启动竞态、音频系统错误）或负值。
 
 **处理规则**：
-- C1 在 `OnBpmChanged` 中检查：`if newBpm <= 0 → 保持当前 BPM 不变，记录警告日志`。
+- C1 在 `OnMeterChanged` 中检查：`if data.newBpm <= 0 → 保持当前 BPM 不变，记录警告日志`。
 - 不更新任何运行时窗口，不清空缓冲区（状态延续到下一个有效 BPM）。
 - `IsStartConfirmed == false` 的保护（Core Rule 7）确保 BPM=0 时不产生任何判定。
 
@@ -546,10 +558,11 @@ if GoodHalfWindowMs_effective > gridIntervalMs / 2 - 1:
 **场景**：量化模式 = Off，始终输出 Perfect——连击数是否无限增长？
 
 **处理规则**：
-- Off 模式下每次攻击均触发 `RhythmJudgmentEvent { Rating = Perfect }`。
+- Off 模式下每次攻击均触发 `RhythmJudgmentEvent { Rating = Perfect, CancelTier = Standard }`（`CancelTier` 封顶为 Standard，**非** Advanced——见 Off 合约第 5 条 + Rule 10 Off 覆盖规则）。
 - 连击公式（C1-F4）正常执行：`CurrentCombo += 2`，受 ComboMax 上限约束。
-- 伤害倍率 = 1.0×，高级取消窗口开放。
-- **设计意图**：Off 模式是无障碍通道，玩家始终获得最佳评级，但 ComboMax 上限防止无意义的连击数膨胀。
+- 伤害倍率 = 1.0×；**标准**取消窗口开放（高级连招节点不可达，须在 HalfBeat/Beat 模式下以真实节奏精准度赢取）。
+- 功勋结算：Off 模式击杀所得功勋由下游（C5/FE5）按 `meritMultiplierOff` 折算（Off 合约第 4 条）；C1 不直接发放功勋，仅暴露激活 `QuantizationMode` 供结算方读取。
+- **设计意图**：Off 模式是无障碍通道，玩家始终获得最佳评级与流畅手感（Standard 取消），但通过「连招深度封顶 + 功勋折算 + 排行/成就隔离」三重隔离，防止 Off 模式成为绕过节奏技巧的最优刷取路径（保护 game-concept.md:213 反支柱与 :402 不可豁免约束）；ComboMax 上限另防止无意义的连击数膨胀。
 
 ---
 
@@ -559,7 +572,7 @@ if GoodHalfWindowMs_effective > gridIntervalMs / 2 - 1:
 
 | 系统 | 数据 | 接口 | 必需性 |
 |------|------|------|--------|
-| **F2 音频时钟** | `OnHalfBeatLookahead`（`BeatEventData.beat_dsp_time`）、`IsStartConfirmed`、`LatencyOffsetMs`、`OnBpmChanged` | 事件订阅 + 属性查询 | **必需** — 无 F2 则 C1 无法运行（Off 模式除外） |
+| **F2 音频时钟** | `OnHalfBeatLookahead`（`BeatEventData.beat_dsp_time`）、`IsStartConfirmed`、`LatencyOffsetMs`、`OnMeterChanged`（`MeterChangeEventData`，边界生效事件，F2 Core Rule 14） | 事件订阅 + 属性查询 | **必需** — 无 F2 则 C1 无法运行（Off 模式除外） |
 | **F3 输入管线** | `AttackInputEvent`（`attackType`, `inputDspTime`, `chargeStartDspTime`） | 事件订阅（`OnAttackInput`） | **必需** — 无 F3 则 C1 无输入来源 |
 | **FE7 游戏设置** | `QuantizationMode`（Off / HalfBeat / Beat） | 属性注入（运行时可切换） | **必需** — 决定评级模式 |
 | **ADR-D4 SO 数据层** | `RhythmConfigSO`（窗口默认值、ComboMax） | ScriptableObject 读取 | **必需** — 策划配置数据来源 |
@@ -574,6 +587,7 @@ if GoodHalfWindowMs_effective > gridIntervalMs / 2 - 1:
 | **PL2 VFX 节奏反馈** | `RhythmJudgmentEvent`（Rating = Perfect） | 触发冻帧、编钟共鸣音层、摄像机微切 |
 | **PL2 音频反馈** | `RhythmJudgmentEvent`（Rating） | 区分 Perfect/Good/Miss 音效层 |
 | **F6/Animancer** | `AnimancerAttackPlayer.Play(attackType, beatDspTime)` | 攻击动画吸附到拍点执行（ADR-D5） |
+| **C5/FE5 功勋结算系统** | C1 暴露的激活 `QuantizationMode`（Off 判定） | 读取激活模式，Off 时对 `EnemyInfoSO.rewardMeritBase` 应用 `meritMultiplierOff` 折算（Off 合约第 4 条，C1 不直接发放功勋） |
 
 ### 双向合约
 
@@ -581,6 +595,7 @@ if GoodHalfWindowMs_effective > gridIntervalMs / 2 - 1:
 - **F3 ↔ C1**：F3 的 `chargeStartDspTime` 哨兵值为 -1.0（F3 Core Rule 8）。C1 以 `> -1.0` 检测。若 F3 修改哨兵值约定，C1-F1 失效。
 - **P1 ↔ C1**：P1（HUD）消费 `RhythmJudgmentEvent` 中的 `Rating` 和 `ComboCountAfter` 展示反馈。P1 须在 Miss 时显示连击数**停止增长**的视觉区分（非清零）。若 C1 修改 Miss ΔCombo 行为，P1 的 Miss 动效设计需同步更新。
 - **充能攻击 ↔ PL2**：充能攻击触发 `AttackInputEvent` 后，F3 会向 PL2（VFX 反馈系统）发送预确认信号（pre-confirmation）以触发充能特效。C1 的最终评级（Perfect/Good/Miss）叠加在 PL2 的预确认特效之上；充能特效不等待 C1 评级完成。若 C1 评级为 Miss，PL2 须弱化（非取消）已播放的预确认特效。此时序合约须在 F3 / PL2 GDD 中对称记录。
+- **C5/FE5 ↔ C1（Off 隔离合约）**：C1 声明 Off 模式功勋折算的**规范性要求**（Off 合约第 4 条），但**执行方为 C5/FE5**——C1 仅暴露激活 `QuantizationMode`，不感知功勋数值。C5/FE5 功勋结算 GDD **必须**对称记录：Off 模式击杀按 `meritMultiplierOff ∈ (0,1)` 折算 `rewardMeritBase`，且此约束先于 C5/FE5 经济曲线锁定（见 Q3）。若 C5/FE5 未实现此折算，Off 模式将击穿 game-concept.md:213 反支柱（零技巧最优刷取）。此为**阻塞下游**合约。
 
 ---
 
@@ -596,6 +611,7 @@ if GoodHalfWindowMs_effective > gridIntervalMs / 2 - 1:
 | `LookaheadMs` | `RhythmConfigSO.LookaheadMs` | float | 来自 ADR-D3 | [50, 200] | F2 提前广播拍点事件的时间量；C1 用它确定 EarlyWindow 起始边界 |
 | `platformMinPerfectMs` | 平台配置（非 SO） | float | PC=16.7, iOS=39, Android=80 | [0, 120] | 平台保底 Perfect 窗口；过小则该平台玩家物理上无法打出 Perfect |
 | `ΔCombo` 表 | `RhythmConfigSO.DeltaCombo_*` | int×3 | Perfect=+2, Good=+1, Miss=0 | Perfect∈[1,5], Good∈[0,3], Miss=[0,0]（硬编码，不可负） | 调整连击增速；提高 Perfect 奖励可强化节奏激励循环。Miss ΔCombo **不可为负**——Miss 不清零是 game-concept.md 规则五合约，实现层须断言 `ΔCombo_Miss == 0` |
+| `meritMultiplierOff` | C5/FE5 经济配置（**非 C1 SO**，C1 仅暴露激活模式） | float | **待定，见 Q3**（占位建议 0.5） | (0, 1) — 严格开区间，不可为 0（否则完全剥夺无障碍玩家进度）或 ≥1（否则失去隔离意义） | Off 模式功勋折算系数；过高则「零技巧刷取」漏洞复现，过低则惩罚无障碍用户。最终值须先于 C5/FE5 经济 GDD 锁定（Off 合约第 4 条） |
 
 **调参指南**：
 - 先调 `PerfectHalfWindowMs` 和 `GoodHalfWindowMs` 确定基础手感，再调 `EarlyWindowMs` / `LateWindowMs` 确定缓冲宽容度。
@@ -638,7 +654,7 @@ if GoodHalfWindowMs_effective > gridIntervalMs / 2 - 1:
 - **AC-C1-03**：输入偏移量 > `GoodHalfWindowMs_effective` → C1 广播 `RhythmJudgmentEvent { Rating=Miss, CancelTier=Closed }`，`ComboCountAfter == ComboCountBefore`（连击不增长、不清零）。伤害倍率 0.5× 由下游伤害系统按 Rating 字段应用，不在 C1 层验证。
 - **AC-C1-04**：LateWindow 过期后到达的输入 → 不产生 `RhythmJudgmentEvent`，不产生 Miss。
 - **AC-C1-05**：不攻击的拍点 → 无 `RhythmJudgmentEvent` 广播，无惩罚。
-- **AC-C1-06**：Off 模式下，任何攻击输入 → 广播 `RhythmJudgmentEvent { Rating=Perfect, CancelTier=Advanced }`，偏移量 = 0，即时触发。
+- **AC-C1-06**：Off 模式下，任何攻击输入 → 广播 `RhythmJudgmentEvent { Rating=Perfect, CancelTier=Standard }`，偏移量 = 0，即时触发。**断言 `CancelTier == Standard`（非 Advanced）**——验证 Off 覆盖规则生效（Off 合约第 5 条 + Rule 10）：即便评级为 Perfect，Off 模式亦不授予 Advanced 高级取消。
 - **AC-C1-07**：Beat 模式，BPM=120 时，`gridIntervalMs = 500ms`（全拍间距，HalfBeat 的 2 倍）；`GoodHalfWindowMs_effective` 上界钳位 = `gridIntervalMs/2 - 1 = 249ms`；给定 `GoodHalfWindowMs_authored=120ms`，有效值 = 120ms（未触发钳位）；偏移量 ≤ `PerfectHalfWindowMs_effective` → Perfect，≤ 120ms → Good，> 120ms → Miss。**架构说明**：F2 在 Beat 模式下仍每 250ms 广播 `OnHalfBeatLookahead`（F2 Core Rule 3 不变，F2 不感知 C1 量化模式）；C1 内部维护 skip toggle，初始为"处理"相位，逐次交替处理/跳过，等效全拍判定网格。
   - **AC-C1-07a（正向 — 判定窗口开放验证）**：Beat 模式 BPM=120，在第 1 次 `OnHalfBeatLookahead` 的 EarlyWindow 内注入攻击输入 → 事件触发后产生 `RhythmJudgmentEvent`（"处理"相位，窗口开放）；在第 3 次事件 EarlyWindow 内同样注入 → 再产生一次事件。4 次事件共产生恰好 2 次 `RhythmJudgmentEvent`。
   - **AC-C1-07b（负向 — skip 验证）**：Beat 模式 BPM=120，在第 2 次 `OnHalfBeatLookahead` 的 EarlyWindow 内注入攻击输入 → 第 2 次事件触发后**不**产生 `RhythmJudgmentEvent`（"跳过"相位，输入留存缓冲区）；第 3 次事件到来后，缓冲的输入被评级，产生 1 次 `RhythmJudgmentEvent`。
@@ -655,7 +671,7 @@ if GoodHalfWindowMs_effective > gridIntervalMs / 2 - 1:
 - **AC-C1-12**：`beat_offset_ms` 计算：给定 `judgment_time=T`, `latency_offset_s=L`, `beat_dsp_time=B` → 结果 = `(T+L−B)×1000`（正负号正确）。
 - **AC-C1-13**：BPM=160 时，`GoodHalfWindowMs_authored=120` → 运行时钳位为 `min(120, 93.75-1) = 92.75ms`。
 - **AC-C1-14**：Perfect → ComboCount += 2；Good → += 1；Miss → += 0（不归零）。ComboCount 不超过 ComboMax（临时值 50，待 Q1 最终确认）。
-- **AC-C1-15**：BPM 变化事件 → 有效窗口重算 + `_pendingInput` 清空 + `_lateWindowActive` 关闭 + `_skipToggle` 重置为"处理"相位。**Beat 模式额外断言**：BPM 变化后立即注入攻击输入，触发一次 `OnHalfBeatLookahead` → 应产生 `RhythmJudgmentEvent`（skip toggle 已重置为处理相位，首拍不被跳过）。
+- **AC-C1-15**：`OnMeterChanged` 事件（`data.bpmChanged==true`，新 BPM 有效）→ 有效窗口重算 + `_pendingInput` 清空 + `_lateWindowActive` 关闭 + `_skipToggle` 重置为"处理"相位。**Beat 模式额外断言**：事件后立即注入攻击输入，触发一次 `OnHalfBeatLookahead` → 应产生 `RhythmJudgmentEvent`（skip toggle 已重置为处理相位，首拍不被跳过）。**拍号-only 变更断言**：`OnMeterChanged` 携 `data.bpmChanged==false, data.newBpm==oldBpm` → `currentBpm` 不变、窗口重算幂等（值不变）、缓冲仍清空。
 
 ### 边界情况（E1–E9）
 
@@ -663,8 +679,9 @@ if GoodHalfWindowMs_effective > gridIntervalMs / 2 - 1:
 - **AC-C1-17**：时钟未确认 2s 超时 → 静默丢弃缓冲区输入，不产生任何 `RhythmJudgmentEvent`，记录 `Warning` 日志。
 - **AC-C1-18**：E3a 退化充能（`attackType=LightAttack`, `chargeStartDspTime > -1.0`）→ 使用 `chargeStartDspTime`（按下时刻）判定，与 F3 guard table 一致。
 - **AC-C1-19**：Android BPM ≥ 186 → Perfect/Good 窗口坍缩，只产生 Perfect 或 Miss（Good 评级消失）；BPM 极高时（如 BPM=240 HalfBeat 模式，`gridIntervalMs/2-1=61.5ms < platformMinPerfectMs=80ms`）触发二次钳位，记录 Warning 日志。**此时 `platformMinPerfectMs=80ms` 承诺被设计放弃**：`PerfectHalfWindowMs_effective` 降至 `gridIntervalMs/2-1`（如 61.5ms），该平台该 BPM 下 Perfect 物理可达性无法保证。Warning 日志须包含当前 BPM 值和实际有效 Perfect 窗口值。
-- **AC-C1-20**：`OnBpmChanged(0)` → BPM 不更新，窗口不变，记录警告日志。
-- **AC-C1-21**：Off 模式连击 → 每次 +2，受 ComboMax 约束。
+- **AC-C1-20**：`OnMeterChanged`（`data.newBpm == 0`）→ BPM 不更新，窗口不变，记录警告日志。
+- **AC-C1-21**：Off 模式连击 → 每次 +2，受 ComboMax 约束；每次事件 `CancelTier == Standard`（连招深度封顶断言，见 AC-C1-06）。
+- **AC-C1-21b（功勋隔离契约）**：Off 模式激活期间，C1 暴露的激活 `QuantizationMode == Off`，供下游功勋结算系统（C5/FE5）读取。**C1 层可验证**：C1 广播/暴露的模式状态在 Off 下恒为 `Off`（结算方据此应用 `meritMultiplierOff` 折算）。折算金额本身的验收属 C5/FE5 集成 AC（C1 不发放功勋）。
 
 ### 评级后果合约
 
@@ -684,3 +701,4 @@ if GoodHalfWindowMs_effective > gridIntervalMs / 2 - 1:
 | **M0** | M0 Spike 窗口值验证（PerfectHalfWindowMs=50, GoodHalfWindowMs=120）——这些是估算值，需原型阶段实测确认 | 原型验证 | M0 Spike |
 | **Q1** | `ComboMax` 最终值（当前临时值 50）——须联合 C2 连招图和 C3 伤害系统最终确认后写入 RhythmConfigSO | C2/C3 GDD | C2/C3 设计完成后 |
 | **Q2** | E2 时钟未确认 2s 超时值——是否需要平台差异化（移动端启动更慢）？ | 平台测试 | 移动端原型 |
+| **Q3** | `meritMultiplierOff` 最终值（Off 模式功勋折算系数，占位建议 0.5，安全范围 (0,1) 开区间）——由无障碍公平性与经济防刷两方权衡确定。**须先于 C5/FE5 经济 GDD 锁定**（Off 合约第 4 条为规范性要求，执行方 C5/FE5）。 | **C5/FE5 经济 GDD（阻塞下游）** | C5/FE5 设计启动前 |
