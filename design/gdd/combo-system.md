@@ -63,7 +63,7 @@ C2 连招图系统是《玉兔战歌》战斗核心的**数据驱动连招状态
 
 **规则 11｜数据容错**（承接 F4 AC-F4-12 迁移）：`rootNodeId` 不在 `nodes` 中 → 回退 `nodes[0]` + `LogError`；`nodes` 为空 → 抛 `InvalidDataException`（加载失败）；无效边 ID（`fromNodeId`/`toNodeId` 不存在）→ 跳过该边 + `Error` 日志（AC-F4-31）。
 
-**规则 12｜BD-2 取消窗适应窗口（BPM 变更宽容期）｜[BD-2]**：C2 收到 BPM 变更事件（`OnMeterChanged`，即 C2 现有 `OnMeterChangeAccepted` 所指的同一拍号/BPM 变更信号）后，进入一个 **适应窗口 = `adaptationWindowBeats` 拍**（Tuning Knob，默认 2，范围 [0,4]）。窗口内，取消窗 `[cancelWeight, 1.0]` 的**绝对毫秒判定宽度**取 `max(变更前窗口ms, 变更后窗口ms)`（即取**较宽者**）——即便攻击动画已由 Animancer 按新 `currentBpm` 变速（规则 6/F4），取消窗的可接受输入时机以毫秒计**不随 BPM 上升而骤缩**；适应窗口结束后恢复新 BPM 标准宽度（见 Formulas F7）。此举与 **C1 判定窗**采用同一 `max(before, after)` 宽容规则、与 **C4 `SlotCapacity` 按每秒令牌速率归一化**共同承接 BD-2「BPM 跃升三系统难度尖峰」，避免玩家犯错代价最大的转阶段瞬间取消窗骤缩（三文档 Formulas 互引 BD-2）。
+**规则 12｜BD-2 取消窗适应窗口（BPM 变更宽容期）｜[BD-2]**：C2 收到 F2 的**边界生效事件 `OnMeterChanged`**（生效时广播，与 C1 重锚拍网格所订阅的**同一事件**、锚定 `MeterChangeEventData.predictedEffectiveDspTimeRaw`；**区别于**接受时的 `OnMeterChangeAccepted`——后者仅用于规则 6 的 Animancer 预变速，见 EC9/AC-C2-33）后，进入一个 **适应窗口 = `adaptationWindowBeats` 拍**（Tuning Knob，默认 2，范围 [0,4]）。窗口内，取消窗 `[cancelWeight, 1.0]` 的**绝对毫秒判定宽度**取 `max(变更前窗口ms, 变更后窗口ms)`（即取**较宽者**）——即便攻击动画已由 Animancer 按新 `currentBpm` 变速（规则 6/F4），取消窗的可接受输入时机以毫秒计**不随 BPM 上升而骤缩**；适应窗口结束后恢复新 BPM 标准宽度（见 Formulas F7）。此举与 **C1 判定窗**采用同一 `max(before, after)` 宽容规则、与 **C4 `SlotCapacity` 按每秒令牌速率归一化**共同承接 BD-2「BPM 跃升三系统难度尖峰」，避免玩家犯错代价最大的转阶段瞬间取消窗骤缩（三文档 Formulas 互引 BD-2）。
 
 ### States and Transitions
 
@@ -129,7 +129,7 @@ C2 连招状态机（图位置维度，独立于 C1 的评级状态）：
 
 ### F3｜ComboMax（段数上限）
 
-`ComboMax = 999`。combo_multiplier 定义域 `count ∈ [0, 999]`。**跨系统债务**：C1 当前将段数 clamp 在 50，须同步抬至 999（本次仅更新 registry，C1 文档修订记为 follow-up，见 Open Questions）。注：因 cap 在 count=148 触顶，ComboMax 从 50 抬到 999 的实际平衡意义是「把伤害天花板从 ×2.09 放开到 ×5.0」，148 以上仅影响 HUD 连击数显示。
+`ComboMax = 999`。combo_multiplier 定义域 `count ∈ [0, 999]`。**跨系统一致（BC-7 已修）**：C1 已将段数 clamp 抬至 999（`rhythm-core.md`，2026-08-10 blocker fix BC-7），与本定义域一致——运行时 combo_multiplier 可达设计上限 ×5.0（原 clamp 50 会将其截到 ×2.09）。注：因 cap 在 count=148 触顶，148 以上仅影响 HUD 连击数显示。
 
 ### F4｜Animancer 攻击动画变速（ADR-D5）
 
@@ -199,7 +199,7 @@ BPM 变更事件 `OnMeterChanged`（BPM: `bpm_before → bpm_after`）后的适�
 
 | 系统 | 依赖内容 | 状态 |
 |---|---|---|
-| C1 rhythm-core | `RhythmJudgmentEvent`（评级/CancelTier/段数）；**C1 须将段数 clamp 50→999**（下游债务）| 已批准，待修订 |
+| C1 rhythm-core | `RhythmJudgmentEvent`（评级/CancelTier/段数）；C1 段数 clamp 已抬至 999（BC-7 已修，与 ComboMax 一致）| 已批准 |
 | F4 so-data-layer | `ComboGraphSO`/`AttackNodeSO`/`ComboEdge` schema | 已批准 |
 | F2 audio-beat-clock | `currentBpm` 来源、`OnMeterChangeAccepted` BPM 变更事件 | 已批准 |
 | ADR-D3 / ADR-D5 | RhythmJudgmentEvent 契约 / Animancer 管线 | 已接受 |
@@ -342,7 +342,7 @@ C2 只**发布事件**，视觉/音效由 Feel/MMFeedbacks 与音频系统订阅
 
 | # | 问题 | 状态 / 归属 |
 |---|---|---|
-| OQ1 | **C1 段数 clamp 50→999 同步**：本次仅在 registry 登记 `ComboMax=999`，C1 rhythm-core.md 仍将 `CurrentCombo` clamp 在 50。C1 已批准，不在本 worktree 修改其文档——须开 follow-up 修订 C1，将 clamp 抬至 999，否则 combo_multiplier 定义域 `[0,999]` 在运行时被 C1 截到 50（倍率封顶 ×2.09 而非 ×5.0）。**归属**：C1 修订（下游债务，已在 Dependencies/F3 标注）。 |
+| OQ1 | **C1 段数 clamp 50→999 同步（✅ 已解决 2026-08-10，BC-7）**：C1 rhythm-core.md 已将 `CurrentCombo`/段数 clamp 抬至 999（BC-7 blocker fix），与 registry `ComboMax=999` 及 combo_multiplier 定义域 `[0,999]` 一致——运行时倍率可达 ×5.0。原下游债务已清，本项仅存档。 |
 | OQ2 | **count>999 无防御**：combo_multiplier 的 `min(cap, …)` 已保证 count 超 999 时倍率仍恒 5.0，故公式侧无需额外 clamp；ComboMax=999 由 C1 clamp 保证段数不越界。若未来 C1 clamp 与 registry ComboMax 脱钩，须回看此处。**状态**：设计上安全，仅记录假设。 |
 | OQ3 | **EC5 回根语义已定**：取消窗口外输入统一「先回根、再按根出边匹配」（已写入 EC5/AC-C2-23）。此举让「断连后立刻起新招」无缝，但也意味着窗口外的误触会静默重置图位置——需 playtest 确认不会造成「我以为在连招中却被打回根」的挫败。**状态**：已决策，待手感验证。 |
 | OQ4 | **测试接缝缺口（AC-C2-06/22 等）**：AC-C2-22（"C2 从不写 C1 段数"）与依赖注入验证需要 C1 暴露可 mock 的 `IComboCounter`（或等价只读接口）供 CombatCore 单测隔离。当前 C1 GDD 未定义该接口契约。**归属**：lead-programmer 在 C1/C2 实装前定义只读段数接口，供 AC-C2-17/22/30/37 的单测 mock。 |

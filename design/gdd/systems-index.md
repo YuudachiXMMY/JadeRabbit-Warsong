@@ -1,9 +1,10 @@
 # Systems Index: 玉兔：破阵 (Jade Rabbit: Warsong)
 
-> **Status**: Under Review
+> **Status**: Systems Design — Cross-review PASS (2026-08-11)
 > **Created**: 2026-07-13
-> **Last Updated**: 2026-07-19
+> **Last Updated**: 2026-08-11
 > **Source Concept**: design/gdd/game-concept.md
+> **Latest Cross-review**: `design/gdd/gdd-cross-review-2026-08-11.md`（**PASS** — 2026-08-10 FAIL 阻塞集全清）
 
 ---
 
@@ -20,15 +21,15 @@
 | # | 系统 | 层级 | 里程碑 | 状态 | 设计文档 | 依赖 |
 |---|------|------|--------|------|---------|------|
 | F1 | Game Concept | Foundation | — | **Approved** | `design/gdd/game-concept.md` | — |
-| F2 | 音频/拍点时钟系统 | Foundation | **MVP** | **Revised (ADR-D10 同轮) — Pending Re-review** | `design/gdd/audio-beat-clock.md` | ADR-D6 (Accepted), ADR-D10 (Accepted) |
+| F2 | 音频/拍点时钟系统 | Foundation | **MVP** | **Approved** | `design/gdd/audio-beat-clock.md` | ADR-D6 (Accepted), ADR-D10 (Accepted) |
 | F3 | Input 事件系统 | Foundation | **MVP** | **Approved** | `design/gdd/input-event-system.md` | — |
 | F4 | ScriptableObject 数据层（推断） | Foundation | **MVP** | **Approved** | `design/gdd/so-data-layer.md` | — |
-| F5 | 存档/持久化系统 | Foundation | **MVP** | **Revised (ADR-D10 同轮) — Pending Re-review** | `design/gdd/save-persistence.md` | ADR-D7 (Accepted), ADR-D10 (Accepted) |
-| F6 | TopDownEngine & Animancer 集成层 | Foundation | **MVP** | **Amended (ADR-D10 同轮) — Pending Re-review** | `design/gdd/tde-integration.md` | ADR-D1 (Accepted), ADR-D5 (Accepted), ADR-D10 (Accepted) |
-| C1 | 节奏量化攻击系统 | Core | **MVP** | **Revised (2026-08-10 blocker fix) — Pending Re-review** | `design/gdd/rhythm-core.md` | F2, F3 |
-| C2 | 连招图系统 | Core | **MVP** | **Revised (2026-08-10 blocker fix) — Pending Re-review** | `design/gdd/combo-system.md` | F4, C1 |
-| C3 | 心法构筑系统 | Core | **MVP** | **Revised (2026-08-10 blocker fix) — Pending Re-review** | `design/gdd/perk-system.md` | F4, C1 |
-| C4 | 战斗导演 | Core | **MVP** | **Revised (2026-08-10 blocker fix) — Pending Re-review** | `design/gdd/combat-director.md` | F2, F4 |
+| F5 | 存档/持久化系统 | Foundation | **MVP** | **Approved** | `design/gdd/save-persistence.md` | ADR-D7 (Accepted), ADR-D10 (Accepted) |
+| F6 | TopDownEngine & Animancer 集成层 | Foundation | **MVP** | **Approved** | `design/gdd/tde-integration.md` | ADR-D1 (Accepted), ADR-D5 (Accepted), ADR-D10 (Accepted) |
+| C1 | 节奏量化攻击系统 | Core | **MVP** | **Approved** | `design/gdd/rhythm-core.md` | F2, F3 |
+| C2 | 连招图系统 | Core | **MVP** | **Approved** | `design/gdd/combo-system.md` | F4, C1 |
+| C3 | 心法构筑系统 | Core | **MVP** | **Approved** | `design/gdd/perk-system.md` | F4, C1 |
+| C4 | 战斗导演 | Core | **MVP** | **Approved** | `design/gdd/combat-director.md` | F2, F4 |
 | C5 | 武器系统（推断） | Core | **MVP** | Not Started | `design/gdd/weapon-system.md` | F4, C2 |
 | C6 | Hitbox/受击判定系统（推断） | Core | **MVP** | Not Started | `design/gdd/hitbox-system.md` | C2, F6 |
 | FE3 | 延迟校准系统 | Feature | **MVP** | Not Started | `design/gdd/latency-calibration.md` | F2, F5 |
@@ -196,10 +197,10 @@
 | 指标 | 数量 |
 |------|------|
 | 识别的系统总数 | 31 |
-| 设计文档已开始 | 6 |
-| 设计文档已审查 | 6 |
-| 设计文档已 Approved | 3 |
-| 设计文档 Needs Revision | 3 |
+| 设计文档已开始 | 10 |
+| 设计文档已审查 | 10 |
+| 设计文档已 Approved | 10 |
+| 设计文档 Needs Revision | 0 |
 | MVP 系统已设计 | 7 / 27 |
 | Vertical Slice 系统已设计 | 0 / 1 |
 | Alpha 系统已设计 | 0 / 1 |

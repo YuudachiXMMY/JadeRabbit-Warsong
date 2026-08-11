@@ -693,7 +693,7 @@ if GoodHalfWindowMs_effective > gridIntervalMs / 2 - 1:
 **场景**：玩家死亡时 `_pendingInput` 缓冲区可能持有死前的陈旧输入（或 LateWindow 仍激活）。F6 死亡序列（EC-04，`tde-integration.md`）不经过「游戏暂停」路径，故 Rule 8 的暂停清空**不触发**；复活后 `Play()` 恢复，首个 `OnHalfBeatLookahead` 会用新拍网格评级死前陈旧输入 → 产生「幽灵评级」，错误推进连招。
 
 **处理规则（SC-2）**：
-- C1 订阅 F6 的 **`PlayerDeath`**（或等价死亡事件）与 **`RespawnComplete`**（或等价复活完成事件），复用 Rule 8 的清空逻辑：`_pendingInput = null`；`_lateWindowActive = false`；停止处理 `OnHalfBeatLookahead`（死亡起）。
+- C1 订阅 F6 的 **`OnPlayerDeath`** 与 **`OnRespawnComplete`** 域事件（F6 `TDELifecycleAdapter` 桥接 TDE `PlayerDeath`/`RespawnComplete` 而来的 CombatCore 可见 C# event，负载不含 TDE 类型——C1 不直接订阅 TDE 事件，遵边界隔离；见 `tde-integration.md` Rule 15），复用 Rule 8 的清空逻辑：`_pendingInput = null`；`_lateWindowActive = false`；停止处理 `OnHalfBeatLookahead`（死亡起）。
 - **复活完成时**：清空任何过期评级状态（残留 `_pendingInput`、未消费的 LateWindow），以「等待输入」状态重新激活；重锚拍网格（复用 BC-6 恢复逻辑，若复活伴随时钟恢复）。
 - 复活后首个 `OnHalfBeatLookahead` **不得**评级任何死亡前的输入——所有跨越死亡边界的 pending 输入一律丢弃，不产生 `RhythmJudgmentEvent`。
 - **幽灵评级定义**：死亡前缓存的输入在复活后仍被评级的现象——本系统明确禁止（与 E6 幽灵判定同源，触发路径不同：E6 由暂停触发，E10 由死亡/复活触发）。
@@ -710,7 +710,7 @@ if GoodHalfWindowMs_effective > gridIntervalMs / 2 - 1:
 |------|------|------|--------|
 | **F2 音频时钟** | `OnHalfBeatLookahead`（`BeatEventData.beat_dsp_time`）、`IsStartConfirmed`、`LatencyOffsetMs`、`OnMeterChanged`（`MeterChangeEventData`，边界生效事件，F2 Core Rule 14）、**`OnBeatClockPaused` / `OnBeatClockResumed`**（暂停/恢复事件，携恢复首拍 `beat_dsp_time`，BC-6；事件名对齐 F2 权威，**非** `OnBpmChanged`） | 事件订阅 + 属性查询 | **必需** — 无 F2 则 C1 无法运行（Off 模式除外） |
 | **F3 输入管线** | `AttackInputEvent`（`attackType`, `inputDspTime`, `chargeStartDspTime`） | 事件订阅（`OnAttackInput`） | **必需** — 无 F3 则 C1 无输入来源 |
-| **F6 生命周期适配** | `PlayerDeath` / `RespawnComplete`（或等价死亡/复活事件，SC-2） | 事件订阅 | **必需** — 复活时清空过期 `_pendingInput` 与评级状态，防幽灵评级（E10） |
+| **F6 生命周期适配** | `OnPlayerDeath` / `OnRespawnComplete`（F6 桥接域事件，CombatCore 可见，负载不含 TDE 类型，SC-2；见 `tde-integration.md` Rule 15） | 事件订阅（纯 C# event） | **必需** — 复活时清空过期 `_pendingInput` 与评级状态，防幽灵评级（E10） |
 | **FE7 游戏设置** | `QuantizationMode`（Off / HalfBeat / Beat） | 属性注入（运行时可切换） | **必需** — 决定评级模式 |
 | **ADR-D4 SO 数据层** | `RhythmConfigSO`（窗口默认值、ComboMax） | ScriptableObject 读取 | **必需** — 策划配置数据来源 |
 | **C3 心法构筑系统** | `IRhythmModifierProvider`（`GetPerfectWindowDeltaMs` / `GetGoodWindowDeltaMs` / `GetComboDelta`；见 C1-F7）+ `OnPerkStackChanged` 重算触发 | 属性注入（C1 查询抽象接口） | **可选** — 无 C3/无心法时 provider = null，各查询走默认值；C1 不硬依赖 C3（BC-2） |
@@ -731,7 +731,7 @@ if GoodHalfWindowMs_effective > gridIntervalMs / 2 - 1:
 
 - **F2 ↔ C1**：F2 的 `beat_dsp_time` 已在"玩家感知时域"（F2 Core Rule 7）。C1 须对 F3 时间戳加 `latency_offset_s` 后再比较（C1-F2）。若 F2 修改时域约定，C1 的 beat_offset_ms 公式失效。
 - **F2 ↔ C1（BC-6 暂停/恢复）**：F2 权威定义 `OnBeatClockPaused` / `OnBeatClockResumed`（携恢复首拍 `beat_dsp_time`）+ `IAudioPlayer.Pause()/Resume()`。C1 订阅两事件：恢复时重锚拍网格并清空过期 `_pendingInput`（Rule 8 + E6）。C1 使用规范化事件名 `OnBeatClockResumed`（**非** `OnBpmChanged`）。F2 GDD 须对称登记 C1 为 `OnBeatClockResumed` 订阅方。
-- **F6 ↔ C1（SC-2 复活清空）**：C1 订阅 F6 死亡/复活事件（`PlayerDeath` / `RespawnComplete` 或等价），复活时清空过期 `_pendingInput` 与评级状态（E10），防复活幽灵评级。F6 生命周期 GDD（死亡序列 EC-04）须对称登记 C1 为订阅方——若 F6 不广播死亡/复活事件，SC-2 幽灵评级无法防护。此为**跨系统场景 G** 承接合约。
+- **F6 ↔ C1（SC-2 复活清空）**：C1 订阅 F6 桥接域事件 `OnPlayerDeath` / `OnRespawnComplete`（CombatCore 可见 C# event，F6 由 TDE `PlayerDeath`/`RespawnComplete` 同帧重广播；C1 禁止直接 `using` TDE），复活时清空过期 `_pendingInput` 与评级状态（E10），防复活幽灵评级。F6 生命周期 GDD 已对称登记 C1（`tde-integration.md` Rule 15 + 双向依赖确认 + AC-F6-25）。此为**跨系统场景 G** 承接合约，F6 广播侧（AC-F6-25）+ C1 消费侧（AC-C1-22e）闭环。
 - **F3 ↔ C1**：F3 的 `chargeStartDspTime` 哨兵值为 -1.0（F3 Core Rule 8）。C1 以 `> -1.0` 检测。若 F3 修改哨兵值约定，C1-F1 失效。
 - **P1 ↔ C1**：P1（HUD）消费 `RhythmJudgmentEvent` 中的 `Rating` 和 `ComboCountAfter` 展示反馈。P1 须在 Miss 时显示连击数**停止增长**的视觉区分（非清零）。若 C1 修改 Miss ΔCombo 行为，P1 的 Miss 动效设计需同步更新。
 - **充能攻击 ↔ PL2**：充能攻击触发 `AttackInputEvent` 后，F3 会向 PL2（VFX 反馈系统）发送预确认信号（pre-confirmation）以触发充能特效。C1 的最终评级（Perfect/Good/Miss）叠加在 PL2 的预确认特效之上；充能特效不等待 C1 评级完成。若 C1 评级为 Miss，PL2 须弱化（非取消）已播放的预确认特效。此时序合约须在 F3 / PL2 GDD 中对称记录。
