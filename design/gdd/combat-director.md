@@ -90,18 +90,19 @@ BeatsPerBar(meter) = length(CapacityTable[meter])          // 数据驱动，不
 
 | 变量 | 类型 | 范围 | 说明 |
 |---|---|---|---|
-| meter | string (enum) | {"4/4", "6/8", ...} 随 `LevelConfigSO` 拍号集合扩展 | 当前拍号标识，来自 F2 `OnMeterChanged` |
+| meter | string (enum) | {"4/4", "3/4", "5/8"}（F4 合法拍号集：分子 ∈{3,4,5}、分母 ∈{4,8}，5 分子必配 8）随 `LevelConfigSO` 拍号集合扩展 | 当前拍号标识，来自 F2 `OnMeterChanged` |
 | beatIndex | int | [0, BeatsPerBar(meter) − 1] | 拍在小节内的位置索引（0 = 强拍/downbeat），取自 F2 `BeatEventData` 拍内索引字段 |
-| BeatsPerBar(meter) | int | 4/4→4，6/8→6 | 每小节拍位数，**等于** `CapacityTable[meter]` 数组长度，不重复配置 |
+| BeatsPerBar(meter) | int | 4/4→4，3/4→3，5/8→5 | 每小节拍位数，**等于** `CapacityTable[meter]` 数组长度，不重复配置 |
 | CapacityTable[meter] | int[]（**Tuning Knob**） | 每元素 ∈ [0, 4]（建议安全范围） | 每拍位可授令名额配置表，per-拍号独立维护 |
 | SlotCapacity | int（输出） | [0, 4] | 该拍位本次评估可授予的令牌名额数 |
 
 示例默认表（Tuning Knob 建议值）：
 
-| meter | beatIndex 0 | 1 | 2 | 3 | 4 | 5 |
-|---|---|---|---|---|---|---|
-| 4/4 | 2 | 1 | 1 | 1 | — | — |
-| 6/8 | 2 | 0 | 1 | 1 | 0 | 1 |
+| meter | beatIndex 0 | 1 | 2 | 3 | 4 |
+|---|---|---|---|---|---|
+| 4/4 | 2 | 1 | 1 | 1 | — |
+| 3/4 | 2 | 1 | 1 | — | — |
+| 5/8 | 2 | 0 | 1 | 1 | 0 |
 
 **输出范围**：非负整数，逐拍位独立、无插值。0 表示该拍位刻意留白（弱拍静默，避免每拍齐射导致听觉噪音饱和）；建议安全范围 [0, 4]。
 
@@ -291,7 +292,7 @@ function GrantSelection(pendingQueue, meter, beatIndex, currentEvalBeat, subdivi
 
 | Knob | 默认值 | 安全范围 | 影响的玩法维度 | 数据归属 |
 |---|---|---|---|---|
-| `CapacityTable[meter]`（每拍位数组） | 4/4:[2,1,1,1]；6/8:[2,0,1,1,0,1] | 每元素 ∈ [0,4]；每拍号至少一位 ≥1 | **攻击密度与节奏留白**——决定每拍最多几个攻击落地，强拍高/弱拍低塑造攻击潮汐；调高→压力增、可预读性降 | C4（经 F4 SO 承载） |
+| `CapacityTable[meter]`（每拍位数组） | 4/4:[2,1,1,1]；3/4:[2,1,1]；5/8:[2,0,1,1,0]（3+2 分组，强拍在 0/3，待 playtest 校准） | 每元素 ∈ [0,4]；每拍号至少一位 ≥1 | **攻击密度与节奏留白**——决定每拍最多几个攻击落地，强拍高/弱拍低塑造攻击潮汐；调高→压力增、可预读性降 | C4（经 F4 SO 承载） |
 | `D_near` | 3.0m | [1.0, 6.0]m | **威胁近区边界**——多近算「贴脸高威胁」；调小→仅极近敌抢优先级 | C4 / F4 |
 | `D_mid` | 8.0m | [D_near+1.0, 15.0]m（须 > D_near） | **威胁中/远区边界**——远敌何时降为最低威胁 | C4 / F4 |
 | `W_near` | 30.0 | [10, 100] | **近区威胁权重**——贴脸敌抢令强度；同时影响 `BONUS_MAX` 派生值 | C4 / F4 |
@@ -346,9 +347,9 @@ C4 无任何玩家可见 UI。它是敌人 AI 与 F2 拍钟之间的后台调度
 - **AC-C4-05**（Logic/BLOCKING）：单拍授令数不超过 `SlotCapacity(meter, beatIndex)`。
   测试：`meter="4/4", beatIndex=2, capacity=1`，pending 队列 3 个请求 → 断言 `GrantSelection` 返回长度恰为 1。
 - **AC-C4-06**（Logic/BLOCKING）：`capacity=0` 的拍位不授令（弱拍静默）。
-  测试：`meter="6/8", beatIndex=1`（`CapacityTable=0`）→ 断言无论 pending 队列非空与否，`granted` 恒为空集。
+  测试：`meter="5/8", beatIndex=1`（`CapacityTable=0`）→ 断言无论 pending 队列非空与否，`granted` 恒为空集。
 - **AC-C4-07**（Logic/BLOCKING）：`OnMeterChanged` 后，后续评估使用新拍号的 `CapacityTable`；已授令牌不受影响（与 AC-C4-25 联动）。
-  测试：授予 1 个 `4/4` 令牌后触发 `OnMeterChanged("6/8")` → 断言下一次评估用 `CapacityTable["6/8"]` 计算 capacity，已授令牌 `targetLandingBeat` 保持不变。
+  测试：授予 1 个 `4/4` 令牌后触发 `OnMeterChanged("5/8")` → 断言下一次评估用 `CapacityTable["5/8"]` 计算 capacity，已授令牌 `targetLandingBeat` 保持不变。
 
 ### 优先级与防饥饿（F-2/F-3/F-4）
 
@@ -396,7 +397,7 @@ C4 无任何玩家可见 UI。它是敌人 AI 与 F2 拍钟之间的后台调度
 - **AC-C4-24**（Integration/BLOCKING，E6）：BeatClock 暂停 → C4 冻结（`waitBeats`/`TimeoutBeats` 计数不前进），所有 `Pending`/`Granted` 原样保留；恢复后从下一拍继续，无令牌丢失，且此期间 C4 不调用任何 BeatClock 生命周期方法。
   测试：授令若干 `Pending`/`Granted` 令牌后模拟 F2 暂停（停止派发拍事件）→ 推进模拟时间 → 断言所有令牌状态与 `waitBeats` 不变；恢复派发后断言从暂停点后的下一拍继续评估，无令牌被静默丢弃。
 - **AC-C4-25**（Logic/BLOCKING，E4）：前摇中途 `OnMeterChanged` 触发时，已授令牌保留原 `targetLandingBeat`（绝对拍计数不受影响），不重算；仅未来拍的 `SlotCapacity` 用新拍号表。
-  测试：授令 `targetLandingBeat=22.0` 后触发 `OnMeterChanged("6/8")` → 断言该令牌 `targetLandingBeat` 仍为 `22.0`（与 AC-C4-07 为同一场景的两个断言面，可合并测试方法）。
+  测试：授令 `targetLandingBeat=22.0` 后触发 `OnMeterChanged("5/8")` → 断言该令牌 `targetLandingBeat` 仍为 `22.0`（与 AC-C4-07 为同一场景的两个断言面，可合并测试方法）。
 
 ### F2 消费边界（架构约束，静态扫描）
 
