@@ -37,7 +37,7 @@
 #   Each entry: name, status, source, referenced_by[], attributes{}, added, revised
 
 version: 1
-last_updated: "2026-08-10"
+last_updated: "2026-08-11"
 
 # ─── ENTITIES ────────────────────────────────────────────────────────────────
 # Named game-world objects: enemies, NPCs, characters, factions, bosses.
@@ -283,6 +283,40 @@ constants:
       Perfect 1.0× / Good 0.75× / Miss 0.5×；C2/C3/game-concept 仅只读引用。2026-08-10 /consistency-check \
       登记并修正 combo-system.md F2 边界示例中 Perfect=1.5 的漂移（应为 1.0），示例 final_damage 连带重算。"
     added: 2026-08-10
+    revised: ""
+
+  - name: adaptation_window_beats
+    status: active
+    source: design/gdd/rhythm-core.md      # 单一 owner = RhythmConfigSO.AdaptationWindowBeats（C1 权威 SO 字段）
+    referenced_by:
+      - design/gdd/rhythm-core.md           # C1-F5b 判定窗 max(before,after) 宽容期时长
+      - design/gdd/combo-system.md          # C2-F7 取消窗 max 宽容期，camelCase adaptationWindowBeats 引用同一语义
+      - design/gdd/combat-director.md       # C4 E15/BD-2 每秒令牌归一化互引，与 C1/C2 同批锁定
+    value: 2
+    value_range: [0, 4]
+    unit: beats
+    notes: "BD-2 BPM 跃升三系统难度尖峰适应窗口时长。owner 联合锁定 2026-08-11（C1/C2/C4 三 owner），先于 FE4 Boss GDD。\
+      单一 owner = C# 字段 RhythmConfigSO.AdaptationWindowBeats（PascalCase 权威）；C2 combo-system.md 的 camelCase \
+      `adaptationWindowBeats` 为引用别名、语义等同、不重定义。0 = 关闭宽容期立即用新 BPM 标准宽度。三文档 Formulas \
+      互引：C1 判定窗 + C2 取消窗均以 max(变更前ms, 变更后ms) 宽容 2 拍，C4 SlotCapacity 按 bpmRef/bpm 归一化。"
+    added: 2026-08-11
+    revised: ""
+
+  - name: merit_multiplier_off
+    status: active
+    source: design/gdd/rhythm-core.md      # C1 声明规范性要求（Off 合约第 4 条）；执行 owner = C5/FE5 经济配置（GDD 未创建）
+    referenced_by:
+      - design/gdd/rhythm-core.md           # C1 Off 合约第 4 条 + Tuning Knobs + AC-C1-21b（仅暴露激活模式，不发放功勋）
+      - design/gdd/perk-system.md           # C3 OQ-C3-3 锁定：Off 心法增益计入功勋时同受此折算，不额外绕过
+    value: 0.5
+    value_range: [0.0, 1.0]                # 语义为严格开区间 (0, 1)——不可取 0（剥夺无障碍进度）或 1（失去隔离），见 notes
+    unit: multiplier
+    notes: "Off 无障碍模式击杀功勋（merit，永久货币 PlayerInfoSO）折算系数。owner 联合锁定 2026-08-11：占位 0.5 转正为权威值，\
+      先于 C5/FE5 经济 GDD。严格开区间 (0,1)。owner 归属：C1 rhythm-core 声明规范性要求（Off 合约第 4 条），执行方 = C5/FE5\
+      功勋结算系统——读取 C1 暴露的激活 QuantizationMode，Off 时对 EnemyInfoSO.rewardMeritBase 应用此系数；C1 不直接发放功勋。\
+      Off 第四重隔离（叠加：连招深度封顶 Standard + perk 封顶 1.0 + 排行/成就隔离），防零技巧刷永久货币，护 game-concept.md:213 \
+      反支柱。C5/FE5 GDD 创建时须对称记录并将 source owner 迁移至经济 GDD。"
+    added: 2026-08-11
     revised: ""
 
 # Example:

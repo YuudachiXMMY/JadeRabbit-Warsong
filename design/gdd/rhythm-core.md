@@ -54,7 +54,7 @@ C1 正常工作时，玩家不会意识到它的存在。他们只会感受到�
 > 1. **入口限制**：Off 模式仅可通过「无障碍设置」面板开启，不出现在「战斗设置」或快捷切换菜单中。
 > 2. **持续提示**：Off 模式激活期间，HUD 全程显示「无障碍模式」标识，玩家不可关闭此指示。
 > 3. **排行/成就隔离**：Off 模式下的得分、连击数不计入排行榜，不触发需要节奏精准度的成就。
-> 4. **功勋折算隔离**：Off 模式下击杀敌人所得的**功勋（merit，永久货币，PlayerInfoSO）**按系数 `meritMultiplierOff` 折算（0 < `meritMultiplierOff` < 1，具体值见 Open Questions，须先于 C5/FE5 经济 GDD 锁定）。理由：Off 模式恒定 Perfect（零节奏技巧）若以全额功勋计入永久进度，将形成「零技巧最优刷取」漏洞，击穿 game-concept.md:213 反支柱（不得存在绕过节奏的破坏性收益）与「节奏即战斗」支柱。**C1 不直接发放功勋**——C1 仅在 `RhythmJudgmentEvent`/激活模式中暴露当前 `QuantizationMode`，功勋折算由下游功勋结算系统（C5/FE5）读取激活模式后应用于 `EnemyInfoSO.rewardMeritBase`。此约束为 C1 的规范性要求，执行方为 C5/FE5（类比延迟钳制委托给 FE7）。
+> 4. **功勋折算隔离**：Off 模式下击杀敌人所得的**功勋（merit，永久货币，PlayerInfoSO）**按系数 `meritMultiplierOff` 折算（**已锁定 = 0.5**，owner 联合锁定 2026-08-11，严格开区间 0 < `meritMultiplierOff` < 1，登记 registry `merit_multiplier_off`）。理由：Off 模式恒定 Perfect（零节奏技巧）若以全额功勋计入永久进度，将形成「零技巧最优刷取」漏洞，击穿 game-concept.md:213 反支柱（不得存在绕过节奏的破坏性收益）与「节奏即战斗」支柱。**C1 不直接发放功勋**——C1 仅在 `RhythmJudgmentEvent`/激活模式中暴露当前 `QuantizationMode`，功勋折算由下游功勋结算系统（C5/FE5）读取激活模式后应用于 `EnemyInfoSO.rewardMeritBase`。此约束为 C1 的规范性要求，执行方为 C5/FE5（类比延迟钳制委托给 FE7）。
 > 5. **连招深度封顶**：Off 模式下 `CancelTier` 强制为 **Standard**，**不授予 Advanced**（即便评级恒为 Perfect）。理由：game-concept.md:402 明确「高级取消窗口为大师级技巧专属，不可无条件向所有评级开放」——此约束**不可豁免**。Off 模式的 Perfect 是无障碍补偿而非技巧证明，因此评级与连招层级在此**解耦**：Off 玩家可流畅战斗（Standard 取消保证手感），但进阶连招深度（Advanced 取消）仍须通过 HalfBeat/Beat 模式下的真实节奏精准度赢取。
 >
 > **ADR-D3 实现注意**：ADR-D3 的 `OnAttackInput` 伪代码存在 Off 模式路径缺陷——Off 模式下 `_lateWindowActive` 始终为 false（没有拍点事件），导致 `EmitAndClear(0)` 永远不被调用。实现时须为 Off 模式添加独立分支：输入到达时立即以 `offset=0` 调用 `EmitAndClear(0)`，绕过所有拍点等待逻辑。此修正须同步更新 ADR-D3 伪代码。
@@ -454,7 +454,7 @@ effectiveGood    = (nowDspTime < _adaptationEndDspTime) ? _adaptGoodMs    : _eff
 - 适应窗口内（生效边界拍起 2 拍 = `2 × fullBeatMs = 2 × 333.3 = 666.7ms`）：`_adaptGoodMs = max(120, 82.3) = 120ms`（沿用较宽的旧窗口，Good 不骤缩）；`_adaptPerfectMs = max(50, 50) = 50ms`。
 - 窗口结束后（`nowDspTime ≥ _adaptationEndDspTime`）：恢复新 BPM 标准宽度 `82.3ms / 50ms`。
 
-> **BD-2 三系统互引**：本适应窗口为 **C1** 侧承接。**C2**（`combo-system.md`）取消窗在同一适应窗口内以相同 `max` 规则放宽绝对毫秒（BD-2）；**C4**（`combat-director.md`）`SlotCapacity` 改按「每秒令牌速率」归一化以消除 BPM 上升导致的攻击密度线性上升（BD-2）。三文档 Formulas 互相引用 BD-2；`AdaptationWindowBeats` 由 C1/C2 共享同一 Tuning Knob 语义（须先于 FE4 Boss GDD 由 owner 联合锁定）。
+> **BD-2 三系统互引**：本适应窗口为 **C1** 侧承接。**C2**（`combo-system.md`）取消窗在同一适应窗口内以相同 `max` 规则放宽绝对毫秒（BD-2）；**C4**（`combat-director.md`）`SlotCapacity` 改按「每秒令牌速率」归一化以消除 BPM 上升导致的攻击密度线性上升（BD-2）。三文档 Formulas 互相引用 BD-2；`AdaptationWindowBeats` 由 C1/C2 共享同一 Tuning Knob 语义，**已由 C1/C2/C4 三 owner 联合锁定 = 2 拍**（2026-08-11，登记 registry `adaptation_window_beats`，单一 owner=`RhythmConfigSO.AdaptationWindowBeats`）。
 
 > **拍号-only 变更（`bpmChanged==false`）不启用适应窗口**：BPM 未变则标准宽度不变，无骤缩风险，`_adaptationEndDspTime` 保持过去值（判定热路径直接走标准宽度）。
 
@@ -749,10 +749,10 @@ if GoodHalfWindowMs_effective > gridIntervalMs / 2 - 1:
 | `LateWindowMs` | `RhythmConfigSO.LateWindowMs` | float | 100 ms | [50, 200] | 缩小 → 慢半拍的玩家更容易被丢弃；放大 → 后拍容忍度↑ |
 | `ComboMax` | `RhythmConfigSO.ComboMax` | int | **999**（对齐 registry `combo_max`） | [148, 999] | 影响连击系统的心理上限和 UI 显示设计；下界 148 = `combo_multiplier` 触顶点（低于此会提前截断倍率），上界 999 = registry 权威平台段 |
 | `LookaheadMs` | `RhythmConfigSO.LookaheadMs` | float | 来自 ADR-D3 | [50, 200] | F2 提前广播拍点事件的时间量；C1 用它确定 EarlyWindow 起始边界 |
-| `AdaptationWindowBeats`（BD-2） | `RhythmConfigSO.AdaptationWindowBeats` | int | **2** | [0, 4] | BPM 上升后判定窗宽容期时长（拍）；窗口内窗口宽度取变更前后较宽者（C1-F5b），防 BPM 跃升三系统难度尖峰。缩小 → 更快恢复新 BPM 标准难度（张力↑）；0 = 关闭宽容期；放大 → 过渡更平缓（须与 C2 共享同一语义，先于 FE4 Boss GDD 锁定） |
+| `AdaptationWindowBeats`（BD-2） | `RhythmConfigSO.AdaptationWindowBeats` | int | **2**（owner 联合锁定 2026-08-11，对齐 registry `adaptation_window_beats`） | [0, 4] | BPM 上升后判定窗宽容期时长（拍）；窗口内窗口宽度取变更前后较宽者（C1-F5b），防 BPM 跃升三系统难度尖峰。缩小 → 更快恢复新 BPM 标准难度（张力↑）；0 = 关闭宽容期；放大 → 过渡更平缓。**单一 owner = 本字段（PascalCase 权威）**，C2 camelCase `adaptationWindowBeats` 为引用别名、语义等同；C1/C2/C4 三 owner 已联合锁定 2 拍（先于 FE4 Boss GDD） |
 | `platformMinPerfectMs` | 平台配置（非 SO） | float | PC=16.7, iOS=39, Android=80 | [0, 120] | 平台保底 Perfect 窗口；过小则该平台玩家物理上无法打出 Perfect |
 | `ΔCombo` 表 | `RhythmConfigSO.DeltaCombo_*` | int×3 | Perfect=+2, Good=+1, Miss=0 | Perfect∈[1,5], Good∈[0,3], Miss=[0,0]（硬编码，不可负） | 调整连击增速；提高 Perfect 奖励可强化节奏激励循环。Miss ΔCombo **不可为负**——Miss 不清零是 game-concept.md 规则五合约，实现层须断言 `ΔCombo_Miss == 0` |
-| `meritMultiplierOff` | C5/FE5 经济配置（**非 C1 SO**，C1 仅暴露激活模式） | float | **待定，见 Q3**（占位建议 0.5） | (0, 1) — 严格开区间，不可为 0（否则完全剥夺无障碍玩家进度）或 ≥1（否则失去隔离意义） | Off 模式功勋折算系数；过高则「零技巧刷取」漏洞复现，过低则惩罚无障碍用户。最终值须先于 C5/FE5 经济 GDD 锁定（Off 合约第 4 条） |
+| `meritMultiplierOff` | C5/FE5 经济配置（**非 C1 SO**，C1 仅暴露激活模式） | float | **0.5**（owner 联合锁定 2026-08-11，对齐 registry `merit_multiplier_off`） | (0, 1) — 严格开区间，不可为 0（否则完全剥夺无障碍玩家进度）或 ≥1（否则失去隔离意义） | Off 模式功勋折算系数；过高则「零技巧刷取」漏洞复现，过低则惩罚无障碍用户。已锁定 0.5（占位转正）；C5/FE5 经济 GDD 创建时须对称记录并将 owner 迁移至经济 GDD（Off 合约第 4 条为 C1 规范性要求，执行方 C5/FE5） |
 
 **调参指南**：
 - 先调 `PerfectHalfWindowMs` 和 `GoodHalfWindowMs` 确定基础手感，再调 `EarlyWindowMs` / `LateWindowMs` 确定缓冲宽容度。
@@ -847,4 +847,4 @@ if GoodHalfWindowMs_effective > gridIntervalMs / 2 - 1:
 | **M0** | M0 Spike 窗口值验证（PerfectHalfWindowMs=50, GoodHalfWindowMs=120）——这些是估算值，需原型阶段实测确认 | 原型验证 | M0 Spike |
 | **Q1** | **已解决**：`ComboMax` = **999**（对齐 registry `combo_max`；C2/C3 已成文，`combo_multiplier` 于 count=148 触顶 ×5.0，148→999 为平台段），写入 RhythmConfigSO | C2/C3 GDD | ✅ 2026-08-10 |
 | **Q2** | E2 时钟未确认 2s 超时值——是否需要平台差异化（移动端启动更慢）？ | 平台测试 | 移动端原型 |
-| **Q3** | `meritMultiplierOff` 最终值（Off 模式功勋折算系数，占位建议 0.5，安全范围 (0,1) 开区间）——由无障碍公平性与经济防刷两方权衡确定。**须先于 C5/FE5 经济 GDD 锁定**（Off 合约第 4 条为规范性要求，执行方 C5/FE5）。**BD-1 循环阻塞已解除**：owner 裁定「Off perk 封顶 1.0」（C1-F5c），Q3 与 C3 OQ-C3-3 不再互指「待决」——perk 封顶策略已锁定，仅剩 `meritMultiplierOff` 数值待 C5/FE5 定标。 | **C5/FE5 经济 GDD（阻塞下游）**（BD-1 策略已解除循环阻塞） | C5/FE5 设计启动前 |
+| **Q3** | ~~`meritMultiplierOff` 最终值（Off 模式功勋折算系数，占位建议 0.5）~~ **已锁定〔owner 联合锁定 2026-08-11〕= 0.5**（安全范围 (0,1) 开区间，登记 registry `merit_multiplier_off`）。由无障碍公平性与经济防刷两方权衡确定：Off 已有连招深度封顶 Standard + perk 封顶 1.0 + 排行/成就隔离三重护栏，功勋折算为第四重，0.5（半额）为均衡点。Off 合约第 4 条为 C1 规范性要求，执行方 C5/FE5；C5/FE5 经济 GDD 创建时须对称记录并将 owner 迁移。 | RESOLVED（owner 联合锁定，先于 C5/FE5 落地） | ✅ 2026-08-11 |

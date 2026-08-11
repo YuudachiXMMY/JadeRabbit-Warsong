@@ -134,7 +134,7 @@ EffectiveSlotCapacity(m, i, bpm)
 
 **取整与防饥饿保障**：`round` 四舍五入；为不重新引入密度尖峰，不对个别拍位设下限。BPM 极高致某些拍位归一化到 0 时，防饥饿仍由 F-3 `starvationCeiling` 强制提优 + E10 保证（每拍号 `CapacityTable` 至少一拍位 `≥1`，且 `bpmRef` 处该位 `EffectiveSlotCapacity≥1`）兜底——提优敌人在有界拍数内必获令，不产生真饥饿。
 
-**互引 [BD-2]**：本归一化与 C1（判定窗适应窗口 `rhythm-core.md` Formulas）、C2（取消窗适应窗口 `combo-system.md` Formulas）三方共同承接 BPM 跃升——`OnMeterChanged` 生效时引入 2 拍适应窗口（Tuning Knob，默认 2、范围 [0,4]），窗口内 C1 判定窗 / C2 取消窗毫秒宽度取 `max(变更前, 变更后)`，C4 则由本 `EffectiveSlotCapacity` 保持 tokens/sec 恒定。三文档 Formulas 互相引用 BD-2，须同批锁定（详见 Edge Cases E15 与 AC-C4-30）。
+**互引 [BD-2]**：本归一化与 C1（判定窗适应窗口 `rhythm-core.md` Formulas）、C2（取消窗适应窗口 `combo-system.md` Formulas）三方共同承接 BPM 跃升——`OnMeterChanged` 生效时引入 2 拍适应窗口（Tuning Knob，默认 2、范围 [0,4]），窗口内 C1 判定窗 / C2 取消窗毫秒宽度取 `max(变更前, 变更后)`，C4 则由本 `EffectiveSlotCapacity` 保持 tokens/sec 恒定。三文档 Formulas 互相引用 BD-2，**已由 C1/C2/C4 三 owner 联合锁定适应窗口 = 2 拍**（2026-08-11，单一 owner=`RhythmConfigSO.AdaptationWindowBeats`，登记 registry `adaptation_window_beats`；详见 Edge Cases E15 与 AC-C4-30）。
 
 ### F-2　ThreatWeight(distance) — 威胁权重（分段阀值）
 
