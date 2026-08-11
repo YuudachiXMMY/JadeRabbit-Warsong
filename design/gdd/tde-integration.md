@@ -157,7 +157,7 @@ F6 自身不维护内部状态机，但其事件响应决定了系统的全局�
 | F6 **→** F2 | BeatClock | `Play(bgmRef, bpm, timeSig)` / `Stop()` / `Pause()` / `Resume()` | 直接方法调用（独家控制） |
 | F6 **→** F3 | InputEventBus | `EnableGameplayInput()` / `EnableUIInput()` / `DisableAllInput()` | 直接方法调用 |
 | F6 **→** C1 (SC-2) | 节奏量化攻击系统 | `OnPlayerDeath` / `OnRespawnComplete`（CombatCore 可见域事件，桥接 TDE `PlayerDeath`/`RespawnComplete`，负载不含 TDE 类型；C1 据此清空过期 `_pendingInput`/评级状态防幽灵评级） | 事件订阅（纯 C# event） |
-| F4 **→** F6 | LevelConfigSO | `Bpm`、`TimeSignature`、`BgmAssetReference`（每场景注入） | Inspector 序列化字段 |
+| F4 **→** F6 | LevelConfigSO | `Bpm`、`TimeSignature`、`BgmFilePath`（每场景注入） | Inspector 序列化字段 |
 | C2 **→** F6 | 连招图系统 | 调用 `AnimancerAttackPlayer.PlayAttack(attackNode, clip, onComplete)` 发起攻击；`StopAttack()` 取消；`UpdateBpm(newBpm)` 中途更新速度 | 访问 F6 在 Character Prefab 上配置的 `AnimancerAttackPlayer` 组件引用 |
 | FE2 **→** F6 | 房间系统 | `BeatClock.RequestBPMChange(newBpm)`（房间级 BPM 切换） | 通过 F2 的 `RequestBPMChange()` API（非重新调用 `Play()`） |
 | F6 **（通过 TDE）→** C6/FE2 | Hitbox 判定 / 房间系统 | TDE 原生碰撞检测与 `LevelManager` 场景管理基础（F6 正确配置 TDE 后自动提供） | TDE 内置组件（间接） |
@@ -173,7 +173,7 @@ F6 自身不维护内部状态机，但其事件响应决定了系统的全局�
 
 当 `BeatClock.RequestBPMChange(newBpm)` / `RequestTimeSignatureChange()` 被接受时（通常由 Boss 阶段切换触发），F6 执行以下序列：
 
-1. **接受时预加载 + 预调度**：`TDELifecycleAdapter` 订阅 F2 的 **`OnMeterChangeAccepted`** 事件（接受时广播，见 `audio-beat-clock.md` Core Rule 14）。接到通知后立即通过 FMOD（ADR-D6）预加载目标 BGM 资产（`LevelConfigSO.BgmAssetReference` 或 Boss 阶段 SO 中的变体引用）。**关键**：该事件在接受时（而非小节边界）广播，F6 由此获得从接受到边界的**全部提前量**，满足 `PlayScheduled()` 的 500ms 最低提前量约束——无需再手写 `OnBeatExact` + `beat_index_in_measure == numerator - 1` 的边界轮询判定。
+1. **接受时预加载 + 预调度**：`TDELifecycleAdapter` 订阅 F2 的 **`OnMeterChangeAccepted`** 事件（接受时广播，见 `audio-beat-clock.md` Core Rule 14）。接到通知后立即通过 FMOD（ADR-D6）预加载目标 BGM 资产（`LevelConfigSO.BgmFilePath` 或 Boss 阶段 SO 中的变体引用）。**关键**：该事件在接受时（而非小节边界）广播，F6 由此获得从接受到边界的**全部提前量**，满足 `PlayScheduled()` 的 500ms 最低提前量约束——无需再手写 `OnBeatExact` + `beat_index_in_measure == numerator - 1` 的边界轮询判定。
 2. **以事件负载的 raw 边界时刻精确对齐**：直接使用 `OnMeterChangeAccepted` 负载中的 `predictedEffectiveDspTimeRaw`（**raw 坐标系，禁止叠加 latency offset**——见 F2 Core Rule 13）作为无缝换片的调度目标时刻。此值在接受时即由 F2-F3 确定性给出，与实际小节边界一致。
 3. **无缝换片**：通过 `_beatClock.ScheduleBGMTransition(newBgmRef, predictedEffectiveDspTimeRaw)` 精确对齐执行新 BGM 的起始播放（或 Crossfade）。F2 的时钟参数由 F2 在小节边界自行切换并广播 `OnMeterChanged`（生效时），F6 无需同帧手动更新 BeatClock 时钟——职责回归 F2。
 
@@ -309,9 +309,9 @@ attackAnimSpeed = clamp(currentBPM / authoredBpm, SPEED_MIN, SPEED_MAX)
 
 | 系统 | 系统 ID | 依赖内容 | F6 使用方式 |
 |------|---------|---------|------------|
-| BeatClock | F2 | `Play(bgmRef, bpm, timeSig)` / `Stop()` / `Pause()` / `Resume()` / `RequestBPMChange()` / `OnBeat` 事件；**`OnAudioUnavailable`（SC-1 降级信号）** + `OnAudioRestored`/`OnBeatClockResumed`（恢复信号） | `TDELifecycleAdapter` 独家控制生命周期；C2 通过 `OnBeat` 读取 `currentBPM` 更新 `attackAnimSpeed`；**订阅 `OnAudioUnavailable` 同帧 `GameManager.Pause()` + `DisableAllInput()` 承接 F2 降级（SC-1）** |
+| BeatClock | F2 | `Play(bgmPath, bpm, timeSig)` / `Stop()` / `Pause()` / `Resume()` / `RequestBPMChange()` / `OnBeatExact` 事件；**`OnAudioUnavailable`（SC-1 降级信号）** + `OnAudioRestored`/`OnBeatClockResumed`（恢复信号） | `TDELifecycleAdapter` 独家控制生命周期；C2 通过 `OnBeatExact` 读取 `currentBPM` 更新 `attackAnimSpeed`；**订阅 `OnAudioUnavailable` 同帧 `GameManager.Pause()` + `DisableAllInput()` 承接 F2 降级（SC-1）** |
 | InputEventBus | F3 | `EnableGameplayInput()` / `EnableUIInput()` / `DisableAllInput()` | `TDELifecycleAdapter` 在生命周期事件后调用，控制输入通道开关 |
-| LevelConfigSO 数据层 | F4 | `LevelConfigSO.Bpm` / `TimeSignature` / `BgmAssetReference` | `TDELifecycleAdapter` 在 `OnSceneLoaded(Single)` 时读取，注入 `BeatClock.Play()` |
+| LevelConfigSO 数据层 | F4 | `LevelConfigSO.Bpm` / `TimeSignature` / `BgmFilePath` | `TDELifecycleAdapter` 在 `OnSceneLoaded(Single)` 时读取，注入 `BeatClock.Play()` |
 | TopDownEngine | 外部插件 | `InputSystemManagerEventsBased` / `TopDownEngineEvent` / `MMEventListener<T>` / TDE Animator Controller 基础设施 | `JadeRabbitInputManager` 继承 TDE 输入类；`TDELifecycleAdapter` 订阅 TDE 事件总线 |
 | Animancer | 外部插件 | `HybridAnimancerComponent` / `AnimancerState.Speed` / `PlayController()` | F6 在角色 Prefab 上配置 `HybridAnimancerComponent` 和 `AnimancerAttackPlayer`，暴露 `AnimancerAttackPlayer` 引用供 C2 调用 |
 | FMOD | 外部插件 | `FMODUnity.RuntimeManager`（初始化状态验证） | `TDELifecycleAdapter.Start()` 验证 FMOD 已初始化后才允许 `BeatClock.Play()` |
@@ -326,7 +326,7 @@ attackAnimSpeed = clamp(currentBPM / authoredBpm, SPEED_MIN, SPEED_MAX)
 | 房间系统 | FE2 | BPM 变更通道（`BeatClock.RequestBPMChange()`，非重新 `Play()`） | 通过 F2 的 `RequestBPMChange()` API；F6 文档化此约束，FE2 遵守 |
 | 相机系统 | PL1 | TDE `LevelManager` 场景管理（相机跟随依赖 TDE 关卡基础设施） | F6 正确集成 TDE 后自动提供 |
 | 暂停菜单 | P5 | `TopDownEngineEvent(Pause/UnPause)` 信号（TDE 发出，F6 响应） | F6 通过 `TDELifecycleAdapter` 同帧暂停 BeatClock + 切换输入到 UIActive；P5 订阅相同 TDE 事件链的后续处理 |
-| VFX 节奏反馈 | PL2 | BeatClock `OnBeat` 事件（PL2 订阅节奏事件触发反馈序列） | 通过 F2 BeatClock；F6 正确启动 BeatClock 后 PL2 自动可用 |
+| VFX 节奏反馈 | PL2 | BeatClock `OnBeatExact` 事件（PL2 订阅节奏事件触发反馈序列） | 通过 F2 BeatClock；F6 正确启动 BeatClock 后 PL2 自动可用 |
 
 ### 双向依赖确认
 

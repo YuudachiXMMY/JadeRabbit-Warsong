@@ -102,12 +102,16 @@ The startup chain is deterministically ordered by a **single explicit bootstrap 
   1. SaveServiceBootstrap.Start():
         saveService.Initialize();                         // D-4: SYNCHRONOUS, blocking — loads LatencyCalibrationDTO
   2. TDELifecycleAdapter.Start():                          // driven after step 1 by the bootstrap driver
-        if (!saveService.IsInitialized) FailFast(...);     // runtime guard — release-active (NOT Debug.Assert)
-        VerifyFMOD();  VerifyFMODAsyncMode();              // ADR-D6 / F6 Core Rule 12 (existing)
-        SceneManager.sceneLoaded += OnSceneLoaded;         // per ADR-D1 — Play()/input live in OnSceneLoaded, NOT here
+        VerifyFMOD();  VerifyFMODAsyncMode();              // ADR-D6 / F6 Core Rule 12 — cache into _fmodVerified
+        // A1 裁定 (2026-08-11): Start() 只做只读就绪探测，不订阅、不 FailFast-on-IsInitialized。
+        // sceneLoaded 订阅归 OnEnable/OnDisable 配对（ADR-D1 权威，OnEnable 早于 Start，只连线不触发）。
+        // SaveService/FMOD 就绪保证改为 OnSceneLoaded 体首行早退 guard（见下）。
 
 [First OnSceneLoaded(LoadSceneMode.Single) — ADR-D1 owns Play() / EnableGameplayInput()]
   TDELifecycleAdapter.OnSceneLoaded(scene, Single):
+        if (mode != Single) return;                        // ADR-D1 additive-load filter
+        if (!_fmodVerified || !saveService.IsInitialized)  // A1 裁定: 就绪 guard 作为 handler 早退（release-active）
+            { LogFatal(...); return; }                     // 场景保持安全冻结；不 Play()/不启用输入
         if (!_offsetInjected) {                            // one-time guard — re-entrant passes skip re-inject
             var dto = saveService.LoadLatencyCalibration();// D-5 BOOT-LOAD (F6 owns it, not F2)
             beatClock.LatencyOffsetMs = dto.latencyOffsetMs;// D-5 BOOT-INJECT (once; default 0 if !isCalibrated)
@@ -130,25 +134,34 @@ public class TDELifecycleAdapter : MonoBehaviour {
     [SerializeField] private BeatClock _beatClock;      // injected (or BeatClock.Instance)
     private ISaveService _saveService;                  // injected — D-4 seam (prod: SaveService.Instance)
     private bool _offsetInjected;                        // one-time boot-inject guard
+    private bool _fmodVerified;                          // cached FMOD readiness probe (set in Start(), acted in OnSceneLoaded)
 
-    // Start(): FMOD guard + sceneLoaded subscription ONLY.
-    // Play()/EnableGameplayInput() are NOT called here — they live in OnSceneLoaded(Single) per ADR-D1.
-    private void Start() {
-        // Release-active runtime guard (NOT Debug.Assert — must fail loudly in shipped builds):
-        if (!_saveService.IsInitialized) {
-            Debug.LogError("[F6-FATAL] SaveService not initialized before TDELifecycleAdapter.Start() " +
-                           "— the bootstrap driver did not order SaveServiceBootstrap first.");
-            enabled = false;                                       // do not proceed; scene stays in a safe frozen state
-            return;
-        }
-        // ... FMOD readiness gate (existing AC-F6-04 / AC-F6-21) ...
-        SceneManager.sceneLoaded += OnSceneLoaded;                // ADR-D1 lifecycle wiring
+    // A1 裁定 (2026-08-11): sceneLoaded 订阅归 OnEnable/OnDisable（ADR-D1 权威），不在 Start()。
+    // OnEnable 早于 Start，仅连线不触发；SaveService 就绪保证改为 OnSceneLoaded 体首行早退 guard。
+    private void OnEnable() {
+        this.MMEventStartListening<TopDownEngineEvent>();
+        SceneManager.sceneLoaded += OnSceneLoaded;                // ADR-D1 lifecycle wiring（权威订阅位置）
+    }
+    private void OnDisable() {
+        this.MMEventStopListening<TopDownEngineEvent>();
+        SceneManager.sceneLoaded -= OnSceneLoaded;                // 对称退订，防悬空委托/重复订阅
     }
 
-    // OnSceneLoaded(Single): unchanged ADR-D1 authority over Play()/input,
-    // with the one-time boot-inject inserted ahead of the FIRST Play().
+    // Start(): 只做只读就绪探测（缓存 FMOD 就绪）。不订阅、不 Play()、不 EnableGameplayInput()。
+    private void Start() {
+        // ... FMOD readiness probe (existing AC-F6-04 / AC-F6-21) — cached into _fmodVerified ...
+    }
+
+    // OnSceneLoaded(Single): ADR-D1 authority over Play()/input; readiness guards are
+    // handler-body early-returns (A1 裁定), with the one-time boot-inject ahead of the FIRST Play().
     private void OnSceneLoaded(Scene scene, LoadSceneMode mode) {
         if (mode != LoadSceneMode.Single) return;                 // ADR-D1 additive-load filter
+        // Release-active runtime guard (NOT Debug.Assert — must fail loudly in shipped builds):
+        if (!_fmodVerified || !_saveService.IsInitialized) {
+            Debug.LogError("[F6-FATAL] FMOD or SaveService not ready before first scene Play() " +
+                           "— the bootstrap driver did not order SaveServiceBootstrap first.");
+            return;                                                // scene stays in a safe frozen state; no Play()/input
+        }
         if (!_offsetInjected) {
             var cal = _saveService.LoadLatencyCalibration();      // D-5 boot-load (F6 owns it, not F2)
             _beatClock.LatencyOffsetMs = cal.latencyOffsetMs;     // D-5 boot-inject (once; default 0 if !isCalibrated)
