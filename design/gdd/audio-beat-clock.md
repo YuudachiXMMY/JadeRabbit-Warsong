@@ -55,7 +55,7 @@ F2 音频/拍点时钟系统是《玉兔：破阵》节奏战斗体系的时序�
 
 9. **BPM=0 兜底 / 音频不可用降级**：
    - **BPM=0 兜底**：关卡配置 `bpm=0` 时，F2 回退到固定 120 BPM 的内部 DSP 时钟正常运行；HUD 节奏指示器继续工作；记录 Warning 日志。
-   - **音频设备不可用降级**：`IAudioPlayer.PlayScheduled()`（生产实现 `FMODAudioPlayerImpl`，见 ADR-D6）失败或音频设备断开时，F2 执行以下降级序列：(1) F2 自身在 1 帧内停止拍点广播并转入 `Paused`（等同于内部 `Pause()` 信号，同帧广播 `OnBeatClockPaused`）——**但 F2 无权暂停 TDE 或禁用 F3 输入**，实际的「1 帧内暂停游戏」由 **F6（`TDELifecycleAdapter` / 降级协调器）订阅本序列步骤 (2) 的 `OnAudioUnavailable` 事件后、同帧执行 `TDE.Pause()` + `F3.DisableAllInput()`** 承接（SC-1）；F2 只负责发事件，暂停执行归 F6；(2) 发出 `OnAudioUnavailable` 事件，UI 层订阅后显示 "Audio Unavailable" Toast、F6 订阅后承接实际暂停（见 SC-1）；(3) 同步发出 `OnVisualMetronomeActivated` 事件，P1（HUD）订阅后启动视觉节拍指示器（屏幕边缘随 `Time.unscaledTime` 闪烁；音频不可用时 FMOD DSP 时钟（经 `IDSPClock.GetCurrentTime()` 读取，生产实现 `FMODDSPClockImpl`）可能冻结，须以墙上时钟 `Time.unscaledTime` 驱动视觉动画）；(4) DSP 时钟在 `Paused` 状态下仍可查询，节奏判定（C1）暂停期间不触发；(5) 设备重连 / 音频恢复时，F2 在**同一帧**广播 **`OnAudioRestored`** 事件（SC-1 恢复对称信号，F6 `TDELifecycleAdapter` 订阅后对称执行 `GameManager.UnPause()` + `InputEventBus.EnableGameplayInput()`，节拍先于输入；见 `tde-integration.md` Rule 14），并从暂停位置调用 `Resume()` 续播（复用 BC-6 的 `OnBeatClockResumed` 首拍重锚信号）。**理由**：「节奏即战斗」支柱要求节奏判定仅在玩家可感知拍点时生效；无音频时不可隐式惩罚玩家（游戏暂停，判定亦暂停）。
+   - **音频设备不可用降级**：`IAudioPlayer.PlayScheduled()`（生产实现 `FMODAudioPlayerImpl`，见 ADR-D6）失败或音频设备断开时，F2 执行以下降级序列：(1) F2 自身在 1 帧内停止拍点广播并转入 `Paused`（等同于内部 `Pause()` 信号，同帧广播 `OnBeatClockPaused`）——**但 F2 无权暂停 TDE 或禁用 F3 输入**，实际的「1 帧内暂停游戏」由 **F6（`TDELifecycleAdapter` / 降级协调器）订阅本序列步骤 (2) 的 `OnAudioUnavailable` 事件后、同帧执行 `TDE.Pause()` + `F3.DisableAllInput()`** 承接（SC-1）；F2 只负责发事件，暂停执行归 F6；(2) 发出 `OnAudioUnavailable` 事件，UI 层订阅后显示 "Audio Unavailable" Toast、F6 订阅后承接实际暂停（见 SC-1）；(3) 同步发出 `OnVisualMetronomeActivated` 事件，P1（HUD）订阅后启动视觉节拍指示器（屏幕边缘随 `Time.unscaledTime` 闪烁；音频不可用时 FMOD DSP 时钟（经 `IDSPClock.GetDspTime()` 读取，生产实现 `FMODDSPClockImpl`）可能冻结，须以墙上时钟 `Time.unscaledTime` 驱动视觉动画）；(4) DSP 时钟在 `Paused` 状态下仍可查询，节奏判定（C1）暂停期间不触发；(5) 设备重连 / 音频恢复时，F2 在**同一帧**广播 **`OnAudioRestored`** 事件（SC-1 恢复对称信号，F6 `TDELifecycleAdapter` 订阅后对称执行 `GameManager.UnPause()` + `InputEventBus.EnableGameplayInput()`，节拍先于输入；见 `tde-integration.md` Rule 14），并从暂停位置调用 `Resume()` 续播（复用 BC-6 的 `OnBeatClockResumed` 首拍重锚信号）。**理由**：「节奏即战斗」支柱要求节奏判定仅在玩家可感知拍点时生效；无音频时不可隐式惩罚玩家（游戏暂停，判定亦暂停）。
 
 10. **DontDestroyOnLoad 单例**: BeatClock 使用 `DontDestroyOnLoad` 模式跨场景存活。房间切换时 F6 调用 `Stop()` 后再 `Play(newClip, newBpm, newTimeSig)` 重置。`Stop()` 将 `global_beat_index` 归零、清除所有 Pending 状态、释放 BGM AudioSource 引用（由 F6 在下一次 `Play()` 前重新注入）。**`LatencyOffsetMs` 不受 `Stop()` 影响**——延迟校准数据为设备级属性，跨房间、跨关卡保持有效。其写者遵循两阶段模型（ADR-D10 D-5）：**启动期**由 F6 gate 一次性 boot-inject，受 `_offsetInjected` 一次性 guard 保护——重入的 `OnSceneLoaded(Single)`（复活/换关）不重复注入、不覆盖运行期 FE3 写入；**运行期唯一写者为 FE3 校准流程**，Rule 10 的单一写者不变量在运行期完整保留。BeatClock 自身**禁止**调用 `SaveService.LoadLatencyCalibration()` 或以任何方式自 load（registry forbidden pattern `f2_self_load_latency_from_f5`）。下游系统不应假定 `global_beat_index` 或 `measure_index` 在跨房间场景中连续。
 
@@ -65,7 +65,7 @@ F2 音频/拍点时钟系统是《玉兔：破阵》节奏战斗体系的时序�
 - `double GetConfirmedDSPStart()`：返回最近一次 `ConfirmDSPStart()` 写入的 `dsp_start_time` 值；**`Play()` 后、首次 `ConfirmDSPStart()` 调用前返回 `-1.0` 作为零状态标志**（`AudioSettings.dspTime` 始终 ≥ 0，`-1.0` 唯一标识"尚未确认"状态，与 `double.MaxValue` 的 `nextBeatDspTime` 零状态对称设计）。
 - `bool IsStartConfirmed`：`ConfirmDSPStart()` 至少调用过一次后为 `true`；消费方在使用 `GetConfirmedDSPStart()` 前**须**先检查此属性，`false` 时不得以返回值构造时序计算（避免以 `-1.0` 作为 DSP 锚点）。
 
-   > **线程模型（ADR-D6 Addendum，2026-08-08，normative — 解决 OQ-6）**：BeatClock 调度已确定为 **FMODUnity RuntimeManager + 主线程 `Update()` 轮询** FMOD DSP 时钟；ADR-D6 明确**否决** `OnAudioFilterRead`。`BeatClock.Update()`（主线程）经 `IDSPClock.GetCurrentTime()` 读取 DSP 时钟后**直接**分发 `DispatchBeatEvent()`——无队列、无跨线程 marshalling；**`ConcurrentQueue<BeatEventData>` 不需要、且禁止引入**（徒增约 1 帧延迟、零收益）。所有 C# 拍点事件分发，以及 `LatencyOffsetMs` 的全部写者（F6 boot-inject 与 FE3 运行期校准，ADR-D10 D-5），均在主线程执行，无需任何同步原语。**下游合约（持久有效，与调度机制无关）**：订阅 F2 事件的系统**必须**使用负载中的 `BeatEventData.beat_dsp_time` 进行时序判定；**禁止**在回调触发时读取 `AudioSettings.dspTime`。PlayMode 线程安全测试仍保留并必需（Validation：1000 次快速 `BeatClock.Update()` → 零 `UnityException`），作为主线程不变量的守卫（非跨线程队列覆盖）。
+   > **线程模型（ADR-D6 Addendum，2026-08-08，normative — 解决 OQ-6）**：BeatClock 调度已确定为 **FMODUnity RuntimeManager + 主线程 `Update()` 轮询** FMOD DSP 时钟；ADR-D6 明确**否决** `OnAudioFilterRead`。`BeatClock.Update()`（主线程）经 `IDSPClock.GetDspTime()` 读取 DSP 时钟后**直接**分发 `DispatchBeatEvent()`——无队列、无跨线程 marshalling；**`ConcurrentQueue<BeatEventData>` 不需要、且禁止引入**（徒增约 1 帧延迟、零收益）。所有 C# 拍点事件分发，以及 `LatencyOffsetMs` 的全部写者（F6 boot-inject 与 FE3 运行期校准，ADR-D10 D-5），均在主线程执行，无需任何同步原语。**下游合约（持久有效，与调度机制无关）**：订阅 F2 事件的系统**必须**使用负载中的 `BeatEventData.beat_dsp_time` 进行时序判定；**禁止**在回调触发时读取 `AudioSettings.dspTime`。PlayMode 线程安全测试仍保留并必需（Validation：1000 次快速 `BeatClock.Update()` → 零 `UnityException`），作为主线程不变量的守卫（非跨线程队列覆盖）。
 
 13. **DSP 时间坐标系强制标注（raw/adjusted 命名规则）**: 所有跨模块传递的 DSP 时间戳字段与事件 payload **必须**在命名上显式标注坐标系后缀——`...Raw`（未应用延迟偏移，用于音频硬件调度调用，如 `IAudioPlayer.PlayScheduled()`、`ConfirmDSPStart()`、BGM 换片）或 `...Adjusted`（已应用 F2-F5 偏移，用于玩家判定/呈现消费，如 C1 判定窗口、P1/PL2 节奏呈现）。**禁止**使用裸 `dspTime` 字段名。理由：raw 与 adjusted 混用是本项目递归出现的缺陷类（F2-F3 暂停恢复公式、F2-F7 HUD 公式已两次修订，见 B2 修订警告），最大引入 ±200ms 坐标系误差。**契约铁律**：音频调度调用一律使用 raw（物理输出延迟在硬件层已自然发生，叠加 offset 将双重应用，产生随玩家校准值漂移的可听接缝）；面向玩家的时间对齐一律使用 adjusted。
 
@@ -113,7 +113,7 @@ F2 音频/拍点时钟系统是《玉兔：破阵》节奏战斗体系的时序�
 | F2 **→** C1 / C3 | 量化 / 心法 | `OnBeatClockPaused` / `OnBeatClockResumed`（BC-6；恢复携首拍 raw DSP，供 C1 重锚拍网格 + 清空过期 `_pendingInput`、C3 心法冻结栈恢复） | 事件订阅 |
 | F2 **→** F6 (SC-1) | TDE 集成层 | `OnAudioUnavailable`（设备断开降级信号，F6 同帧 `GameManager.Pause()`+`DisableAllInput()` 承接）；`OnAudioRestored`（恢复对称信号，F6 同帧 UnPause+EnableGameplayInput） | 事件订阅 |
 | FE3 **→** F2 | 延迟校准系统 | `LatencyOffsetMs`（float，毫秒） | 属性注入（可随时重写；FE3 每次校准完成后更新） |
-| F2 **→** FE3 | 延迟校准系统 | `GetCurrentDSPTime()`（double，秒） | 同步查询接口 |
+| F2 **→** FE3 | 延迟校准系统 | `IDSPClock.GetDspTime()`（double，秒；ADR-D8 §5 钦定名） | 同步查询接口 |
 | F2 **→** P1 | HUD | `OnBeatExact` + `BeatProgress`（0–1，帧查询） | 事件订阅 + 帧查询 |
 | F2 **→** PL2 | VFX 节奏反馈 | `OnBeatLookahead` / `OnHalfBeatLookahead` | 事件订阅 |
 | F6 **→** F2 | TDE 集成层 | 暂停/恢复信号；BGM FMOD asset 引用及 DSP 起始时间；实际播放确认时间 | 方法调用（`Play` / `Pause` / `Resume` / `Stop` / `ConfirmDSPStart`） |
@@ -335,13 +335,13 @@ lookahead_trigger_time = adjusted_beat_time − (lookahead_ms / 1000.0)
 供 P1 HUD 帧查询使用，驱动节奏指示器脉冲动画。
 
 ```
-adjusted_dsp_now = IDSPClock.GetCurrentTime() + latency_offset_ms / 1000.0
+adjusted_dsp_now = IDSPClock.GetDspTime() + latency_offset_ms / 1000.0
 beat_progress = clamp((adjusted_dsp_now − last_beat_time) / beat_interval_s, 0.0, 1.0)
 ```
 
 | 变量 | 类型 | 范围 | 描述 |
 |------|------|------|------|
-| `adjusted_dsp_now` | double | [0, +∞) | 当前帧的**延迟调整后** DSP 时间；= `IDSPClock.GetCurrentTime() + latency_offset_ms / 1000.0`（生产实现通过注入的 `FMODDSPClockImpl` 读取 FMOD DSP 时钟，见 ADR-D6）。**必须使用调整后值**：`last_beat_time` 为 `adjusted_beat_time`（含偏移），若以原始 DSP 时间直接相减将引入最大 ±200ms 坐标系误差 |
+| `adjusted_dsp_now` | double | [0, +∞) | 当前帧的**延迟调整后** DSP 时间；= `IDSPClock.GetDspTime() + latency_offset_ms / 1000.0`（生产实现通过注入的 `FMODDSPClockImpl` 读取 FMOD DSP 时钟，见 ADR-D6）。**必须使用调整后值**：`last_beat_time` 为 `adjusted_beat_time`（含偏移），若以原始 DSP 时间直接相减将引入最大 ±200ms 坐标系误差 |
 | `last_beat_time` | double | [0, +∞) | 最近一次全拍 Exact 事件的 `adjusted_beat_time`（F2-F5 输出）；每全拍更新。与 `adjusted_dsp_now` 坐标系一致 |
 | `beat_interval_s` | double | [0.25, 0.75] | 来自 F2-F1 |
 | `beat_progress` | float | [0.0, 1.0] | 0.0 = 刚经过拍点；1.0 = 下一拍点即将到达 |
@@ -485,7 +485,7 @@ F2 是 Foundation 层系统，**编译期无上游依赖**（不 `using` 其他�
 |---------|---------|----------------|------|
 | **C1** 节奏量化攻击系统 | **硬依赖** | `OnHalfBeatLookahead`（半拍网格时间戳）+ `BeatStateSnapshot` | 事件订阅 + 查询 |
 | **C4** 战斗导演 | **硬依赖** | `OnBeatLookahead`（时间戳 + 小节号 + 拍内序号） | 事件订阅 |
-| **FE3** 延迟校准系统 | **硬依赖** | `GetCurrentDSPTime()` + 向 F2 注入 `LatencyOffsetMs`（**运行期唯一写者**，ADR-D10 D-5） | 双向：FE3 查询 F2，FE3 向 F2 注入偏移 |
+| **FE3** 延迟校准系统 | **硬依赖** | `IDSPClock.GetDspTime()` + 向 F2 注入 `LatencyOffsetMs`（**运行期唯一写者**，ADR-D10 D-5） | 双向：FE3 查询 F2，FE3 向 F2 注入偏移 |
 | **FE4** Boss 战系统 | **软依赖** | `RequestBPMChange()` / `RequestTimeSignatureChange()` | 方法调用（通过 C4 间接依赖，但也直接调用切换接口） |
 | **P1** HUD | **硬依赖** | `OnBeatExact` + `BeatProgress`（帧查询） | 事件订阅 + 帧查询 |
 | **PL2** VFX 节奏反馈 | **软依赖** | `OnBeatLookahead` / `OnHalfBeatLookahead` | 事件订阅（无节拍事件时降级为无节奏动画，不崩溃） |

@@ -60,7 +60,7 @@ BeatClock (F2) will use **FMOD Studio 2.x** as the audio middleware, replacing U
 
 ```
 [F6 BGM Manager]
-   │ FMODDSPClockImpl.GetCurrentTime() → schedule target = now + 0.5s
+   │ FMODDSPClockImpl.GetDspTime() → schedule target = now + 0.5s
    │ FMODAudioPlayerImpl.PlayScheduled(targetDspSeconds)
    ▼
 [FMODUnity.RuntimeManager]
@@ -76,7 +76,7 @@ BeatClock (F2) will use **FMOD Studio 2.x** as the audio middleware, replacing U
 [BeatClock : MonoBehaviour]
   Update() {
     // RuntimeManager.Update() already called before this; FMOD state is fresh
-    dspNow = idspClock.GetCurrentTime();        // FMODDSPClockImpl → sample-level
+    dspNow = idspClock.GetDspTime();            // FMODDSPClockImpl → sample-level
     if (dspNow >= nextBeatDspTime) → DispatchBeatEvent();  // main thread, no queue
   }
    │ C# events (main thread safe)
@@ -92,7 +92,8 @@ BeatClock (F2) will use **FMOD Studio 2.x** as the audio middleware, replacing U
 // NOTE: getDSPClock is on IChannelControl (Channel/ChannelGroup), NOT on FMOD.System
 // Must read from master channel group — its dspclock IS the system DSP clock
 public class FMODDSPClockImpl : IDSPClock {
-    public double GetCurrentTime() {
+    // Canonical method name GetDspTime() per ADR-D8 §5 (was GetCurrentTime()); IDSPClock owned by ADR-D8.
+    public double GetDspTime() {
         // getDSPClock lives on ChannelGroup, not System — use master channel group
         FMODUnity.RuntimeManager.CoreSystem.getMasterChannelGroup(out FMOD.ChannelGroup masterGroup);
         masterGroup.getDSPClock(out ulong dspClock, out ulong parentClock);
@@ -200,13 +201,13 @@ Greenfield project — no existing audio code to migrate. Integration sequence f
 
 ## Validation Criteria
 1. **Build**: FMOD for Unity package imports without compile errors in Unity 6.3 LTS (6000.3.19f1) — zero missing native library warnings, no `[SerializeField]` compile errors
-2. **DSP clock precision**: `FMODDSPClockImpl.GetCurrentTime()` EditMode test — 500 consecutive DSP clock samples match expected beat intervals within < 0.1ms (MockDSPClock, deterministic)
+2. **DSP clock precision**: `FMODDSPClockImpl.GetDspTime()` EditMode test — 500 consecutive DSP clock samples match expected beat intervals within < 0.1ms (MockDSPClock, deterministic)
 3. **Android actual_start accuracy**: M0 Spike measurement — `actual_start` deviation from `scheduledDSPTime` < 5ms on Android (vs 23-46ms Unity Native baseline)
 4. **Thread safety**: 1000 rapid BeatClock.Update() calls in PlayMode produce zero `UnityException` or cross-thread errors
 5. **Scheduled playback**: `FMODAudioPlayerImpl` — audio begins within 2ms of `scheduledStartDSPClock` on PC (verified via FMOD DSP clock read immediately after playback starts in a PlayMode test)
 
 ## Related Decisions
-- `design/gdd/audio-beat-clock.md` — F2 GDD; consumer of `IDSPClock` / `IAudioPlayer` interfaces; F2-F7 formula updated to use `IDSPClock.GetCurrentTime()` per this ADR
+- `design/gdd/audio-beat-clock.md` — F2 GDD; consumer of `IDSPClock` / `IAudioPlayer` interfaces; F2-F7 formula updated to use `IDSPClock.GetDspTime()` per this ADR (canonical name per ADR-D8 §5)
 - D1 (TDE integration): TDE handles movement/lifecycle audio at the MMFeedbacks level; FMOD handles all audio output — no conflict at the architecture level; Feel/MMFeedbacks audio feedback types require Post-MVP migration to `MMF_FMODEvent`
 - D5 (Rhythm Core design): BeatScheduler in CombatCore uses `IDSPClock` — `FMODDSPClockImpl` is the production implementation
 - ADR-D2 (Enemy AI): No dependency; AI systems access beat data via BeatClock's C# events, not via audio APIs
@@ -226,7 +227,7 @@ ADR-D6's Decision selected **FMODUnity RuntimeManager + main-thread Update-loop 
 
 1. **Two threads, one dispatch thread.** FMOD runs its audio mixing on its **own internal audio thread** (see Architecture Diagram: `FMOD Audio Thread (internal)`). All BeatClock logic and **all C# beat event dispatch run exclusively on the Unity main thread.** There is **no** beat callback on the FMOD audio thread and **no** use of Unity's `OnAudioFilterRead` audio thread.
 
-2. **Poll, don't call back.** `BeatClock.Update()` (main thread) reads the DSP clock via `IDSPClock.GetCurrentTime()` and dispatches `DispatchBeatEvent()` **directly, with no queue and no cross-thread marshalling.** `ConcurrentQueue<BeatEventData>` is **NOT required and must not be introduced** under this architecture — it would add ~1 frame of latency for zero benefit.
+2. **Poll, don't call back.** `BeatClock.Update()` (main thread) reads the DSP clock via `IDSPClock.GetDspTime()` and dispatches `DispatchBeatEvent()` **directly, with no queue and no cross-thread marshalling.** `ConcurrentQueue<BeatEventData>` is **NOT required and must not be introduced** under this architecture — it would add ~1 frame of latency for zero benefit.
 
 3. **Frame ordering guarantee.** `FMODUnity.RuntimeManager.Update()` runs (via its own hook) **before** `BeatClock.Update()` within the same frame, so the DSP clock BeatClock reads is fresh. If a Script Execution Order dependency is needed to guarantee this, it must be documented in the F2/bootstrap setup (see ADR-D10 Bootstrap Sequencing Contract).
 
