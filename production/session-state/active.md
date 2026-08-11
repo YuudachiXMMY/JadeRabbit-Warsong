@@ -394,3 +394,12 @@ Task: 对 C2 跑 /design-review；follow-up 修 C1 clamp 50→999 (OQ1)
 - Blocking issues: B1 (F2 未定义 OnBpmChanged/OnBeatClockResumed 事件); B2 (F2↔F5 初始化时序/未初始化读取矛盾); D1 (Off 模式未隔离 merit/进度, 击穿反支柱, 须先于 C5/FE5 锁定)
 - Recommended next: /design-review design/gdd/audio-beat-clock.md 修复 F2 两个 Blocking, 再修 F5, 然后重跑 /review-all-gdds
 - Report: design/gdd/gdd-cross-review-2026-08-08.md
+
+## Session Extract — /review-all-gdds 2026-08-09
+- Verdict: FAIL
+- GDDs reviewed: 6 (F2, F3, C1, F4, F5, F6)
+- Flagged for revision (marked in systems-index): C1 rhythm-core (Approved→Needs Revision)。F2 保持 Amended-Pending、F5 保持 Needs Revision（用户裁定仅标 C1）
+- Blocking issues: B1 (C1 悬空引用 OnBpmChanged, F2 已改名 OnMeterChangeAccepted/OnMeterChanged; OnBeatClockResumed 未定义-OQ5 延后); B2 (F2↔F5 初始化时序, F5 无 OnInitialized-OQ4 延后待 tech-director ADR); B3 (F6 调 F2 未定义 ScheduleBGMTransition); D1 (Off 无障碍合约仍无 merit/进度隔离, 完全未解决); 3c-1 (Off 档结构性主导策略)
+- 可立即修 (与 ADR 无关): C1 的 OnBpmChanged → OnMeterChangeAccepted/OnMeterChanged (F2/F6 已就位, C1/C4 未跟进)
+- Recommended next: /design-review design/gdd/rhythm-core.md 修 C1 悬空引用+Off 隔离; 并推进 technical-director 裁定 OQ-4(D-4/D-5)+OQ-5 解锁 B2 三文档同轮修订
+- Report: design/gdd/gdd-cross-review-2026-08-09.md
