@@ -30,7 +30,7 @@
 #   Superseded entries:     Grep pattern="status: superseded"
 
 version: 1
-last_updated: "2026-07-18"
+last_updated: "2026-08-11"
 
 # ─── STATE OWNERSHIP ─────────────────────────────────────────────────────────
 # Who is the authoritative owner of each piece of shared game state.
@@ -284,6 +284,28 @@ performance_budgets:
     added: 2026-08-08
     revised: ""
 
+  - contract: di_test_seam_contracts
+    status: active
+    pattern: direct_call
+    producer: adr-d8-di-test-seams
+    consumers:
+      - c1-rhythm-judger
+      - c2-combo-graph
+      - c3-perk-roll-service
+      - c4-combat-director
+    adr: docs/architecture/adr-d8-di-test-seams.md
+    signal_signature: "ADR-D8 owns the DECLARATIONS of five consumer-facing DI seam interfaces + a canonical pause/resume source (implementations owned by each system's ADR; ADR-D8 owns the interface + Mock contract). (1) IBeatClock — READ-ONLY consumer face (events OnBeatLookahead/OnHalfBeatLookahead/OnBeatExact/OnHalfBeatExact/OnMeterChangeAccepted/OnMeterChanged/OnBeatClockPaused/OnBeatClockResumed + GetSnapshot()/LatencyOffsetMs{get}/DSPClock{get}/GetBeatIntervalSeconds()/IsStartConfirmed/GetConfirmedDSPStart()); NO lifecycle methods (those live in IBeatClockLifecycle, F6-only per ADR-D1). Prod BeatClock (ADR-D6) / test MockBeatClock. (2) IInputEventBus — read face (OnAttackInput/OnDashInput/OnPause/GetCurrentMoveInput()/IsChargedAttackHeld); state methods stay F3 control face (ADR-D1). Prod InputEventBus / test MockInputEventBus. (3) IComboCounter — C1-EXPOSED read-only combo face (int CurrentCombo{get}; int ComboMax{get}=999); C2 reads, never writes. Prod RhythmJudger : IComboCounter (C1) / test MockComboCounter. (4) IRandomSource — deterministic RNG (int Next(int maxExclusive); double NextDouble(); void Reseed(int); int Seed{get}). Prod SystemRandomSource / test MockRandomSource. (5) IDSPClock — double GetDspTime() [CANONICAL method name]. Prod FMODDSPClockImpl (ADR-D6) / test MockDSPClock. Injection: [SerializeField] MonoBehaviour ref + `as IX` wrapper + #if UNITY_EDITOR||DEVELOPMENT_BUILD SetXForTesting(); requires [assembly: InternalsVisibleTo] on Runtime asmdef. Pattern mirrors ADR-D10 ISaveService/MockSaveService."
+    referenced_by:
+      - docs/architecture/adr-d8-di-test-seams.md
+      - docs/architecture/adr-d3-rhythm-quantization-core.md
+      - docs/architecture/adr-d6-audio-middleware.md
+      - design/gdd/rhythm-core.md
+      - design/gdd/combo-system.md
+      - design/gdd/perk-system.md
+      - design/gdd/combat-director.md
+    added: 2026-08-11
+    revised: ""
+
 
 # ─── API DECISIONS ───────────────────────────────────────────────────────────
 # Which engine APIs are chosen for which purpose across the project.
@@ -418,6 +440,20 @@ api_decisions:
     added: 2026-07-19
     revised: ""
 
+  - purpose: dsp_clock_canonical_method
+    status: active
+    api: "IDSPClock.GetDspTime() — the single canonical method name for reading FMOD DSP time (seconds) across F2/F3/C4"
+    not: "GetCurrentTime() (F2/ADR-D6 legacy); GetCurrentDSPTime() (historical). All three call sites must converge on GetDspTime()."
+    adr: docs/architecture/adr-d8-di-test-seams.md
+    reason: "Three docs diverged on the DSP-clock method name (F2 GetCurrentTime, historical GetCurrentDSPTime, F3 GetDspTime — cross-review W2/W-06). ADR-D8 owns the IDSPClock interface declaration and canonicalizes GetDspTime() (clearest semantics; already used by F3 input-timestamp injection). ADR-D6 FMODDSPClockImpl + audio-beat-clock.md must rename to GetDspTime() in the naming-sync revision."
+    referenced_by:
+      - docs/architecture/adr-d8-di-test-seams.md
+      - docs/architecture/adr-d6-audio-middleware.md
+      - design/gdd/audio-beat-clock.md
+      - design/gdd/input-event-system.md
+    added: 2026-08-11
+    revised: ""
+
 # Example:
 #
 # api_decisions:
@@ -527,6 +563,20 @@ forbidden_patterns:
     why: "Unity's Instantiate(scriptableObject) deep-copies serialized data but shallow-copies non-serialized reference-type fields. A reference-type field in PerkParameter would cause the PerkSO clone and the original asset to share the same object reference — mutations to the clone's parameter would silently corrupt the original asset (the exact bug Rule D4-1 exists to prevent)."
     adr: docs/architecture/adr-d4-so-data-layer.md
     added: 2026-07-19
+
+  - pattern: parallel_pause_resume_event_source
+    status: active
+    description: "Do not define per-system OnGamePaused / OnGameResumed (or any parallel pause/resume event) in C1/C2/C3/C4/F6. F2 BeatClock is the SOLE publisher of the canonical OnBeatClockPaused / OnBeatClockResumed (payload BeatClockPauseEventData); subscribers are C1/C3/F6. C4 may subscribe to the same events if needed later — without introducing a new source."
+    why: "BC-6: three systems previously diverged on pause/resume signal sources, breaking coordinated pause handling (C1 grid re-anchor, C3 modifier freeze, F6 audio-degrade recovery). A single F2-published source with a pair invariant (AC-F2-28: exactly one Paused before its paired Resumed) is the only way subscribers stay coherent. F6 TDELifecycleAdapter initiates via IBeatClockLifecycle.Pause()/Resume(); F2 publishes the events."
+    adr: docs/architecture/adr-d8-di-test-seams.md
+    added: 2026-08-11
+
+  - pattern: lifecycle_methods_in_beatclock_consumer_seam
+    status: active
+    description: "The IBeatClock consumer-seam interface (ADR-D8) MUST NOT declare Play/Stop/Pause/Resume/RequestBPMChange/RequestTimeSignatureChange. Those belong to IBeatClockLifecycle (ADR-D1, F6-only). Consumers (C1/C4) inject IBeatClock and get read/subscribe access only; they cannot reach lifecycle control through the injected type."
+    why: "Compile-time enforcement of beatclock_lifecycle_bypass. If IBeatClock exposed lifecycle methods, an injected consumer could call Pause() directly, splitting lifecycle control away from F6 TDELifecycleAdapter and desyncing audio/rhythm. Interface segregation (read face vs control face) turns the doc-level ban into a compile-time unreachable path."
+    adr: docs/architecture/adr-d8-di-test-seams.md
+    added: 2026-08-11
 
 # Example:
 #
