@@ -87,6 +87,16 @@ F6 consists of **two components** working in concert:
 
 `TDELifecycleAdapter.Start()` (not `Awake()` — to avoid Script Execution Order race with `FMODUnity.RuntimeManager`) verifies that FMOD RuntimeManager is initialized and running in async mode. If this check fails, the adapter logs a fatal error and does not proceed — the scene remains in a safe frozen state.
 
+### Lifecycle Subscription (A1 裁定 2026-08-11)
+
+**`OnEnable()` / `OnDisable()` 配对是 `sceneLoaded` 与 `MMEventListener<TopDownEngineEvent>` 订阅的唯一权威位置。** 二者对称订阅 / 退订，`Start()` 只做只读就绪探测（缓存 `_fmodVerified`），**不订阅任何事件**。所有就绪前置条件（FMOD、`ISaveService.IsInitialized`）以 **handler 内早退 guard** 形式落在 `OnSceneLoaded()` 体内，而非用于门控订阅动作。
+
+裁定理由（`/architecture-review 2026-08-11` A1，BLOCKING D1/D10）：
+
+- **对齐 MoreMountains 惯例**：`MMEventListener<T>` 的 `MMEventStartListening` / `MMEventStopListening` 必须成对置于 `OnEnable` / `OnDisable`；将 `sceneLoaded` 一并放入同一对回调，避免组件 disable→re-enable 时残留悬空委托或重复订阅（`OnBeatExact` 逐拍路径的重复订阅泄漏成本最高）。
+- **消解与 ADR-D10 的冲突**：ADR-D10 §Key Interfaces 曾把 `sceneLoaded += OnSceneLoaded` 放在 `Start()` 里，理由是要排在 `SaveServiceBootstrap` 之后。本裁定把该"排序"关切从**订阅时机**转移到 **handler 早退 guard**：`OnSceneLoaded` 体首行 `if (!_fmodVerified || !_saveService.IsInitialized) return;` 保证首帧场景在 SaveService 就绪前不会执行 `Play()` / 注入 / `EnableGameplayInput()`。订阅可在 `OnEnable`（早于 `Start`）安全建立——它只连线不触发。**D1 为生命周期订阅位置的权威 ADR，D10 的 `Start()` 订阅示例以此为准更新。**
+- D10 拥有的一次性 offset boot-inject（`_offsetInjected` guard + `LoadLatencyCalibration()`）位置与所有权不变，仍落在 `OnSceneLoaded(Single)` 体内、首个 `Play()` 之前。
+
 ### Boot Sequence (per scene load)
 
 ```
@@ -167,8 +177,8 @@ TDE TopDownEngineEvent(RespawnComplete) ──→  TDELifecycleAdapter
 
 
 [CombatCore Assembly]  (read-only consumers — never call BeatClock lifecycle methods)
-  ├── C1 RhythmCore       ── subscribes to BeatClock.OnBeatExact
-  └── C4 CombatDirector   ── subscribes to BeatClock.OnBeatExact
+  ├── C1 RhythmCore       ── subscribes to IBeatClock.OnHalfBeatLookahead (hard dep) + OnBeatExact  (per ADR-D8 §1)
+  └── C4 CombatDirector   ── subscribes to IBeatClock.OnBeatLookahead   (hard dep) + OnMeterChanged (per ADR-D8 §1)
 ```
 
 ### Key Interfaces
@@ -235,13 +245,17 @@ public sealed class TDELifecycleAdapter : MonoBehaviour,
     [SerializeField] private InputEventBus _inputEventBus;  // F3
     [SerializeField] private BeatClock     _beatClock;      // F2
     [SerializeField] private LevelConfigSO _levelConfig;    // F4
+    private ISaveService _saveService;                      // F5 — D-4 seam (ADR-D10; prod: SaveService.Instance)
 
     private bool _fmodVerified;
 
+    // A1 裁定 (2026-08-11): Start() ONLY does read-only readiness probing.
+    // It does NOT subscribe — subscription lives in OnEnable/OnDisable (below).
     private void Start()
     {
         // FMOD async mode guard — in Start() to avoid Awake() ordering race
-        // with FMODUnity.RuntimeManager (Finding #3 from engine specialist)
+        // with FMODUnity.RuntimeManager (Finding #3 from engine specialist).
+        // Cached only; the acting early-return is inside OnSceneLoaded.
         _fmodVerified = FMODUnity.RuntimeManager.IsInitialized;
         if (!_fmodVerified)
         {
@@ -250,6 +264,8 @@ public sealed class TDELifecycleAdapter : MonoBehaviour,
         }
     }
 
+    // A1 裁定: OnEnable/OnDisable is the sole authoritative subscription site
+    // for BOTH the MMEventListener and SceneManager.sceneLoaded (symmetric pairing).
     private void OnEnable()
     {
         this.MMEventStartListening<TopDownEngineEvent>();
@@ -266,8 +282,11 @@ public sealed class TDELifecycleAdapter : MonoBehaviour,
     {
         // Guard: skip additive loads (TDE room management)
         if (mode != LoadSceneMode.Single) return;
-        if (!_fmodVerified) return;
+        // A1 裁定: readiness guards are handler-body early-returns, NOT subscription gates.
+        // FMOD (ADR-D6) + SaveService (ADR-D10) must both be ready before any Play()/input.
+        if (!_fmodVerified || !_saveService.IsInitialized) return;
 
+        // ADR-D10 owns the one-time offset boot-inject here (before the first Play()).
         _beatClock.Play(
             _levelConfig.BgmFilePath,
             _levelConfig.Bpm,

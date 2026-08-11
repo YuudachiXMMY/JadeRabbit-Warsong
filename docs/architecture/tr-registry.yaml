@@ -496,9 +496,9 @@ requirements:
   - id: TR-datalayer-012
     system: datalayer
     gdd: design/gdd/so-data-layer.md
-    requirement: "LevelConfigSO BPM/time-sig/BgmAssetReference injection to F2 via F6 TDELifecycleAdapter"
+    requirement: "LevelConfigSO BPM/time-sig/BgmFilePath injection to F2 via F6 TDELifecycleAdapter"
     created: 2026-07-16
-    revised: ""
+    revised: "2026-08-11"
     status: active
 
   # ── save (design/gdd/save-persistence.md) ─────────────────────────────────
