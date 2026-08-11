@@ -153,7 +153,7 @@ The `OnEnable`/`OnDisable` subscription pairs ensure no leaked event listeners o
     └→ AnimancerAttackPlayer.PlayAttack(node, clip, onComplete)
          └→ _animancer.Play(clip)  ← Animancer overrides TDE Animator
          └→ state.Speed = bpm / authoredBpm
-         └→ state.Events.OnEnd = OnAnimationEnd  (method group — zero GC)
+         └→ state.Events.OnEnd = _onAnimationEnd  (cached delegate — zero per-attack GC)
               └→ _animancer.PlayController()  ← TDE Animator resumes
               └→ onComplete?.Invoke()  ← C2 advances combo graph
 
@@ -200,6 +200,9 @@ public sealed class AnimancerAttackPlayer : MonoBehaviour,
     private AnimancerState _currentState;
     private System.Action _pendingOnComplete;
     private float _currentAuthoredBpm;
+    private System.Action _onAnimationEnd; // cached delegate — allocated once, reused per attack (zero per-attack GC)
+
+    private void Awake() => _onAnimationEnd = OnAnimationEnd;
 
     /// <summary>
     /// Play an attack clip from AttackNodeSO, speed-scaled to current BPM.
@@ -215,7 +218,7 @@ public sealed class AnimancerAttackPlayer : MonoBehaviour,
         _currentAuthoredBpm = attackNode.AuthoredBpm;
         _currentState = _animancer.Play(loadedClip);
         _currentState.Speed = _beatClock.CurrentBpm / _currentAuthoredBpm;
-        _currentState.Events.OnEnd = OnAnimationEnd; // method group — zero GC
+        _currentState.Events.OnEnd = _onAnimationEnd; // cached delegate — zero per-attack GC
     }
 
     /// <summary>
@@ -343,7 +346,7 @@ public float AuthoredBpm => _authoredBpm;
 
 ## Performance Implications
 - **CPU**: `AnimancerState.Speed` assignment is a single float write (< 0.01ms). `_animancer.Play(clip)` with `HybridAnimancerComponent` is O(1) — `KeepChildrenConnected = true` avoids the reconnect cost on every attack start. No per-frame work after attack start until OnEnd fires. `PlayController()` is a single weight transfer (~0.01ms).
-- **Memory**: `AnimancerState` is pooled by Animancer — no allocation per `Play()` call after warm-up. `OnEnd` callback as method group avoids delegate allocation (IL2CPP compliant). `_pendingOnComplete` cached as field — no boxing.
+- **Memory**: `AnimancerState` is pooled by Animancer — no allocation per `Play()` call after warm-up. `OnEnd` is assigned from `_onAnimationEnd`, a delegate cached once in `Awake()`; an instance-method-group conversion (`OnEnd = OnAnimationEnd`) would allocate a closure delegate per attack, so the cached field avoids that per-attack heap allocation (IL2CPP compliant). `_pendingOnComplete` cached as field — no boxing.
 - **Load Time**: `HybridAnimancerComponent.Awake()` setup (including PlayableGraph creation and `ControllerState` wrapping): < 0.5ms. No change to scene load time.
 - **Network**: None (single-player).
 

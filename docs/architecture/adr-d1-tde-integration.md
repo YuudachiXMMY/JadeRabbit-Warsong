@@ -81,7 +81,7 @@ F6 consists of **two components** working in concert:
 
 ### LevelConfigSO Injection
 
-`TDELifecycleAdapter` holds an Inspector reference to the scene's `LevelConfigSO`. At scene load, it extracts `.Bpm`, `.TimeSignature`, and `.BgmAssetReference`, and passes them to `BeatClock.Play()`.
+`TDELifecycleAdapter` holds an Inspector reference to the scene's `LevelConfigSO`. At scene load, it extracts `.Bpm`, `.TimeSignature`, and `.BgmFilePath`, and passes them to `BeatClock.Play()`.
 
 ### FMOD Init Constraint
 
@@ -94,8 +94,8 @@ SceneManager.sceneLoaded (LoadSceneMode.Single only — additive loads are filte
     └→ TDELifecycleAdapter.OnSceneLoaded()
          1. Guard: skip if LoadSceneMode != Single (TDE room additive loads)
          2. Assert FMODUnity.RuntimeManager is initialized (deferred from Start())
-         3. Read LevelConfigSO: .Bpm, .TimeSignature, .BgmAssetReference
-         4. BeatClock.Play(bgmRef, bpm, timeSig)  ← F2 runs 3-step protocol internally
+         3. Read LevelConfigSO: .Bpm, .TimeSignature, .BgmFilePath
+         4. BeatClock.Play(bgmPath, bpm, timeSig)  ← F2 runs 3-step protocol internally
          5. InputEventBus.EnableGameplayInput()     ← F3: AllDisabled → GameplayActive
 ```
 
@@ -121,7 +121,7 @@ TDE TopDownEngineEvent(PlayerDeath) ──→  TDELifecycleAdapter
        InputEventBus.DisableAllInput() ← F3: → AllDisabled
 
 TDE TopDownEngineEvent(RespawnComplete) ──→  TDELifecycleAdapter
-    └→ BeatClock.Play(bgmRef, bpm, timeSig)    ← F2: → Playing (restart)
+    └→ BeatClock.Play(bgmPath, bpm, timeSig)    ← F2: → Playing (restart)
        InputEventBus.EnableGameplayInput()      ← F3: → GameplayActive
 ```
 
@@ -141,7 +141,7 @@ TDE TopDownEngineEvent(RespawnComplete) ──→  TDELifecycleAdapter
   │    _levelConfig   : LevelConfigSO      (F4 per-scene)       │
   └───────────────────────────────────────────────────────────────┘
           │
-          ├── OnSceneLoaded ────────► BeatClock.Play(bpm, timeSig, bgmRef)
+          ├── OnSceneLoaded ────────► BeatClock.Play(bpm, timeSig, bgmPath)
           │                           InputEventBus.EnableGameplayInput()
           │
           ├── TopDownEngineEvent     ► BeatClock.Pause()
@@ -153,7 +153,7 @@ TDE TopDownEngineEvent(RespawnComplete) ──→  TDELifecycleAdapter
           ├── TopDownEngineEvent     ► BeatClock.Stop()
           │   (PlayerDeath)            InputEventBus.DisableAllInput()
           │
-          └── TopDownEngineEvent     ► BeatClock.Play(bgmRef, bpm, timeSig)
+          └── TopDownEngineEvent     ► BeatClock.Play(bgmPath, bpm, timeSig)
               (RespawnComplete)        InputEventBus.EnableGameplayInput()
 
 
@@ -269,7 +269,7 @@ public sealed class TDELifecycleAdapter : MonoBehaviour,
         if (!_fmodVerified) return;
 
         _beatClock.Play(
-            _levelConfig.BgmAssetReference,
+            _levelConfig.BgmFilePath,
             _levelConfig.Bpm,
             _levelConfig.TimeSignature);
         _inputEventBus.EnableGameplayInput();
@@ -296,7 +296,7 @@ public sealed class TDELifecycleAdapter : MonoBehaviour,
                 break;
             case TopDownEngineEventTypes.RespawnComplete:
                 _beatClock.Play(
-                    _levelConfig.BgmAssetReference,
+                    _levelConfig.BgmFilePath,
                     _levelConfig.Bpm,
                     _levelConfig.TimeSignature);
                 _inputEventBus.EnableGameplayInput();
@@ -360,7 +360,7 @@ public sealed class TDELifecycleAdapter : MonoBehaviour,
 | audio-beat-clock.md (F2) | Pause/resume signal from TDE | `TDELifecycleAdapter.OnMMEvent(Pause)` calls `BeatClock.Pause()` in same frame as `EnableUIInput()` |
 | audio-beat-clock.md (F2) | F6 → F2: BGM FMOD asset ref; pause/resume signals | F6 calls `BeatClock.Play/Pause/Resume/Stop` exclusively; 3-step BGM protocol internal to BeatClock |
 | audio-beat-clock.md (F2) | Core Rule 11: subscriber lifecycle; F6 pre-signal for room unload | F6 can broadcast room-unload pre-signal before `BeatClock.Stop()`; subscribers unsubscribe in `OnDestroy()` |
-| so-data-layer.md (F4) | TR-datalayer-012: LevelConfigSO BPM/time-sig consumed by F2 | TDELifecycleAdapter reads `LevelConfigSO` and passes `.Bpm`, `.TimeSignature`, `.BgmAssetReference` to `BeatClock.Play()` |
+| so-data-layer.md (F4) | TR-datalayer-012: LevelConfigSO BPM/time-sig consumed by F2 | TDELifecycleAdapter reads `LevelConfigSO` and passes `.Bpm`, `.TimeSignature`, `.BgmFilePath` to `BeatClock.Play()` |
 | input-event-system.md (F3) | E6 / DeferredAC-F3-16: FMOD async mode (`FMOD_INIT_NORMAL`) | `TDELifecycleAdapter.Start()` asserts FMOD RuntimeManager initialized; async mode enforcement deferred to F6 GDD detail |
 | game-concept.md (F1) | Enemy AI beat-locked attacks require TDE character lifecycle | F6 lifecycle hooks (death/respawn) defined; CombatDirector token integration deferred to ADR-D2 |
 

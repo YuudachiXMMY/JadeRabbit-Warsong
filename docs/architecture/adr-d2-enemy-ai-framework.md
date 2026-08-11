@@ -71,7 +71,7 @@ Unity Behavior is Unity's first-party hierarchical behavior tree authoring tool.
 BeatClock (F2)
     │  BeatStateSnapshot event (each beat)
     ▼
-BeatClockBridge : MonoBehaviour       [DefaultExecutionOrder(-100)]
+BeatClockBridge : MonoBehaviour       (no Update — writes on OnBeatSnapshot push)
     │  agent.SetVariableValue("CurrentBPM",       snapshot.Bpm)
     │  agent.SetVariableValue("CurrentBeat",      snapshot.Beat)
     │  agent.SetVariableValue("TimeToNextBeat",   snapshot.TimeToNextBeat)
@@ -94,10 +94,10 @@ Unity Behavior Graph (visual editor)
                                 TDE Health.Damage() on target
 ```
 
-**Execution order guarantee** (from verified source):
-- `BeatClockBridge` runs at -100 (manual `[DefaultExecutionOrder(-100)]`)
-- `BehaviorGraphAgent` runs at -50 (`[DefaultExecutionOrder(-50)]` — hardcoded in Unity Behavior source)
-- Beat data is guaranteed written before BT tick within the same `Update` frame
+**Beat-data freshness guarantee** (from verified source):
+- `BeatClockBridge` has **no `Update()`** — it writes the Blackboard synchronously inside `BeatClock`'s `OnBeatSnapshot` dispatch (event push, not a per-frame tick). A `[DefaultExecutionOrder]` on the Bridge therefore does **not** affect its timing (the attribute only orders `Update`/`FixedUpdate`/etc., which the Bridge does not implement).
+- `BehaviorGraphAgent` runs at -50 (`[DefaultExecutionOrder(-50)]` — hardcoded in Unity Behavior source).
+- The Blackboard always holds the **most recent beat snapshot** as of the last `OnBeatSnapshot` fire. A BT tick reads that snapshot. Because `BeatClock` fires on beat boundaries (not every frame), on non-beat frames the BT reads the previous beat's values — bounded staleness ≤ one beat interval, acceptable for MVP (BPM fixed per level via `LevelConfigSO`). If a future system needs same-frame beat precision, give `BeatClock` a more-negative `[DefaultExecutionOrder]` than `-50` so its beat-detection `Update` fires before the BT tick.
 
 ### Key Interfaces
 
@@ -105,9 +105,11 @@ Unity Behavior Graph (visual editor)
 /// <summary>
 /// Bridge between BeatClock event bus and Unity Behavior Blackboard.
 /// Placed on enemy prefab alongside BehaviorGraphAgent component.
-/// Execution order -100 ensures beat data is written before BT tick (-50).
+/// Writes beat data to the Blackboard synchronously on each BeatClock
+/// OnBeatSnapshot event (push, not a per-frame tick). The BT reads the
+/// latest snapshot on its next tick. No [DefaultExecutionOrder] needed —
+/// the Bridge has no Update() for it to order.
 /// </summary>
-[DefaultExecutionOrder(-100)]
 public class BeatClockBridge : MonoBehaviour
 {
     [SerializeField] private BehaviorGraphAgent _agent;
@@ -266,7 +268,7 @@ internal partial class TDETriggerAbilityAction : Action
 - `ObserverAbortModifier` allows high-priority branches (e.g., death) to interrupt lower-priority ones (e.g., attack) without polling
 - `RunSubgraphDynamic` provides clean Boss phase transitions between sub-behavior graphs
 - `CombatDirectorTokenAction` as a first-class BT node enforces beat-lock at the architecture level: no attack fires without C4 token
-- `[DefaultExecutionOrder(-50)]` on `BehaviorGraphAgent` is hardcoded — execution ordering with `BeatClockBridge` (-100) is deterministic without manual Project Settings configuration
+- Beat state reaches the Blackboard via `BeatClock`'s `OnBeatSnapshot` event push (synchronous write), so the BT always reads the latest beat snapshot without any manual Project Settings execution-order configuration
 - No additional licensing cost; eliminates one potential third-party dependency (BD) from the project
 - `EventChannel<T>` enables future upgrade: `BeatSnapshotEventChannel` as a Unity-native alternative to `BeatClockBridge` MonoBehaviour polling
 
@@ -279,7 +281,7 @@ internal partial class TDETriggerAbilityAction : Action
 
 ### Risks
 
-- **Script Execution Order (LOW — mitigated)**: `BehaviorGraphAgent` has hardcoded `[DefaultExecutionOrder(-50)]`. `BeatClockBridge` must declare `[DefaultExecutionOrder(-100)]`. Mitigation: enforced by attribute; verify with frame-count log during FE1 PlayMode tests.
+- **Beat-snapshot staleness (LOW — bounded)**: `BeatClockBridge` writes on the `OnBeatSnapshot` push, not a per-frame tick, so between beats the BT reads the last beat's snapshot (≤ one beat interval stale). Acceptable for MVP (fixed BPM per level). Mitigation: AI decision nodes must not assume sub-beat freshness of `CurrentBeat`/`TimeToNextBeat`; if same-frame precision is needed later, give `BeatClock` a more-negative execution order than `-50`. Verify with frame-count log during FE1 PlayMode tests.
 - **`partial class` requirement (LOW)**: All custom Action nodes must be `partial class` or `[GeneratePropertyBag]` source generator will fail. Mitigation: established as a coding standard in FE1 GDD implementation notes.
 - **CombatDirector protocol undefined (MEDIUM)**: `CombatDirectorTokenAction` depends on C4's `RequestAttackToken(enemy)` / `OnTokenGranted()` interface, which does not exist yet. Mitigation: C4 GDD must define this protocol; FE1 GDD co-authoring required.
 - **CharacterMovement API on non-player characters (LOW)**: `CharacterMovement.SetMovement(Vector2)` verified at TDE source `CharacterMovement.cs:200`. Enemy prefabs may require different movement ability setups. Mitigation: confirm `CharacterMovement` component on enemy prefabs during FE1 GDD implementation.
@@ -308,7 +310,7 @@ No existing AI code to migrate. FE1 GDD is the first enemy AI specification docu
 ## Validation Criteria
 
 1. `BehaviorGraphAgent` initializes on enemy prefab entry to Play mode with zero NullReferenceException (no TDE `AIBrain` component required)
-2. `BeatClockBridge.HandleBeatSnapshot()` fires and updates all three Blackboard values before `BehaviorGraphAgent.Update()` tick in the same frame (verified by frame-count log on both components)
+2. `BeatClockBridge.HandleBeatSnapshot()` writes all three Blackboard values synchronously when `BeatClock` fires `OnBeatSnapshot`; a subsequent `BehaviorGraphAgent.Update()` tick reads the latest snapshot (verified by frame-count log: the Blackboard value on tick N equals the snapshot from the most recent `OnBeatSnapshot` at or before frame N)
 3. `BehaviorGraphAgent.SetVariableValue<float>("CurrentBPM", value)` returns `true` — Blackboard variable name matches graph definition
 4. `CombatDirectorTokenAction` returns `Status.Running` while waiting for token, `Status.Success` on grant, `Status.Failure` on timeout
 5. Enemy attack ability (`CharacterAbility.TriggerAbility()`) never fires without a preceding `CombatDirectorTokenAction` `Status.Success` result
