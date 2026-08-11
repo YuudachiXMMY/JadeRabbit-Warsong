@@ -403,3 +403,13 @@ Task: 对 C2 跑 /design-review；follow-up 修 C1 clamp 50→999 (OQ1)
 - 可立即修 (与 ADR 无关): C1 的 OnBpmChanged → OnMeterChangeAccepted/OnMeterChanged (F2/F6 已就位, C1/C4 未跟进)
 - Recommended next: /design-review design/gdd/rhythm-core.md 修 C1 悬空引用+Off 隔离; 并推进 technical-director 裁定 OQ-4(D-4/D-5)+OQ-5 解锁 B2 三文档同轮修订
 - Report: design/gdd/gdd-cross-review-2026-08-09.md
+
+## Session Extract — /review-all-gdds 2026-08-10
+- Verdict: FAIL
+- GDDs reviewed: 9 (F2/F3/F4/F5/F6 + C1/C2/C3/C4；本轮新增 C2/C3/C4)
+- Flagged for revision (marked in systems-index): C1 rhythm-core (Approved→Needs Revision)、C3 perk-system (Designed→Needs Revision)。C2/C4 已是 Needs Revision。F4/F2/F6 在 review log 跟进，索引维持 Pending Re-review/Approved
+- Blocking issues: BC-1 (C2 Perfect rating 1.5 vs 权威 1.0 污染平衡); BC-2 (C3 IRhythmModifierProvider 在 C1 无消费点→心法零效果，最严重); BC-3 (C4 读 F4 未定义 EnemyInfoSO 字段); BC-4 (C4 6/8 + C3 3/8 非法拍号); BC-5 (C2 AttackType vs F4 AttackInputType 枚举不可编译); BC-6 (OnBeatClockResumed 缺失+暂停恢复三系统信号不一致); BD-1 (Off 升级为战力主导策略); BD-2 (BPM 跃升 C1/C2/C4 三系统难度尖峰); SC-1 (音频断开降级无承接者); SC-2 (复活幽灵评级)
+- 回归: B1 (C1 OnBpmChanged) 已解决; C4 未犯 B1; OnBeatClockResumed/B3 ScheduleBGMTransition 仍缺失
+- 可立即修 (与 ADR 无关): BC-1 rating 1.5→1.0; BC-4 非法拍号; BC-7 C1 ComboMax 50→999; W-03/W-04 C3 事件名
+- Recommended next: 优先修 BC-2 (C1 定义 IRhythmModifierProvider + C3 同轮)、BC-1、BD-1；机械修订 BC-1/BC-4/BC-7 可先落地
+- Report: design/gdd/gdd-cross-review-2026-08-10.md
