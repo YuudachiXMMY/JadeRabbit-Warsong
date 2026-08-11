@@ -1,6 +1,6 @@
 # C2 连招图系统 (Combo Graph System)
 
-> **Status**: In Design
+> **Status**: Revised (2026-08-10 blocker fix) — Pending Re-review
 > **Author**: Jadyn Wu + Claude Code Agents
 > **Last Updated**: 2026-08-10
 > **Implements Pillar**: 支柱二：武侠手感不可妥协 (Wuxia Feel First) / 支柱四：构筑驱动复盘 (Build Depth Over Stat Inflation)
@@ -38,7 +38,7 @@ C2 连招图系统是《玉兔战歌》战斗核心的**数据驱动连招状态
 
 **规则 2｜出招输入触发**：C2 订阅 C1 发布的 `RhythmJudgmentEvent`。玩家每次攻击输入经 C1 判定后，事件携带 `Rating` / `AttackType` / `CancelTier` / `ComboCountBefore` / `ComboCountAfter` / `OffsetMs` 抵达 C2。C2 **只读** 这些字段，不回写。
 
-**规则 3｜分支匹配**：收到事件后，C2 在 `edges` 中查找满足 `fromNodeId == _currentNodeId` **且** `requiredInput` 匹配本次输入（`AttackType`）的 `ComboEdge`。
+**规则 3｜分支匹配**：收到事件后，C2 在 `edges` 中查找满足 `fromNodeId == _currentNodeId` **且** `requiredInput` 匹配本次输入（`AttackType`）的 `ComboEdge`。**[BC-5 已解决]** `ComboEdge.requiredInput` 与 C1 `RhythmJudgmentEvent.AttackType`、F4-S1 同为权威 `AttackType {LightAttack, HeavyAttack, ChargedAttack}` 枚举（F3 权威），**直接比较无需映射**（上游 F4 已由 `AttackInputType {Normal,Heavy,Special}` 统一至此，全链无枚举转换）。
 
 **规则 4｜时机门控（取消窗口 + 输入缓冲）**：匹配到的边仅当输入时机落在当前节点动画的取消窗口 `[cancelWeight, 1.0]`（归一化时间）内才可遍历。**输入缓冲**：窗口开启前极短时间（`inputBufferBeats`，随 BPM 换算）内按下的输入被缓冲，窗口一开即触发。缓冲**仅影响连招图遍历**——节奏评级（Perfect/Good/Miss）始终由 C1 用 `InputAction.performed` 真实时间戳判定，缓冲不介入。
 
@@ -62,6 +62,8 @@ C2 连招图系统是《玉兔战歌》战斗核心的**数据驱动连招状态
 **规则 10｜Off 模式隔离**：Off 模式 Perfect 被 C1 封顶为 `CancelTier.Standard`（C1 规则 10）。故 Off 模式下 `Advanced` 分支永不可达——**进阶取消保持为节奏模式独占**（对齐 game-concept 不可豁免规则：进阶取消 = 大师专精独占）。
 
 **规则 11｜数据容错**（承接 F4 AC-F4-12 迁移）：`rootNodeId` 不在 `nodes` 中 → 回退 `nodes[0]` + `LogError`；`nodes` 为空 → 抛 `InvalidDataException`（加载失败）；无效边 ID（`fromNodeId`/`toNodeId` 不存在）→ 跳过该边 + `Error` 日志（AC-F4-31）。
+
+**规则 12｜BD-2 取消窗适应窗口（BPM 变更宽容期）｜[BD-2]**：C2 收到 BPM 变更事件（`OnMeterChanged`，即 C2 现有 `OnMeterChangeAccepted` 所指的同一拍号/BPM 变更信号）后，进入一个 **适应窗口 = `adaptationWindowBeats` 拍**（Tuning Knob，默认 2，范围 [0,4]）。窗口内，取消窗 `[cancelWeight, 1.0]` 的**绝对毫秒判定宽度**取 `max(变更前窗口ms, 变更后窗口ms)`（即取**较宽者**）——即便攻击动画已由 Animancer 按新 `currentBpm` 变速（规则 6/F4），取消窗的可接受输入时机以毫秒计**不随 BPM 上升而骤缩**；适应窗口结束后恢复新 BPM 标准宽度（见 Formulas F7）。此举与 **C1 判定窗**采用同一 `max(before, after)` 宽容规则、与 **C4 `SlotCapacity` 按每秒令牌速率归一化**共同承接 BD-2「BPM 跃升三系统难度尖峰」，避免玩家犯错代价最大的转阶段瞬间取消窗骤缩（三文档 Formulas 互引 BD-2）。
 
 ### States and Transitions
 
@@ -151,6 +153,27 @@ C2 连招状态机（图位置维度，独立于 C1 的评级状态）：
 
 `perk_multiplier` 的输入变量集合**不得包含** `count` 或 `combo_multiplier` 本身（防 combo² 复合爆炸）。任何例外须走 ADR 审批。（详见 Dependencies。）
 
+### F7｜BD-2 取消窗适应窗口（BPM 变更宽容期）｜[BD-2]
+
+取消窗归一化区间 `[cancelWeight, 1.0]` 的**绝对毫秒宽度**随 BPM 变化（动画经 Animancer 变速）：
+
+`cancelWindowMs(bpm) = (1.0 − cancelWeight) × animBaseDurationMs × node.authoredBpm / bpm`
+
+BPM 变更事件 `OnMeterChanged`（BPM: `bpm_before → bpm_after`）后的适应窗口内，取消窗**有效毫秒宽度**取较宽者：
+
+`cancelWindowMs_effective = max( cancelWindowMs(bpm_before), cancelWindowMs(bpm_after) )`，持续 `adaptationWindowBeats` 拍；窗口结束后 `cancelWindowMs_effective = cancelWindowMs(bpm_after)`（恢复新 BPM 标准宽度）。
+
+| 变量 | 类型 | 范围 | 含义 |
+|---|---|---|---|
+| `adaptationWindowBeats` | int | [0, 4]，**默认 2** | BD-2 适应窗口时长（拍）；0 = 关闭宽容立即用新 BPM 宽度 |
+| `bpm_before` / `bpm_after` | float | bpm_range [80, 240] | `OnMeterChanged` 变更前/后 BPM |
+| `cancelWeight` | float | [0.0, 1.0] | 取消窗开启点（逐节点 authored，F4）|
+| `animBaseDurationMs` | float | >0 | 该节点动画在 `authoredBpm` 下的基准毫秒时长（F4）|
+
+**示例**（`cancelWeight=0.5`, `animBaseDurationMs=1000`, `authoredBpm=120`；Boss 转阶段 `bpm_before=120 → bpm_after=180`）：`cancelWindowMs(120)=500ms`、`cancelWindowMs(180)≈333ms`；适应窗口内取 `max(500, 333)=500ms`（不骤缩至 333ms），2 拍后恢复 333ms。
+
+**BD-2 三文档互引**：本公式与 **C1 `rhythm-core.md` 判定窗**的同款 `max(before, after)` 宽容规则、**C4 `combat-director.md` `SlotCapacity` 每秒令牌速率归一化**共同缓解「BPM 跃升三系统难度尖峰」（Flow 反模式）。三者 Formulas 相互引用 BD-2。
+
 ## Edge Cases
 
 | # | 情形 | 明确行为 |
@@ -203,6 +226,7 @@ C2 连招状态机（图位置维度，独立于 C1 的评级状态）：
 | `ComboMax` | 固定 | 999 | 段数上限/combo_multiplier 定义域/HUD 连击天花板 |
 | `inputBufferBeats` | [0, 0.25] | 0.1 | 取消输入缓冲宽容；偏高会让玩家误以为能抢拍 |
 | `comboHoldBeats` | [0, 0.5] | 0.25 | 连招保持窗宽容；偏高削弱「节奏断=连招断」张力 |
+| `adaptationWindowBeats`（BD-2）| [0, 4] | 2 | BPM 变更后取消窗 `max` 宽容期时长（拍）；偏高延长「旧手感」惯性、偏低回归 BPM 尖峰。须与 C1 判定窗适应窗口同值对齐（BD-2）|
 | `cancelWeight`（逐节点，F4）| [0.0, 1.0] | 逐招 authored | 取消窗口开启点，决定连招节奏松紧 |
 | `cancelWindowType`（逐节点，F4）| enum | 逐招 authored | 分支评级门（None/Standard/Advanced）|
 
@@ -298,6 +322,14 @@ C2 只**发布事件**，视觉/音效由 Feel/MMFeedbacks 与音频系统订阅
 | AC-C2-35 | Off 模式 Perfect → `CancelTier` 封顶 Standard → `Advanced` 分支永不可达（规则 10/EC10） | BLOCKING |
 | AC-C2-36 | Off 模式标准分支（`cancelWindowType≤Standard`）正常可达（隔离不误伤标准连招） | BLOCKING |
 | AC-C2-37 | `perk_multiplier` 输入集合不含 `count`/`combo_multiplier`（F6，防 combo² 爆炸；测试：喂入 perk 计算的参数快照断言无该二者） | BLOCKING |
+
+### BD-2 取消窗适应窗口（Logic — BLOCKING）
+
+| # | 验收条件（规则 12 / F7） | 门控 |
+|---|---|---|
+| AC-C2-40 | `OnMeterChanged`（BPM 上升 120→180、`adaptationWindowBeats=2`）后适应窗口内，取消窗有效毫秒宽度 == `max(cancelWindowMs(120), cancelWindowMs(180))` == `cancelWindowMs(120)`（**取较宽者，不骤缩**）（BD-2/规则 12/F7）| BLOCKING |
+| AC-C2-41 | 适应窗口经过 `adaptationWindowBeats` 拍后，取消窗有效毫秒宽度恢复 == `cancelWindowMs(bpm_after)`（新 BPM 标准宽度）（BD-2/F7）| BLOCKING |
+| AC-C2-42 | `adaptationWindowBeats=0` → 无宽容期，变更后立即使用 `cancelWindowMs(bpm_after)`（边界值，BD-2）| BLOCKING |
 
 ### 命中盒时机与反馈信号（Integration — ADVISORY）
 

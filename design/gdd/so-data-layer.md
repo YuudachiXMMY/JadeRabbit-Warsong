@@ -13,7 +13,7 @@
 
 F4 ScriptableObject 数据层是《玉兔：破阵》的数据契约基础设施——它定义所有跨系统游戏数据的**存储 schema 与编辑器接口**，将「硬编码的游戏参数」转变为「可热修改的资产文件」。
 
-本层负责维护 7 类核心 ScriptableObject 类型：`AttackNodeSO`（攻击节点）、`ComboGraphSO`（连招图）、`PerkSO`（心法）、`WeaponSO`（武器）、`EnemyInfoSO`（敌人信息）、`LevelConfigSO`（关卡配置）和 `PlayerInfoSO`（玩家持久化数据）。每个 schema 是对应系统（C2、C3、C5、FE1、F2、F5）的数据契约：下游系统依赖 F4 定义的字段集合完成运行时行为，F4 的 schema 变更须触发下游 GDD 的接口合约更新。
+本层负责维护 8 类核心 ScriptableObject 类型：`AttackNodeSO`（攻击节点）、`ComboGraphSO`（连招图）、`PerkSO`（心法）、`WeaponSO`（武器）、`EnemyInfoSO`（敌人信息）、`LevelConfigSO`（关卡配置）、`PlayerInfoSO`（玩家持久化数据）和 `CombatDirectorConfigSO`（战斗导演全局配置）。每个 schema 是对应系统（C2、C3、C5、FE1、F2、F5、C4）的数据契约：下游系统依赖 F4 定义的字段集合完成运行时行为，F4 的 schema 变更须触发下游 GDD 的接口合约更新。
 
 对玩家而言，F4 是「每局心法 build 感觉不同」「武器切换带来截然不同的节奏手感」「设计师可以不改代码就在游戏中调整 BPM 曲线与心法强度」的数据物理基础。F4 的 schema 质量直接决定支柱四（构筑驱动复盘）的设计空间深度——PerkSO 的字段表达能力越强，心法的设计可能性就越丰富。
 
@@ -45,9 +45,10 @@ F4 定义以下 7 类核心 ScriptableObject，每类对应一个明确的数据
 | `ComboGraphSO` | 连招图：节点集合（`List<AttackNodeSO>`）+ 边表（`List<ComboEdge>`，定义输入驱动的分支转换规则）+ 根节点引用 + 武器类型归属 | C2、C5（武器系统） | 否（只读引用） |
 | `PerkSO` | 心法：效果类型枚举、效果参数集合、稀有度、UI 描述与图标引用 | C3（心法构筑系统） | **是**（每局开始前克隆） |
 | `WeaponSO` | 武器：武器类型枚举、`ComboGraphSO` 引用、基础伤害、动画层配置引用 | C5、FE5（局外成长） | 否（只读引用） |
-| `EnemyInfoSO` | 敌人：基础属性、行为档案类型、Beat-Locked 攻击模式描述 | FE1（敌人 AI 系统） | 否（只读引用） |
+| `EnemyInfoSO` | 敌人：基础属性、行为档案类型、Beat-Locked 攻击模式描述（`attackWindupBeats`、`timeoutBeats`） | FE1（敌人 AI 系统）、C4（战斗导演，读前摇/超时拍数） | 否（只读引用） |
 | `LevelConfigSO` | 关卡/房间：BGM FMOD asset 引用、BPM、拍号、房间类型标签 | F2（音频时钟）、FE2（房间系统） | 否（只读引用） |
 | `PlayerInfoSO` | 玩家持久化数据：功勋余额、解锁武器列表、局外升级状态、延迟校准偏移量 | F5（存档系统）、FE5 | 否（不克隆；直接序列化/反序列化） |
+| `CombatDirectorConfigSO` | 战斗导演全局配置：拍槽容量表 `CapacityTable`、威胁权重、饥饿补偿、落拍细分模式 | C4（战斗导演） | 否（只读引用） |
 
 **规则 2：只读资产原则**
 
@@ -171,7 +172,7 @@ F4 不包含计算公式，但定义了每种 SO 类型的**字段规格**——
 |------|------|----------|------|------|
 | `fromNodeId` | `string` | 非空，须为某 AttackNodeSO.id 的合法值 | 是 | 转换起始节点的 AttackNodeSO.id |
 | `toNodeId` | `string` | 非空，须为某 AttackNodeSO.id 的合法值，且不等于 fromNodeId（禁止自环） | 是 | 转换目标节点的 AttackNodeSO.id |
-| `requiredInput` | `AttackInputType` | `{Normal, Heavy, Special}` | 是 | 玩家须在取消窗口内按下的攻击键类型 |
+| `requiredInput` | `AttackType` | `{LightAttack, HeavyAttack, ChargedAttack}` | 是 | 玩家须在取消窗口内按下的攻击键类型。**枚举权威归 F3**（`AttackInputEvent.attackType`），C1 `RhythmJudgmentEvent.AttackType` 透传同一枚举；C2 以 `edge.requiredInput == event.AttackType` 直接比较（同类型，无需映射）。此处不得另立 `AttackInputType`——历史 `{Normal, Heavy, Special}` 已废弃 |
 
 **设计约束**：
 - 同一 `fromNodeId` 可有多条 edges，但各边 `requiredInput` 须唯一（相同起始节点禁止两条边使用同一输入类型）
@@ -227,7 +228,8 @@ F4 不包含计算公式，但定义了每种 SO 类型的**字段规格**——
 | `baseHealth` | `int` | [1, 9999] | 是 | 基础生命值 |
 | `baseDamage` | `float` | [1.0, 999.0] | 是 | 基础攻击伤害 |
 | `behaviorProfile` | `EnemyBehaviorProfile` | `{Melee_Simple, Ranged_Simple, Elite, Boss}` | 是 | FE1 行为树路由所用的档案类型 |
-| `attackWindupBeats` | `float` | [0.5, 8.0] | 是 | Beat-Locked 攻击前摇拍数（支持半拍精度；0.5 = 半拍前摇）；C4 令牌分配使用；BPM=120 时 1 拍 = 500ms |
+| `attackWindupBeats` | `float` | [0.5, 8.0] | 是 | Beat-Locked 攻击前摇拍数（支持半拍精度；0.5 = 半拍前摇）；C4 令牌分配使用（公式 F-5 变量 `W`）；BPM=120 时 1 拍 = 500ms |
+| `timeoutBeats` | `int` | [1, 32]，须 ≥ `ceil(attackWindupBeats) + maxSnapΔ` 且 > `CombatDirectorConfigSO.starvationCeiling` | 是 | **令牌耐心**（C4 公式 F-3/E11 变量 `TimeoutBeats`）：授令后多少拍未兑现则撤销。per-enemy 原型级配置（如轻型 2、重型 4）。Odin Validator 校验 `timeoutBeats ≥ ceil(attackWindupBeats) + maxSnapΔ(subdivisionMode, meter)`，不满足禁止进包 |
 | `beatPhaseAnchor` | `BeatPhaseAnchor` | `{DownBeat, UpBeat, Free}` | 是 | 攻击起始相位锚点：`DownBeat` = 强拍起；`UpBeat` = 弱拍起；`Free` = 无相位约束；影响 FE1 攻击发起时机的节拍对齐逻辑 |
 | `rewardMeritBase` | `int` | [0, 100] | 是 | 击败奖励的基础功勋值 |
 
@@ -259,6 +261,30 @@ F4 不包含计算公式，但定义了每种 SO 类型的**字段规格**——
 *注：`PlayerInfoSO` 字段仅含**纯数据类型**（int、float、string、List、自定义 `[Serializable]` struct），无 Unity Object 引用，无 `Dictionary<>` 类型（Unity 不原生序列化 Dictionary，EasySave 3 对 Dictionary 的支持不稳定）——这是 Unity 序列化系统与 EasySave 3 的双重约束（技术首选项）。*
 
 **⚠️ [NonSerialized] 字段初始化时序约束**：`latencyCalibrationOffsetMs` 和 `audioVolumeMaster` 为运行时缓存字段，**不存在于 SO 资产文件中**。Addressables 加载 PlayerInfoSO 时这两个字段将返回 C# 默认值（`0.0f` / `1.0f`），直至 F5 初始化完成后由 F2.Start()（写入 latency 值）和 FE7.Start()（写入 volume 值）填充。**消费系统须等待 F5 加载完成事件后再读取这两个字段**——直接在 Awake() 或早期 Start() 读取将静默使用默认值，导致延迟校准不生效或音量异常。F2 GDD 和 F5 GDD 须在各自的初始化协议章节中明确声明此时序依赖（建议通过事件/回调而非 Script Execution Order 保证）。
+
+---
+
+### F4-S8：CombatDirectorConfigSO 字段规格
+
+> **归属**：战斗导演（C4）的**全局**平衡配置宿主。以下字段过去在 C4 GDD 被误标为 `EnemyInfoSO` 数据载体（BC-3）——它们是导演级全局参数，不随敌人原型变化，若挂在 EnemyInfoSO 会导致每个敌人重复配置同一份全局威胁/容量策略。故独立为 `CombatDirectorConfigSO`。**字段的详细语义、公式与安全范围以 C4 GDD（`combat-director.md`）的 Formulas F-1~F-5 与 Tuning Knobs 为权威**，F4 只固化 schema 与校验约束。
+
+| 字段 | 类型 | 范围/约束 | 必填 | 描述 |
+|------|------|----------|------|------|
+| `id` | `string` | 非空，项目内唯一 | 是 | 配置 ID（如 `director_default`、`director_boss`） |
+| `capacityTable` | `Dictionary<MeterKey, int[]>` 的 Unity 可序列化等价（`List<MeterCapacityEntry>`，`MeterCapacityEntry = {meter: MeterKey, perBeatCapacity: int[]}`）| 每 `perBeatCapacity` 元素 ∈ [0, 4]；每拍号至少一位 ≥ 1（防敌人永久无法出手）| 是 | 拍槽容量表（C4 公式 F-1 `SlotCapacity`）：per-拍号每拍位可授令名额。数组长度 = 该拍号每小节拍位数 `BeatsPerBar(meter)`。**不使用原生 `Dictionary<>`**（Unity 不序列化），用 `List<Entry>` 承载 |
+| `dNear` | `float` | 默认 3.0m，[1.0, 6.0]m | 是 | 威胁近/中分界距离（C4 F-2 `D_near`） |
+| `dMid` | `float` | 默认 8.0m，[dNear+1.0, 15.0]m，须 > `dNear` | 是 | 威胁中/远分界距离（C4 F-2 `D_mid`） |
+| `wNear` | `float` | 默认 30.0，[10, 100] | 是 | 近区威胁权重（C4 F-2 `W_near`） |
+| `wMid` | `float` | 默认 15.0，[5, wNear) | 是 | 中区威胁权重（C4 F-2 `W_mid`） |
+| `wFar` | `float` | 默认 5.0，[0, wMid) | 是 | 远区威胁权重（C4 F-2 `W_far`） |
+| `starvationWeight` | `float` | 默认 2.0，[0.5, 10.0] | 是 | 每等待一拍的饥饿补偿增量（C4 F-3 `starvationWeight`） |
+| `starvationCeiling` | `int` | 默认 8 拍，[4, 32]，**须 < 所有 `EnemyInfoSO.timeoutBeats`** | 是 | 触发强制提优的等待拍数阈值（C4 F-3 `starvationCeiling`） |
+| `subdivisionMode` | `SubdivisionMode` | `{FullBeat, HalfBeat, DownbeatOnly}`，默认 `FullBeat` | 是 | 落地拍细分粒度（C4 F-5）。可被 `LevelConfigSO` 覆盖为 per-关卡值（可选，见 C4 Tuning Knobs） |
+| `bpmRef` | `float` | 默认 120，[60, 200] | 是 | BD-2 归一化基准 BPM（C4 公式 F-1b `EffectiveSlotCapacity = round(capacityTable × bpmRef / bpm)`）：使每秒令牌速率恒定，消除 BPM 跃升的攻击密度尖峰 |
+
+*注：`MeterKey` 为 `[Serializable]` struct `{numerator: int, denominator: int}`，与 `LevelConfigSO.timeSignatureNumerator/Denominator` 取值域一致（分子 {3,4,5}、分母 {4,8}）。`BONUS_MAX` 等派生值由 C4 运行时/Odin Validator 计算，不作为 SO 字段存储。*
+
+**Odin Validator 校验约束**（与 C4 AC-C4-28 对齐）：(1) `wNear > wMid > wFar ≥ 0`；(2) `dMid > dNear`；(3) 每拍号 `perBeatCapacity` 至少一位 `≥ 1`；(4) `starvationCeiling <` 项目中最小的 `EnemyInfoSO.timeoutBeats`；(5) 每个 `EnemyInfoSO.timeoutBeats ≥ ceil(attackWindupBeats) + maxSnapΔ(subdivisionMode, meter)`。
 
 ---
 
@@ -314,6 +340,7 @@ F4 是 Foundation 层系统，**无上游依赖**。F4 的 SO schema 定义不�
 | **C3** 心法构筑系统 | **硬依赖** | `PerkSO` | C3 从心法池加载、克隆、应用 PerkSO；无 PerkSO 则三选一无法运作 |
 | **C5** 武器系统 | **硬依赖** | `WeaponSO`（含 `ComboGraphSO` 引用） | C5 从 WeaponSO 初始化武器实例；武器选择界面依赖 WeaponSO 列表 |
 | **FE1** 敌人 AI 系统 | **硬依赖** | `EnemyInfoSO` | FE1 从 EnemyInfoSO 初始化敌人属性和行为档案 |
+| **C4** 战斗导演 | **硬依赖** | `EnemyInfoSO`（`attackWindupBeats`、`timeoutBeats`）、`CombatDirectorConfigSO`（容量表/威胁权重/饥饿补偿/细分模式） | C4 令牌分配读 per-enemy 前摇/超时拍数；导演级评分与容量策略读 `CombatDirectorConfigSO`（BC-3：全局参数不挂 EnemyInfoSO） |
 | **F2** 音频时钟系统 | **软依赖** | `LevelConfigSO`（BGM Clip、BPM、拍号） | F2 接受注入的 BGM 参数，LevelConfigSO 由 F6 提供；F2 本身无直接加载 SO 的依赖 |
 | **F5** 存档系统 | **硬依赖** | `PlayerInfoSO` schema | F5 持有 PlayerInfoSO 实例并负责序列化；PlayerInfoSO 字段变更须 F5 同步更新序列化逻辑 |
 | **FE5** 局外成长系统 | **硬依赖** | `PlayerInfoSO`（读取功勋/升级状态）、`WeaponSO`（读取解锁列表） | FE5 读取 PlayerInfoSO 的功勋值和解锁状态，通过 F5 写入 |
@@ -325,6 +352,7 @@ F4 是 Foundation 层系统，**无上游依赖**。F4 的 SO schema 定义不�
 - **C3 GDD** 须引用 F4-S3（PerkSO schema）和 F4 的「规则 3：PerkSO 运行时克隆规则」
 - **C5 GDD** 须引用 F4-S4（WeaponSO schema）并说明 `comboGraph` 字段的引用关系
 - **FE1 GDD** 须引用 F4-S5（EnemyInfoSO schema）和 `attackWindupBeats` 字段作为 C4 令牌分配的输入
+- **C4 GDD** 须引用 F4-S5（`attackWindupBeats`、`timeoutBeats`）与 F4-S8（`CombatDirectorConfigSO` 全局参数），并停止将威胁权重/容量表/细分模式标注为 `EnemyInfoSO` 载体（BC-3）
 - **F5 GDD** 须引用 F4-S7（PlayerInfoSO schema）并声明该 schema 变更会触发序列化迁移
 - **F6 GDD** 须说明向 F2 注入 `LevelConfigSO` 数据的时机和职责
 
@@ -572,7 +600,7 @@ F4 的验收标准按 **BLOCKING**（须自动化测试通过，Done 前必须�
 
 - **`WeaponSO.animatorLayerName` 命名规范**：Animancer 层名称格式须 F6（TDE 集成层）GDD 与 C5（武器系统）GDD 联合定义，F4 只持有字段不规定命名格式。F6/C5 GDD 锁定命名规范后，须在 F4 的 RegisterValidator 外部验证类中新增 `[ValidateInput]` 规则检查字段值是否符合约定格式（否则该字段为无验证的自由字符串，运行时静默失效风险）。
 
-- **Addressables Group 分组策略**：7 类 SO 的 Bundle 分组（按系统分组 vs 按加载时机分组）由 F6 GDD 决定。F4 已明确：大型资产引用（`animationClip`、`iconSprite`）使用 `AssetReferenceT<T>` 延迟引用，`bgmFilePath` 为 FMOD 资产路径（见规则 6、ADR-D6）；`List<AttackNodeSO>` 保留直接引用（元数据小型 SO）。F6 在分组时须考虑这一 Bundle 拓扑。
+- **Addressables Group 分组策略**：8 类 SO 的 Bundle 分组（按系统分组 vs 按加载时机分组）由 F6 GDD 决定。F4 已明确：大型资产引用（`animationClip`、`iconSprite`）使用 `AssetReferenceT<T>` 延迟引用，`bgmFilePath` 为 FMOD 资产路径（见规则 6、ADR-D6）；`List<AttackNodeSO>` 保留直接引用（元数据小型 SO）。F6 在分组时须考虑这一 Bundle 拓扑。
 
 - **`EnemyBehaviorProfile` 枚举扩展性**：当前候选值 `{Melee_Simple, Ranged_Simple, Elite, Boss}` 是否足够 MVP？FE1 GDD 设计期间若需新增档案类型，须同步更新 F4-S5 并触发 Rule 4 变更传播。
 

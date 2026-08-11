@@ -1,8 +1,8 @@
 # F6: TopDownEngine & Animancer 集成层 (TDE Integration Layer)
 
-> **Status**: Approved
+> **Status**: Amended (2026-08-10 blocker fix) — Pending Re-review
 > **Author**: Jadyn Wu + Claude Code Agents
-> **Last Updated**: 2026-07-19 (R3 — 4 blockers resolved: authoredBpm guard, FMOD coroutine reentrancy, LevelConfigSO path, AC testability batch)
+> **Last Updated**: 2026-08-10 (SC-1 — F6 订阅 F2 `OnAudioUnavailable`，同帧 `TDE.Pause()` + `F3.DisableAllInput()` 承接音频断开降级) ｜ 2026-07-19 (R3 — 4 blockers resolved: authoredBpm guard, FMOD coroutine reentrancy, LevelConfigSO path, AC testability batch)
 > **Implements Pillar**: 支柱二：武侠手感不可妥协 (Wuxia Feel First)
 > **System ID**: F6
 > **Layer**: Foundation | **Milestone**: MVP | **Design Order**: 5
@@ -110,6 +110,17 @@ F6 的玩家幻想是**天衣无缝的动作应噬**——每一次出招、侧�
     - **BeatClock 是纯持有者**：F2 不自 load（见 `audio-beat-clock.md` Rule 7/Rule 10、registry forbidden pattern `f2_self_load_latency_from_f5`）；运行期 `LatencyOffsetMs` 唯一写者为 FE3。
     - 验收见 **AC-F6-23**。
 
+14. **音频设备断开降级承接（`OnAudioUnavailable` 订阅，SC-1）**
+    `TDELifecycleAdapter` 在 `OnEnable()` 额外订阅 F2 的 **`OnAudioUnavailable`** 事件（音频设备断开 / BGM 不可用时由 F2 广播），作为降级协调器承接 F2 降级序列「1 帧内暂停游戏」的要求——F2 自身仅有权停拍（`BeatClock` 内部 Paused），**无权暂停 TDE 或禁用 F3**（那是本适配器的独家职责，见 Rule 3/Rule 4）。收到事件后，`TDELifecycleAdapter` 在**同一 Update 帧内**原子执行：
+    - **`GameManager.Pause()`**（或等效 TDE 暂停 API，经 TDE 事件系统触发，不修改 TDE 源码）——冻结 TDE 移动/物理，玩家无法再移动。
+    - **`InputEventBus.DisableAllInput()`**——切断 F3 攻击/输入通道，防止 C1 收到无拍点参照的攻击输入被静默丢弃。
+
+    此举消除「F2 停拍但 TDE 仍可移动、F3 仍 GameplayActive、攻击照发」的半暂停半运行战场，贯彻「无音频不惩罚玩家」意图。
+
+    **恢复对称路径**：若 F2 在设备重连时广播 `OnAudioRestored`（恢复事件的最终命名以 F2 GDD 定义为准；BC-6 已定义的 `OnBeatClockResumed` 可复用于时钟重启信号），`TDELifecycleAdapter` 同帧对称执行 **`GameManager.UnPause()`** + **`InputEventBus.EnableGameplayInput()`**，恢复 TDE 运行与输入通道。恢复顺序遵 EC-05 约束：节拍参照（BeatClock）先于输入通道开放，避免玩家在时钟未就绪时触发攻击导致判定窗口计算错误。
+
+    此降级/恢复响应独立于 `TopDownEngineEvent(Pause/UnPause)`（玩家主动暂停走 UIActive 路径），语义为「无音频不可玩，全局冻结」。验收见 **AC-F6-24**。
+
 ---
 
 ### States and Transitions
@@ -124,6 +135,8 @@ F6 自身不维护内部状态机，但其事件响应决定了系统的全局�
 | **已暂停** | `TopDownEngineEvent(Pause)` | UIActive | Paused |
 | **玩家死亡** | `TopDownEngineEvent(PlayerDeath)` | AllDisabled | Stopped |
 | **复活完成** | `TopDownEngineEvent(RespawnComplete)` | GameplayActive | Playing（重启） |
+| **音频降级冻结（SC-1）** | F2 `OnAudioUnavailable` | AllDisabled（`DisableAllInput()`） | Paused（F2 自身停拍，F6 同帧 `GameManager.Pause()`） |
+| **音频恢复（SC-1）** | F2 `OnAudioRestored` / `OnBeatClockResumed` | GameplayActive | Playing（`GameManager.UnPause()`，节拍先于输入） |
 
 阶段转换的**原子性保证**：每次 `TDELifecycleAdapter` 响应 TDE 事件时，BeatClock 调用与 InputEventBus 调用在**同一 Update 帧内**完成，消除半途不一致状态。
 
@@ -134,6 +147,7 @@ F6 自身不维护内部状态机，但其事件响应决定了系统的全局�
 | 方向 | 系统 | 数据内容 | 接口类型 |
 |------|------|---------|---------|
 | TDE **→** F6 | TopDownEngine | `TopDownEngineEvent`（Pause/UnPause/PlayerDeath/RespawnComplete） | `MMEventListener<TopDownEngineEvent>` 事件订阅 |
+| F2 **→** F6 (SC-1) | BeatClock | `OnAudioUnavailable`（设备断开降级信号）；`OnAudioRestored` / `OnBeatClockResumed`（恢复信号） | 事件订阅；F6 承接降级序列，同帧 `GameManager.Pause()` + `InputEventBus.DisableAllInput()`（恢复时对称 UnPause + `EnableGameplayInput()`） |
 | F6 **→** F2 | BeatClock | `Play(bgmRef, bpm, timeSig)` / `Stop()` / `Pause()` / `Resume()` | 直接方法调用（独家控制） |
 | F6 **→** F3 | InputEventBus | `EnableGameplayInput()` / `EnableUIInput()` / `DisableAllInput()` | 直接方法调用 |
 | F4 **→** F6 | LevelConfigSO | `Bpm`、`TimeSignature`、`BgmAssetReference`（每场景注入） | Inspector 序列化字段 |
@@ -288,7 +302,7 @@ attackAnimSpeed = clamp(currentBPM / authoredBpm, SPEED_MIN, SPEED_MAX)
 
 | 系统 | 系统 ID | 依赖内容 | F6 使用方式 |
 |------|---------|---------|------------|
-| BeatClock | F2 | `Play(bgmRef, bpm, timeSig)` / `Stop()` / `Pause()` / `Resume()` / `RequestBPMChange()` / `OnBeat` 事件 | `TDELifecycleAdapter` 独家控制生命周期；C2 通过 `OnBeat` 读取 `currentBPM` 更新 `attackAnimSpeed` |
+| BeatClock | F2 | `Play(bgmRef, bpm, timeSig)` / `Stop()` / `Pause()` / `Resume()` / `RequestBPMChange()` / `OnBeat` 事件；**`OnAudioUnavailable`（SC-1 降级信号）** + `OnAudioRestored`/`OnBeatClockResumed`（恢复信号） | `TDELifecycleAdapter` 独家控制生命周期；C2 通过 `OnBeat` 读取 `currentBPM` 更新 `attackAnimSpeed`；**订阅 `OnAudioUnavailable` 同帧 `GameManager.Pause()` + `DisableAllInput()` 承接 F2 降级（SC-1）** |
 | InputEventBus | F3 | `EnableGameplayInput()` / `EnableUIInput()` / `DisableAllInput()` | `TDELifecycleAdapter` 在生命周期事件后调用，控制输入通道开关 |
 | LevelConfigSO 数据层 | F4 | `LevelConfigSO.Bpm` / `TimeSignature` / `BgmAssetReference` | `TDELifecycleAdapter` 在 `OnSceneLoaded(Single)` 时读取，注入 `BeatClock.Play()` |
 | TopDownEngine | 外部插件 | `InputSystemManagerEventsBased` / `TopDownEngineEvent` / `MMEventListener<T>` / TDE Animator Controller 基础设施 | `JadeRabbitInputManager` 继承 TDE 输入类；`TDELifecycleAdapter` 订阅 TDE 事件总线 |
@@ -310,6 +324,8 @@ attackAnimSpeed = clamp(currentBPM / authoredBpm, SPEED_MIN, SPEED_MAX)
 ### 双向依赖确认
 
 > **F2（BeatClock）GDD** 中须记录：F6 `TDELifecycleAdapter` 是 `BeatClock.Play/Stop/Pause/Resume` 的唯一调用者。
+>
+> **F2（BeatClock）GDD** 中须记录（SC-1）：F2 广播 `OnAudioUnavailable`（及恢复事件 `OnAudioRestored`/`OnBeatClockResumed`）后，由 F6 `TDELifecycleAdapter`（降级协调器）订阅并承接「1 帧内暂停游戏」——F2 自身只停拍，暂停 TDE（`GameManager.Pause()`）与禁用 F3（`DisableAllInput()`）由 F6 独家执行；恢复时对称 `GameManager.UnPause()` + `EnableGameplayInput()`。
 >
 > **F3（InputEventBus）GDD** 中须记录：F6 `TDELifecycleAdapter` 在 TDE 生命周期事件后调用 InputEventBus 方法。`JadeRabbitInputManager` 通过继承保留 TDE `AbilityInputAuthorization` 管线，但不直接调用 `InputActionMap.Enable()/Disable()`。
 >
@@ -612,11 +628,26 @@ EditMode 测试中注入返回 `false` 的 mock `IFMODRuntimeChecker`：断言 `
 
 ---
 
+### AC-F6-24 — 音频设备断开时 F6 同帧暂停 TDE 并禁用所有输入（SC-1）
+
+**类型**: Logic | **测试方式**: PlayMode 自动化测试（注入 mock F2 事件源 + Spy TDE 暂停/InputEventBus）
+
+覆盖 SC-1 降级承接链路。从 Gameplay Active 状态发布 F2 `OnAudioUnavailable` 事件后：
+
+1. **同帧原子性**：`GameManager.Pause()`（或等效 TDE 暂停触发，经 Spy 捕获）与 `InputEventBus.DisableAllInput()` 记录的 `Time.frameCount` 值相同（同一 Update 帧内，单主线程保证）；两者各调用恰好 1 次。
+2. **战场全冻结**：事件后 TDE 移动被冻结（模拟移动输入，角色 `Transform.position` 无变化）；输入通道对攻击指令无响应（`InputEventBus` 状态 `AllDisabled`）——不存在「TDE 仍可移动 / F3 仍 GameplayActive」的半运行状态。
+3. **恢复对称路径**：随后发布 F2 `OnAudioRestored`（或 `OnBeatClockResumed`）后，`GameManager.UnPause()` 与 `InputEventBus.EnableGameplayInput()` 各调用恰好 1 次；`UnPause()`/节拍恢复的调用顺序序号 < `EnableGameplayInput()`（节拍参照先于输入开放，遵 EC-05）；最终状态回到 GameplayActive。
+
+**通过条件**：以上 3 项全部通过。降级与恢复均通过 mock F2 事件源触发，无需真实音频设备断开。
+
+---
+
 **依赖说明（执行阻断）**：
 - AC-F6-12 / AC-F6-15：需 C2 最小 stub 实现（提供可执行 `PlayAttack()` / `UpdateBpm()` 调用的测试替身），不依赖完整 C2 连招图逻辑
 - AC-F6-04 / AC-F6-21：需与 lead programmer 确认 `IFMODRuntimeChecker` 接口定义及程序集内部访问权限（`[InternalsVisibleTo]` 目标）
 - AC-F6-20：仅在原型阶段执行，须 C2 + AnimancerAttackPlayer 联调完成后安排人工盲测
 - AC-F6-23：需 F5 提供 `ISaveService` 消费者 seam + `MockSaveService` 测试替身（见 `save-persistence.md` Rule 15），并与 lead programmer 确认单一显式 bootstrap driver 的落地组件；子用例 4 须在 release-config 构建路径执行（fail-fast guard 非 Debug-only）
+- AC-F6-24（SC-1）：需 F2 GDD 正式定义 `OnAudioUnavailable` 降级事件及恢复事件（`OnAudioRestored` / 复用 `OnBeatClockResumed`）；测试注入 mock F2 事件源 + Spy TDE 暂停 API（`GameManager.Pause/UnPause`）与 `InputEventBus`，无需真实音频设备断开
 
 ---
 

@@ -1,6 +1,6 @@
 # C1 节奏量化攻击系统 (Rhythm Quantization Attack System)
 
-> **Status**: In Design
+> **Status**: Revised (2026-08-10 blocker fix) — Pending Re-review
 > **Author**: Jadyn Wu + Claude Code Agents
 > **Last Updated**: 2026-07-21
 > **Implements Pillar**: 支柱一：节奏即战斗 (Rhythm IS Combat) / 支柱二：武侠手感不可妥协 (Wuxia Feel First)
@@ -116,9 +116,9 @@ C1 在 `BeatClock.IsStartConfirmed == true` 之前不对任何输入进行节奏
 
 游戏暂停时，C1 立即清除单槽缓冲区并关闭 LateWindow。恢复后不产生暂停前的残留判定（幽灵判定）。
 
-- **暂停时**：`_pendingInput = null`；`_lateWindowActive = false`；停止处理 `OnHalfBeatLookahead`。
-- **恢复时**：订阅 F2 的 `OnBeatClockResumed` 事件，收到后以"等待输入"状态重新激活。不重算有效窗口（BPM 未变化），不重置连击数。
-- `OnBeatClockResumed` 携带恢复后第一个拍点的 `beat_dsp_time`，C1 用此时间作为下一个 EarlyWindow 的起始参考，确保恢复后首次输入有正确的时间锚点。
+- **暂停时**：`_pendingInput = null`；`_lateWindowActive = false`；停止处理 `OnHalfBeatLookahead`。C1 订阅 F2 的 `OnBeatClockPaused` 事件（F2 权威定义，BC-6），收到后进入静默态。
+- **恢复时（BC-6）**：C1 订阅 F2 的规范化事件 **`OnBeatClockResumed`**（**非** `OnBpmChanged`；事件名对齐 F2 权威定义），收到后：① **重锚拍网格**——以事件携带的恢复后第一个拍点 `beat_dsp_time` 为基准重新对齐半拍网格；② **清空过期 `_pendingInput`**——丢弃暂停前残留的任何 pending 输入（防幽灵判定，即使暂停时已清空亦幂等再清一次作为护栏）；③ 以"等待输入"状态重新激活。不重算有效窗口（BPM 未变化），不重置连击数。
+- `OnBeatClockResumed` 携带恢复后第一个拍点的 `beat_dsp_time`，C1 用此时间作为重锚网格与下一个 EarlyWindow 的起始参考，确保恢复后首次输入有正确的时间锚点。
 
 ---
 
@@ -171,7 +171,9 @@ C1 在 `BeatClock.IsStartConfirmed == true` 之前不对任何输入进行节奏
 | **后拍点窗口** | 攻击输入到达（在 LateWindow 内） | **等待输入**（评级后清空） |
 | **后拍点窗口** | LateWindow 过期 | **等待输入**（丢弃缓冲） |
 | 任意状态 | 游戏暂停 | **静默**（清空缓冲） |
-| **静默** | 游戏恢复 | **等待输入** |
+| **静默** | 游戏恢复（F2 `OnBeatClockResumed`，BC-6） | **等待输入**（清空过期 pending + 重锚拍网格） |
+| 任意状态 | 玩家死亡（F6 `PlayerDeath`，SC-2） | **静默**（清空缓冲） |
+| **静默** | 玩家复活完成（F6 `RespawnComplete`，SC-2） | **等待输入**（清空过期评级状态 + 重锚拍网格） |
 
 ---
 
@@ -409,6 +411,82 @@ void OnMeterChanged(MeterChangeEventData data):    // 订阅 F2 的 OnMeterChang
 
 > **为何订阅 `OnMeterChanged` 而非 `OnMeterChangeAccepted`**：F2 暴露两个事件——`OnMeterChangeAccepted`（接受时广播，供 C2 立即 `UpdateBpm()` 体感、F6 预调度 BGM）与 `OnMeterChanged`（小节边界生效时广播，供 C1 重锚定量化网格、C4 调整令牌密度）。C1 的判定网格必须与**实际生效**的拍点对齐，故只订阅 `OnMeterChanged`；不订阅 `OnMeterChangeAccepted`（若在接受时提前重锚，会导致边界前的输入按未来网格判定）。`OnMeterChanged` 对拍号-only 变更（`bpmChanged == false`，`newBpm == oldBpm`）同样触发——此时重算窗口幂等无害，缓冲清空仍适用（小节边界已跨越）。
 
+> **BD-2 适应窗口叠加**：上述步骤 1 算出的 `_effective*Ms` 为**新 BPM 标准宽度**。当 `bpmChanged == true` 且 BPM 上升时，标准宽度会骤缩，恰在 Boss 转阶段最高压时刻放大判定难度（Flow 反模式）。为此 C1 在 `OnMeterChanged` 生效后进入 **适应窗口**（`AdaptationWindowBeats` 拍，默认 2），窗口内以「变更前后较宽者」覆盖标准宽度——详见新增公式 **C1-F5b**。步骤 2（缓冲清空）不受适应窗口影响，仍在 `OnMeterChanged` 当帧立即执行。
+
+---
+
+### C1-F5b：BD-2 BPM 跃升适应窗口宽容期
+
+**用途（BD-2）**：`OnMeterChanged` 生效导致 BPM 上升时，判定窗毫秒宽度会骤缩，与 C2 取消窗缩短、C4 令牌密度上升在同一事件叠加为三系统难度尖峰。C1 侧承接策略为：`OnMeterChanged` 生效后引入 **适应窗口 = `AdaptationWindowBeats` 拍**（默认 2），窗口内判定窗**毫秒宽度取「变更前窗口ms 与 变更后窗口ms 的较宽者」**（`max`），防止 BPM 上升时窗口骤缩；窗口结束后恢复新 BPM 标准宽度。
+
+```
+// 在 C1-F5 步骤 1 算出新 BPM 标准宽度 _effective*Ms 之后执行（仅 bpmChanged==true 时启用）
+// prev*Ms = 本次 OnMeterChanged 之前生效的（旧 BPM）窗口毫秒宽度，重算前先快照
+onMeterChanged(data):
+    snapshot prevPerfectMs = _effectivePerfectMs, prevGoodMs = _effectiveGoodMs, prevEarlyMs = _effectiveEarlyMs
+    // …（C1-F5 步骤 1：按 newBpm 重算 _effective*Ms 标准宽度）…
+    if data.bpmChanged:
+        _adaptationEndDspTime = data.predictedEffectiveDspTimeRaw + AdaptationWindowBeats × fullBeatMs / 1000
+        // 缓存 prev 与 standard 两组宽度，供窗口内/外取用
+        _adaptPerfectMs = max(prevPerfectMs, _effectivePerfectMs)   // 较宽者
+        _adaptGoodMs    = max(prevGoodMs,    _effectiveGoodMs)
+        _adaptEarlyMs   = max(prevEarlyMs,   _effectiveEarlyMs)
+
+// 判定热路径（C1-F3 步骤 2 取窗口宽度时）——按当前 DSP 时间是否仍在适应窗口内选择宽度：
+effectivePerfect = (nowDspTime < _adaptationEndDspTime) ? _adaptPerfectMs : _effectivePerfectMs
+effectiveGood    = (nowDspTime < _adaptationEndDspTime) ? _adaptGoodMs    : _effectiveGoodMs
+```
+
+**变量定义：**
+
+| 变量 | 来源 | 单位 | 说明 |
+|------|------|------|------|
+| `AdaptationWindowBeats` | `RhythmConfigSO`（Tuning Knob） | 拍（beat） | 适应窗口时长；默认 **2**，范围 **[0, 4]**；0 = 关闭宽容期（立即恢复标准宽度） |
+| `prevPerfectMs` / `prevGoodMs` / `prevEarlyMs` | 重算前快照 | ms | 变更前（旧 BPM）生效的窗口宽度 |
+| `_effective*Ms` | C1-F5 步骤 1 | ms | 变更后（新 BPM）标准宽度 |
+| `_adapt*Ms` | 本公式 | ms | 窗口内实际采用宽度 = `max(prev, effective)`（较宽者） |
+| `_adaptationEndDspTime` | 本公式 | s（DSP） | 适应窗口结束的 DSP 时间 = 边界拍时间 + `AdaptationWindowBeats × fullBeatMs/1000` |
+| `predictedEffectiveDspTimeRaw` | F2 `MeterChangeEventData`（权威字段） | s（DSP，raw） | 边界生效时刻的 raw DSP 时间戳，作适应窗口计时基准（BC-6 对齐：C1 不自造 `boundaryBeatDspTime`，直接消费 F2 既有字段；窗口时长比较用 raw 坐标无需 offset） |
+
+**示例（BPM 120 → 180 上升，BD-2 生效，HalfBeat 模式，`GoodHalfWindowMs_authored=120`, `PerfectHalfWindowMs_authored=50`）：**
+- 变更前 BPM=120：`halfBeatMs=250`，`gridIntervalMs/2-1=124`；`prevGoodMs = min(120,124)=120ms`，`prevPerfectMs=50ms`。
+- 变更后 BPM=180：`halfBeatMs=166.7`，`gridIntervalMs/2-1=82.3`；标准 `_effectiveGoodMs = min(120,82.3)=82.3ms`，`_effectivePerfectMs=min(50,82.3)=50ms`。
+- 适应窗口内（生效边界拍起 2 拍 = `2 × fullBeatMs = 2 × 333.3 = 666.7ms`）：`_adaptGoodMs = max(120, 82.3) = 120ms`（沿用较宽的旧窗口，Good 不骤缩）；`_adaptPerfectMs = max(50, 50) = 50ms`。
+- 窗口结束后（`nowDspTime ≥ _adaptationEndDspTime`）：恢复新 BPM 标准宽度 `82.3ms / 50ms`。
+
+> **BD-2 三系统互引**：本适应窗口为 **C1** 侧承接。**C2**（`combo-system.md`）取消窗在同一适应窗口内以相同 `max` 规则放宽绝对毫秒（BD-2）；**C4**（`combat-director.md`）`SlotCapacity` 改按「每秒令牌速率」归一化以消除 BPM 上升导致的攻击密度线性上升（BD-2）。三文档 Formulas 互相引用 BD-2；`AdaptationWindowBeats` 由 C1/C2 共享同一 Tuning Knob 语义（须先于 FE4 Boss GDD 由 owner 联合锁定）。
+
+> **拍号-only 变更（`bpmChanged==false`）不启用适应窗口**：BPM 未变则标准宽度不变，无骤缩风险，`_adaptationEndDspTime` 保持过去值（判定热路径直接走标准宽度）。
+
+---
+
+### C1-F5c：Off 模式 perk_multiplier 独立封顶（BD-1）
+
+**用途（BD-1）**：当 `QuantizationMode == Off` 时，Off 恒定 Perfect（`rating=1.0`）× 连击正常增长 × perk_multiplier 无限制 = 战力天花板与踩准玩家几乎相同，已从「功勋漏洞」升级为**战力漏洞**，击穿 game-concept.md:213 反支柱与支柱一。承接策略：Off 分支对**聚合 `perk_multiplier` 独立封顶 1.0**（「节奏模式独占」护栏）——即 Off 下心法产生的 DamageModifier / ComboModifier 聚合后 clamp 到 ≤ 1.0，perk 在 Off 下不产生正向战力增益。
+
+```
+// 最终伤害计算中 perk_multiplier 的 Off 分支 clamp（C1 定义规范性护栏；聚合由 C3 提供、乘入由下游伤害系统执行）
+perk_multiplier_raw = RhythmModifierProvider?.GetDamageMultiplier() ?? 1.0   // C3 聚合的 DamageModifier/ComboModifier 乘积
+if quantizationMode == Off:
+    perk_multiplier = min(perk_multiplier_raw, 1.0)      // BD-1 独立封顶：节奏模式独占护栏
+else:
+    perk_multiplier = perk_multiplier_raw                // HalfBeat/Beat：正常，受 C3 PERK_MULT_MAX(2.0) 约束
+// 最终伤害（示意，乘入方为下游伤害系统）：
+final_damage = base_damage × rating_multiplier × combo_multiplier × perk_multiplier
+```
+
+**变量定义：**
+
+| 变量 | 来源 | 范围 | 说明 |
+|------|------|------|------|
+| `perk_multiplier_raw` | C3 `IRhythmModifierProvider.GetDamageMultiplier()` | [1.0, 2.0]（PERK_MULT_MAX=2.0，C3） | 心法聚合伤害乘子；null（无心法）= 1.0 |
+| `quantizationMode` | FE7 注入 | {Off, HalfBeat, Beat} | 判定 Off 分支 |
+| `perk_multiplier` | 本公式 | Off: [?, 1.0]；否则 [1.0, 2.0] | Off 下 clamp 到 ≤1.0 后传下游 |
+
+**边界语义（OQ-C3-3 锁定）**：Off 下心法的 DamageModifier / ComboModifier 聚合后 clamp 到 ≤ 1.0，**且计入功勋时同样受 Off 折算**（`meritMultiplierOff`，见 Off 合约第 4 条）——不额外绕过。此护栏与既有 Off 三重隔离（排行/成就隔离、连招深度封顶 Standard、功勋折算）叠加，构成第四重隔离，共同确保 Off 无法成为绕过节奏的破坏性收益路径。`meritMultiplierOff` 沿用 C1 既有 Off 功勋折算三重隔离，**不新增绕过**。
+
+> **C1 不乘入 perk_multiplier**：与 C1-F7 一致，C1 仅**定义** Off 封顶护栏规范；`GetDamageMultiplier()` 的实际乘入由下游伤害系统（C2/C6）执行，须读取激活 `QuantizationMode` 并在 Off 下应用 `min(·, 1.0)`。C3（`perk-system.md`）AC-C3-15(b) 据此从「阻塞桩」改为可判定：断言 Off 下 `perk_multiplier ≤ 1.0`（BD-1 三文档对齐）。
+
 ---
 
 ### C1-F6：RhythmJudgmentEvent 规范性字段定义
@@ -473,7 +551,7 @@ public interface IRhythmModifierProvider
 
 > **窗口 delta 为何缓存而非每次 Evaluate 查询（BC-2 节拍收敛）**：C3-R7 原表述「计算 effective-window 后查询」易被误读为每击查询。实际 perk 栈仅在房间之间选/弃心法时变化（Roguelike 流程），故 C1 在两个低频事件（meter 生效、perk 栈变更）后重算并缓存，判定热路径（`OnHalfBeatLookahead`）零 provider 查询开销。此为对「C3-R7 每次 Evaluate vs C1 仅 OnMeterChanged 缓存」冲突的收敛决定——工程正确解，不改变体感。ΔCombo 例外走每判定查询（整型、无重算成本）。
 
-> **Off 模式接线（BD-1 未决，不在本契约裁定）**：Off 模式下是否查询 `RhythmModifierProvider`（即 perk 是否在 Off 下生效）取决于 **BD-1 owner 裁定**（见跨评审 BD-1：Off 从功勋漏洞升级为战力漏洞）。本契约只定义**接线机制**，不预设 Off 分支策略——待 C1 Q3（`meritMultiplierOff`）与 C3 OQ-C3-3 同批锁定后，实现须据裁定在 Off 下**短路 provider**（perk 不生效，纳入「节奏模式独占」护栏）或**保留查询**（明确无障碍优先于平衡）。**在裁定落地前，AC-C1-26 标为阻塞桩，不可判 pass/fail。**
+> **Off 模式接线（BD-1 已裁定）**：owner 裁定采用「Off perk 封顶」（见跨评审 BD-1 修复方向①）。Off 模式下 `RhythmModifierProvider` 各查询**仍可执行**（无障碍反馈不变），但其 `GetDamageMultiplier()` 贡献的**聚合 `perk_multiplier` 在 Off 分支独立封顶 1.0**（「节奏模式独占」护栏，见 **C1-F5c**）——即 Off 下心法不产生正向战力增益。窗口 delta（`GetPerfectWindowDeltaMs` 等）在 Off 下无实际效果（Off 偏移量恒 0，评级恒 Perfect），ΔCombo delta 正常累积但受 ComboMax 约束。C1 Q3（`meritMultiplierOff`）与 C3 OQ-C3-3 据此同批锁定：Off 功勋沿用既有折算三重隔离，不新增绕过。**AC-C1-26 从阻塞桩改为可判定**：断言 Off 下 `perk_multiplier ≤ 1.0`。
 
 ---
 
@@ -610,14 +688,29 @@ if GoodHalfWindowMs_effective > gridIntervalMs / 2 - 1:
 
 ---
 
+### E10：玩家复活/重生时的幽灵评级（Respawn Ghost Judgment，SC-2）
+
+**场景**：玩家死亡时 `_pendingInput` 缓冲区可能持有死前的陈旧输入（或 LateWindow 仍激活）。F6 死亡序列（EC-04，`tde-integration.md`）不经过「游戏暂停」路径，故 Rule 8 的暂停清空**不触发**；复活后 `Play()` 恢复，首个 `OnHalfBeatLookahead` 会用新拍网格评级死前陈旧输入 → 产生「幽灵评级」，错误推进连招。
+
+**处理规则（SC-2）**：
+- C1 订阅 F6 的 **`PlayerDeath`**（或等价死亡事件）与 **`RespawnComplete`**（或等价复活完成事件），复用 Rule 8 的清空逻辑：`_pendingInput = null`；`_lateWindowActive = false`；停止处理 `OnHalfBeatLookahead`（死亡起）。
+- **复活完成时**：清空任何过期评级状态（残留 `_pendingInput`、未消费的 LateWindow），以「等待输入」状态重新激活；重锚拍网格（复用 BC-6 恢复逻辑，若复活伴随时钟恢复）。
+- 复活后首个 `OnHalfBeatLookahead` **不得**评级任何死亡前的输入——所有跨越死亡边界的 pending 输入一律丢弃，不产生 `RhythmJudgmentEvent`。
+- **幽灵评级定义**：死亡前缓存的输入在复活后仍被评级的现象——本系统明确禁止（与 E6 幽灵判定同源，触发路径不同：E6 由暂停触发，E10 由死亡/复活触发）。
+
+> **设计意图**：死亡切断玩家的节奏承诺连续性；复活是一个全新的战斗上下文。任何残留输入都不代表玩家在复活后的意图，必须清除以防连招/评级被陈旧输入污染。此约束与 SC-2 跨系统场景 G（死亡复活幽灵评级）对称，须在 F6 死亡/复活序列 GDD 中记录 C1 的订阅方（双向合约）。
+
+---
+
 ## Dependencies
 
 ### 上游依赖（C1 消费）
 
 | 系统 | 数据 | 接口 | 必需性 |
 |------|------|------|--------|
-| **F2 音频时钟** | `OnHalfBeatLookahead`（`BeatEventData.beat_dsp_time`）、`IsStartConfirmed`、`LatencyOffsetMs`、`OnMeterChanged`（`MeterChangeEventData`，边界生效事件，F2 Core Rule 14） | 事件订阅 + 属性查询 | **必需** — 无 F2 则 C1 无法运行（Off 模式除外） |
+| **F2 音频时钟** | `OnHalfBeatLookahead`（`BeatEventData.beat_dsp_time`）、`IsStartConfirmed`、`LatencyOffsetMs`、`OnMeterChanged`（`MeterChangeEventData`，边界生效事件，F2 Core Rule 14）、**`OnBeatClockPaused` / `OnBeatClockResumed`**（暂停/恢复事件，携恢复首拍 `beat_dsp_time`，BC-6；事件名对齐 F2 权威，**非** `OnBpmChanged`） | 事件订阅 + 属性查询 | **必需** — 无 F2 则 C1 无法运行（Off 模式除外） |
 | **F3 输入管线** | `AttackInputEvent`（`attackType`, `inputDspTime`, `chargeStartDspTime`） | 事件订阅（`OnAttackInput`） | **必需** — 无 F3 则 C1 无输入来源 |
+| **F6 生命周期适配** | `PlayerDeath` / `RespawnComplete`（或等价死亡/复活事件，SC-2） | 事件订阅 | **必需** — 复活时清空过期 `_pendingInput` 与评级状态，防幽灵评级（E10） |
 | **FE7 游戏设置** | `QuantizationMode`（Off / HalfBeat / Beat） | 属性注入（运行时可切换） | **必需** — 决定评级模式 |
 | **ADR-D4 SO 数据层** | `RhythmConfigSO`（窗口默认值、ComboMax） | ScriptableObject 读取 | **必需** — 策划配置数据来源 |
 | **C3 心法构筑系统** | `IRhythmModifierProvider`（`GetPerfectWindowDeltaMs` / `GetGoodWindowDeltaMs` / `GetComboDelta`；见 C1-F7）+ `OnPerkStackChanged` 重算触发 | 属性注入（C1 查询抽象接口） | **可选** — 无 C3/无心法时 provider = null，各查询走默认值；C1 不硬依赖 C3（BC-2） |
@@ -637,6 +730,8 @@ if GoodHalfWindowMs_effective > gridIntervalMs / 2 - 1:
 ### 双向合约
 
 - **F2 ↔ C1**：F2 的 `beat_dsp_time` 已在"玩家感知时域"（F2 Core Rule 7）。C1 须对 F3 时间戳加 `latency_offset_s` 后再比较（C1-F2）。若 F2 修改时域约定，C1 的 beat_offset_ms 公式失效。
+- **F2 ↔ C1（BC-6 暂停/恢复）**：F2 权威定义 `OnBeatClockPaused` / `OnBeatClockResumed`（携恢复首拍 `beat_dsp_time`）+ `IAudioPlayer.Pause()/Resume()`。C1 订阅两事件：恢复时重锚拍网格并清空过期 `_pendingInput`（Rule 8 + E6）。C1 使用规范化事件名 `OnBeatClockResumed`（**非** `OnBpmChanged`）。F2 GDD 须对称登记 C1 为 `OnBeatClockResumed` 订阅方。
+- **F6 ↔ C1（SC-2 复活清空）**：C1 订阅 F6 死亡/复活事件（`PlayerDeath` / `RespawnComplete` 或等价），复活时清空过期 `_pendingInput` 与评级状态（E10），防复活幽灵评级。F6 生命周期 GDD（死亡序列 EC-04）须对称登记 C1 为订阅方——若 F6 不广播死亡/复活事件，SC-2 幽灵评级无法防护。此为**跨系统场景 G** 承接合约。
 - **F3 ↔ C1**：F3 的 `chargeStartDspTime` 哨兵值为 -1.0（F3 Core Rule 8）。C1 以 `> -1.0` 检测。若 F3 修改哨兵值约定，C1-F1 失效。
 - **P1 ↔ C1**：P1（HUD）消费 `RhythmJudgmentEvent` 中的 `Rating` 和 `ComboCountAfter` 展示反馈。P1 须在 Miss 时显示连击数**停止增长**的视觉区分（非清零）。若 C1 修改 Miss ΔCombo 行为，P1 的 Miss 动效设计需同步更新。
 - **充能攻击 ↔ PL2**：充能攻击触发 `AttackInputEvent` 后，F3 会向 PL2（VFX 反馈系统）发送预确认信号（pre-confirmation）以触发充能特效。C1 的最终评级（Perfect/Good/Miss）叠加在 PL2 的预确认特效之上；充能特效不等待 C1 评级完成。若 C1 评级为 Miss，PL2 须弱化（非取消）已播放的预确认特效。此时序合约须在 F3 / PL2 GDD 中对称记录。
@@ -654,6 +749,7 @@ if GoodHalfWindowMs_effective > gridIntervalMs / 2 - 1:
 | `LateWindowMs` | `RhythmConfigSO.LateWindowMs` | float | 100 ms | [50, 200] | 缩小 → 慢半拍的玩家更容易被丢弃；放大 → 后拍容忍度↑ |
 | `ComboMax` | `RhythmConfigSO.ComboMax` | int | **999**（对齐 registry `combo_max`） | [148, 999] | 影响连击系统的心理上限和 UI 显示设计；下界 148 = `combo_multiplier` 触顶点（低于此会提前截断倍率），上界 999 = registry 权威平台段 |
 | `LookaheadMs` | `RhythmConfigSO.LookaheadMs` | float | 来自 ADR-D3 | [50, 200] | F2 提前广播拍点事件的时间量；C1 用它确定 EarlyWindow 起始边界 |
+| `AdaptationWindowBeats`（BD-2） | `RhythmConfigSO.AdaptationWindowBeats` | int | **2** | [0, 4] | BPM 上升后判定窗宽容期时长（拍）；窗口内窗口宽度取变更前后较宽者（C1-F5b），防 BPM 跃升三系统难度尖峰。缩小 → 更快恢复新 BPM 标准难度（张力↑）；0 = 关闭宽容期；放大 → 过渡更平缓（须与 C2 共享同一语义，先于 FE4 Boss GDD 锁定） |
 | `platformMinPerfectMs` | 平台配置（非 SO） | float | PC=16.7, iOS=39, Android=80 | [0, 120] | 平台保底 Perfect 窗口；过小则该平台玩家物理上无法打出 Perfect |
 | `ΔCombo` 表 | `RhythmConfigSO.DeltaCombo_*` | int×3 | Perfect=+2, Good=+1, Miss=0 | Perfect∈[1,5], Good∈[0,3], Miss=[0,0]（硬编码，不可负） | 调整连击增速；提高 Perfect 奖励可强化节奏激励循环。Miss ΔCombo **不可为负**——Miss 不清零是 game-concept.md 规则五合约，实现层须断言 `ΔCombo_Miss == 0` |
 | `meritMultiplierOff` | C5/FE5 经济配置（**非 C1 SO**，C1 仅暴露激活模式） | float | **待定，见 Q3**（占位建议 0.5） | (0, 1) — 严格开区间，不可为 0（否则完全剥夺无障碍玩家进度）或 ≥1（否则失去隔离意义） | Off 模式功勋折算系数；过高则「零技巧刷取」漏洞复现，过低则惩罚无障碍用户。最终值须先于 C5/FE5 经济 GDD 锁定（Off 合约第 4 条） |
@@ -709,6 +805,7 @@ if GoodHalfWindowMs_effective > gridIntervalMs / 2 - 1:
 - **AC-C1-08**：同一半拍 EarlyWindow 内双击 → 只产生一次 `RhythmJudgmentEvent`（第二次输入覆盖第一次）。
 - **AC-C1-09**：`IsStartConfirmed == false` 时输入到达 → 缓冲，首拍确认后统一评级。
 - **AC-C1-10**：游戏暂停 → 缓冲区清空、LateWindow 关闭；恢复后无幽灵判定。
+- **AC-C1-10b（BC-6 恢复重锚 + 清空）**：**BPM=120**，暂停前 `_pendingInput` 持有一条陈旧输入。触发 F2 `OnBeatClockResumed`（携恢复首拍 `beat_dsp_time`）→ **断言**：① `_pendingInput == null`（过期 pending 已清空，即使暂停已清亦幂等）；② C1 以恢复首拍 `beat_dsp_time` 重锚半拍网格（`halfBeatMs==250ms`，下一 EarlyWindow 起点对齐恢复首拍）；③ 恢复后首个 `OnHalfBeatLookahead` **不**评级任何暂停前输入（无 `RhythmJudgmentEvent`）；④ 连击数未被恢复重置。**事件名断言**：C1 订阅的恢复事件名为 `OnBeatClockResumed`，**非** `OnBpmChanged`（W-03/BC-6 规范化）。
 
 ### 公式验证（C1-F1~F5）
 
@@ -717,8 +814,9 @@ if GoodHalfWindowMs_effective > gridIntervalMs / 2 - 1:
 - **AC-C1-13**：BPM=160 时，`GoodHalfWindowMs_authored=120` → 运行时钳位为 `min(120, 93.75-1) = 92.75ms`。
 - **AC-C1-14**：Perfect → ComboCount += 2；Good → += 1；Miss → += 0（不归零）。ComboCount 不超过 ComboMax（**999**，对齐 registry `combo_max`）。
 - **AC-C1-15**：`OnMeterChanged` 事件（`data.bpmChanged==true`，新 BPM 有效）→ 有效窗口重算 + `_pendingInput` 清空 + `_lateWindowActive` 关闭 + `_skipToggle` 重置为"处理"相位。**Beat 模式额外断言**：事件后立即注入攻击输入，触发一次 `OnHalfBeatLookahead` → 应产生 `RhythmJudgmentEvent`（skip toggle 已重置为处理相位，首拍不被跳过）。**拍号-only 变更断言**：`OnMeterChanged` 携 `data.bpmChanged==false, data.newBpm==oldBpm` → `currentBpm` 不变、窗口重算幂等（值不变）、缓冲仍清空。
+- **AC-C1-15b（BD-2 适应窗口宽容期）**：`AdaptationWindowBeats=2`，HalfBeat 模式，`GoodHalfWindowMs_authored=120`。**从 BPM=120 跃升至 BPM=180**（`OnMeterChanged` 携 `bpmChanged==true`）：变更前 `_effectiveGoodMs==120`（BPM=120 未钳位），变更后标准 `_effectiveGoodMs==82.3`（BPM=180 钳位 `gridIntervalMs/2-1`）。**断言**：在适应窗口内（生效边界拍起 `2×fullBeatMs==2×333.3==666.7ms` 内）判定采用 `_adaptGoodMs == max(120, 82.3) == 120ms`（沿用较宽旧窗口，不骤缩）；窗口结束后（`nowDspTime ≥ _adaptationEndDspTime`）判定采用标准 `82.3ms`。**反向断言（BPM 下降 180→120，窗口不应收窄）**：`_adaptGoodMs == max(82.3, 120) == 120ms`，同样取较宽者。**`AdaptationWindowBeats==0` 对照**：无宽容期，`OnMeterChanged` 后立即采用标准 `82.3ms`。
 
-### 边界情况（E1–E9）
+### 边界情况（E1–E10）
 
 - **AC-C1-16**：量化模式战斗中切换 → 缓冲区清空，下一输入使用新模式评级。
 - **AC-C1-17**：时钟未确认 2s 超时 → 静默丢弃缓冲区输入，不产生任何 `RhythmJudgmentEvent`，记录 `Warning` 日志。
@@ -727,6 +825,7 @@ if GoodHalfWindowMs_effective > gridIntervalMs / 2 - 1:
 - **AC-C1-20**：`OnMeterChanged`（`data.newBpm == 0`）→ BPM 不更新，窗口不变，记录警告日志。
 - **AC-C1-21**：Off 模式连击 → 每次 +2，受 ComboMax 约束；每次事件 `CancelTier == Standard`（连招深度封顶断言，见 AC-C1-06）。
 - **AC-C1-21b（功勋隔离契约）**：Off 模式激活期间，C1 暴露的激活 `QuantizationMode == Off`，供下游功勋结算系统（C5/FE5）读取。**C1 层可验证**：C1 广播/暴露的模式状态在 Off 下恒为 `Off`（结算方据此应用 `meritMultiplierOff` 折算）。折算金额本身的验收属 C5/FE5 集成 AC（C1 不发放功勋）。
+- **AC-C1-22e（SC-2 复活幽灵评级防护）**：**BPM=120**，玩家死亡瞬间 `_pendingInput` 持有一条死前陈旧输入（未评级）。触发 F6 `PlayerDeath` → **断言**：`_pendingInput == null`、`_lateWindowActive == false`、停止处理 `OnHalfBeatLookahead`。随后触发 F6 `RespawnComplete` → C1 以「等待输入」状态重新激活，重锚拍网格（`halfBeatMs==250ms`）；**复活后首个 `OnHalfBeatLookahead` 不产生任何 `RhythmJudgmentEvent`**（死前输入已丢弃，连击数不因幽灵评级推进）。**对照**：复活后玩家发出的**新**输入按新拍网格正常评级（证明清空不影响正常流程）。
 
 ### 评级后果合约
 
@@ -736,7 +835,7 @@ if GoodHalfWindowMs_effective > gridIntervalMs / 2 - 1:
 - **AC-C1-23**：`RhythmJudgmentEvent { Rating=Good, CancelTier=Standard }` 正确广播；标准取消权限由 C2 订阅验证（集成 AC）。
 - **AC-C1-24**：`RhythmJudgmentEvent { Rating=Miss, CancelTier=Closed, ComboCountAfter==ComboCountBefore }` 正确广播；连击不变且不清零（C1 层可独立验证）。
 - **AC-C1-25（BLOCKING，BC-2 perk delta 消费）**：注入 mock `IRhythmModifierProvider`，令 `GetPerfectWindowDeltaMs()==+20`、`GetComboDelta(Perfect)==+3`。GIVEN `OnPerkStackChanged` 触发后，THEN `_effectivePerfectMs` == clamp(authored+20, …)（窗口重算含 delta）；WHEN Perfect 判定，THEN `ComboCountAfter == Before + 2 + 3`。GIVEN provider == null（无心法），THEN 窗口/ΔCombo 退化为无 perk 基线（`?? 0`）。**Miss 护栏**：provider `GetComboDelta(Miss)` 无论返回何值，Miss 的 ΔCombo 恒 = 0（C1-F4 短路，不查询 perkDelta）。
-- **AC-C1-26（阻塞桩，Off perk 隔离——待 BD-1 裁定）**：Off 模式下 perk 是否经 `RhythmModifierProvider` 生效，取决于 BD-1 owner 裁定与 C1 Q3 / C3 OQ-C3-3 联合锁定。**裁定落地前本 AC 不可判 pass/fail**（阻塞桩，见 C1-F7 Off 接线注记）。
+- **AC-C1-26（BD-1 Off perk 封顶——可判定）**：owner 裁定「Off perk 封顶」。注入 mock `IRhythmModifierProvider`，令 `GetDamageMultiplier() == 1.8`（模拟满栈数值心法）。**BPM=120，`QuantizationMode == Off`**：任一攻击输入 → 广播 `RhythmJudgmentEvent { Rating=Perfect, CancelTier=Standard }`；**断言下游可见的聚合 `perk_multiplier == min(1.8, 1.0) == 1.0`**（C1-F5c Off 分支 clamp）。对照组 `QuantizationMode == HalfBeat`、同一 mock、Perfect 判定 → `perk_multiplier == 1.8`（未封顶，受 C3 PERK_MULT_MAX=2.0 约束）。**功勋隔离**：Off 下功勋仍按 `meritMultiplierOff` 折算（不因 perk 封顶而绕过，AC-C1-21b）。此断言与 C3 AC-C3-15(b)「Off 下 `perk_multiplier ≤ 1.0`」对齐。
 
 ---
 
@@ -748,4 +847,4 @@ if GoodHalfWindowMs_effective > gridIntervalMs / 2 - 1:
 | **M0** | M0 Spike 窗口值验证（PerfectHalfWindowMs=50, GoodHalfWindowMs=120）——这些是估算值，需原型阶段实测确认 | 原型验证 | M0 Spike |
 | **Q1** | **已解决**：`ComboMax` = **999**（对齐 registry `combo_max`；C2/C3 已成文，`combo_multiplier` 于 count=148 触顶 ×5.0，148→999 为平台段），写入 RhythmConfigSO | C2/C3 GDD | ✅ 2026-08-10 |
 | **Q2** | E2 时钟未确认 2s 超时值——是否需要平台差异化（移动端启动更慢）？ | 平台测试 | 移动端原型 |
-| **Q3** | `meritMultiplierOff` 最终值（Off 模式功勋折算系数，占位建议 0.5，安全范围 (0,1) 开区间）——由无障碍公平性与经济防刷两方权衡确定。**须先于 C5/FE5 经济 GDD 锁定**（Off 合约第 4 条为规范性要求，执行方 C5/FE5）。 | **C5/FE5 经济 GDD（阻塞下游）** | C5/FE5 设计启动前 |
+| **Q3** | `meritMultiplierOff` 最终值（Off 模式功勋折算系数，占位建议 0.5，安全范围 (0,1) 开区间）——由无障碍公平性与经济防刷两方权衡确定。**须先于 C5/FE5 经济 GDD 锁定**（Off 合约第 4 条为规范性要求，执行方 C5/FE5）。**BD-1 循环阻塞已解除**：owner 裁定「Off perk 封顶 1.0」（C1-F5c），Q3 与 C3 OQ-C3-3 不再互指「待决」——perk 封顶策略已锁定，仅剩 `meritMultiplierOff` 数值待 C5/FE5 定标。 | **C5/FE5 经济 GDD（阻塞下游）**（BD-1 策略已解除循环阻塞） | C5/FE5 设计启动前 |
