@@ -1,36 +1,46 @@
 # Traceability Index
 
-> **Last Updated**: 2026-07-19 (Rev.6)
+> **Last Updated**: 2026-08-11 (Rev.7)
 > **Source**: `/architecture-review full`
-> **TR Registry**: `docs/architecture/tr-registry.yaml` (83 entries, v1)
+> **TR Registry**: `docs/architecture/tr-registry.yaml` (146 entries, v2)
+> **Verdict this review**: CONCERNS — see `architecture-review-2026-08-11.md`
 
 ---
 
 ## Coverage by System
 
-| System | GDD | Total TRs | Covered | Partial | Gap |
-|--------|-----|-----------|---------|---------|-----|
-| concept | game-concept.md | 14 | 5 | 4 | 5 |
-| beatclock | audio-beat-clock.md | 17 | 1 | 3 | 13 |
-| input | input-event-system.md | 15 | 2 | 0 | 13 |
-| datalayer | so-data-layer.md | 12 | 11 | 1 | 0 |
-| save | save-persistence.md | 13 | 2 | 0 | 11 |
-| tde | tde-integration.md | 12 | 8 | 0 | 4 |
-| **Total** | | **83** | **29** | **8** | **46** |
+| System | GDD | Total TRs | Covered | Partial | Gap | Notes |
+|--------|-----|-----------|---------|---------|-----|-------|
+| concept | game-concept.md | 14 | 5 | 4 | 5 | 剩余缺口待 FE3/C5 GDD |
+| beatclock | audio-beat-clock.md | 17 | 1 | 3 | 13 | GDD=规范；内部项非 ADR 缺口 |
+| input | input-event-system.md | 15 | 2 | 0 | 13 | GDD=规范 |
+| datalayer | so-data-layer.md | 12 | 11 | 1 | 0 | **D4 全覆盖** |
+| save | save-persistence.md | 13 | 2 | 0 | 11 | GDD=规范 |
+| tde | tde-integration.md | 12 | 8 | 0 | 4 | D10 补齐初始化时序 |
+| **rhythm (C1)** | rhythm-core.md | 18 | 15 | 2 | 1 | D3 主架构；接口所有权缺口(A2) |
+| **combo (C2)** | combo-system.md | 14 | 11 | 2 | 1 | D3/D4/D5；IComboCounter 缺(A2) |
+| **perk (C3)** | perk-system.md | 13 | 11 | 1 | 1 | D4；IRandomSource/pause 源缺(A2) |
+| **director (C4)** | combat-director.md | 18 | 15 | 2 | 1 | D2/D6/D10；IDSPClock mock 缺(A2) |
+| **Total** | | **146** | **81** | **15** | **50** | |
+
+> Core 层"Covered"以跨切面 ADR（D2/D3/D4/D5/D6/D10）承接为准；应用层状态机/调度器逻辑
+> 以 GDD 为规范文档，不单列 ADR 缺口。各 Core 系统的单一残留 Gap 均归结为 **A2 接口所有权缺口**
+> （待 ADR-D8 一并解决）。
 
 ---
 
 ## Coverage by ADR
 
-| ADR | Status | TRs Covered | TRs Partial |
-|-----|--------|-------------|-------------|
-| ADR-D1 (TDE Integration) | Accepted | TR-tde-001, TR-tde-002, TR-tde-003, TR-tde-006, TR-tde-007, TR-input-010, TR-input-014 | TR-concept-001 |
-| ADR-D2 (Enemy AI) | Accepted | TR-concept-009, TR-tde-008 | — |
-| ADR-D3 (Rhythm Quantization) | **Accepted** | TR-concept-006, TR-concept-007 | TR-concept-008, TR-concept-010 |
-| ADR-D4 (SO Data Layer) | **Accepted** | TR-datalayer-001 through 008, TR-datalayer-010, TR-datalayer-011, TR-datalayer-012, TR-concept-012 | TR-concept-013, TR-datalayer-009 |
-| ADR-D5 (Animation Pipeline) | Accepted | TR-concept-004, TR-tde-004, TR-tde-005 | — |
-| ADR-D6 (Audio Middleware) | Accepted | TR-concept-005, TR-beatclock-002 | TR-beatclock-010, TR-beatclock-011, TR-beatclock-013 |
-| ADR-D7 (Save/Persistence) | Accepted | TR-save-005, TR-save-008 | TR-datalayer-009 |
+| ADR | Status | Covers (代表 TR) |
+|-----|--------|-----------------|
+| ADR-D1 (TDE Integration) | Accepted | TR-tde-001/002/003/006/007, TR-input-010/014/015, TR-datalayer-012 |
+| ADR-D2 (Enemy AI) | Accepted | TR-concept-009, TR-tde-008, TR-director-001/002/010 |
+| ADR-D3 (Rhythm Quantization) | Accepted | TR-concept-006/007/008, TR-rhythm-001..013, TR-combo-002 |
+| ADR-D4 (SO Data Layer) | Accepted | TR-datalayer-001..012, TR-concept-012, TR-combo-001, TR-perk-001..004 |
+| ADR-D5 (Animation Pipeline) | Accepted | TR-concept-004, TR-tde-004/005, TR-combo-006 |
+| ADR-D6 (Audio Middleware) | Accepted | TR-concept-005, TR-beatclock-002/010, TR-director-008/009 |
+| ADR-D7 (Save/Persistence) | Accepted | TR-save-005/008, TR-datalayer-009 |
+| ADR-D10 (Bootstrap Sequencing) | Accepted | TR-save (Initialize), TR-beatclock-007 (LatencyOffset), TR-tde (boot order), TR-director-015 |
 
 ---
 
@@ -38,36 +48,44 @@
 
 | Layer | Total TRs | Covered | Partial | Gap | Notes |
 |-------|-----------|---------|---------|-----|-------|
-| Foundation (F2-F6) | 69 | 24 | 4 | 41 | datalayer fully covered; tde fully covered; beatclock/input/save gaps expected (GDD = spec) |
-| Core (concept) | 14 | 5 | 4 | 5 | ADR-D3 covers concept-006/007; remaining gaps await C3/C5/FE3 GDDs |
-| Feature | 0 | 0 | 0 | 0 | No Feature-layer GDDs designed yet |
-| Presentation | 0 | 0 | 0 | 0 | No Presentation-layer GDDs designed yet |
+| Foundation (F2-F6) | 69 | 24 | 4 | 41 | datalayer/tde 覆盖佳；beatclock/input/save GDD=规范 |
+| Core-concept | 14 | 5 | 4 | 5 | D3 覆盖 concept-006/007 |
+| **Core (C1-C4)** | 63 | 52 | 7 | 4 | 跨切面 ADR 承接；4 残留 Gap = A2 接口所有权 |
+| Feature | 0 | 0 | 0 | 0 | 尚无 GDD |
+| Presentation | 0 | 0 | 0 | 0 | 尚无 GDD |
 
 ---
 
 ## Gap Priority
 
-### Critical path: Proposed ADRs — RESOLVED
+### 最高价值缺口 — A2 接口所有权（ADR-D8 待建）
 
-All ADRs now Accepted (D1–D7). No remaining Proposed blockers.
+| 缺口 | 涉及 TR | 建议动作 | 优先级 |
+|------|---------|---------|--------|
+| DI/测试缝隙接口无 ADR 归属 | TR-rhythm-015, TR-combo(count seam), TR-perk(RNG/pause), TR-director(clock mock) | **ADR-D8**：统一拥有 IBeatClock/IInputEventBus/IDSPClock(+mock)/IComboCounter/IRandomSource/规范 pause-resume 事件源 | **P1（阻塞 80% 单测硬门）** |
 
-| ADR | Status | Covers | Unblocks |
-|-----|--------|--------|----------|
-| ADR-D3 (Rhythm Quantization Core) | **Accepted** (2026-07-19) | TR-concept-006/007 | C1 GDD, C2 implementation |
-| ADR-D4 (SO Data Layer) | **Accepted** (2026-07-19) | 11 datalayer TRs | C2, C3, C5, FE1 GDDs |
-
-### Remaining architecture gaps (need future ADRs or GDDs)
+### 其余架构缺口（需未来 ADR 或 GDD）
 
 | TR-ID | Requirement | Suggested Action | Priority |
 |-------|-------------|------------------|----------|
 | TR-concept-011 | Delay calibration system | FE3 GDD | P2 |
 | TR-concept-014 | Multiple weapon types with ComboGraph | C5 GDD | P2 |
-| TR-concept-002 | Multi-platform input support | Implementation concern, no ADR needed | P3 |
-| TR-concept-003 | 60fps / 16.6ms frame budget | Project-wide constraint, not single-ADR scope | P3 |
+| — | PlayerInfoSO.unlockedPerkIds (C3-OQ1) | F4 schema 补充 | P2 |
+| TR-concept-002 | Multi-platform input support | Implementation concern, no ADR | P3 |
+| TR-concept-003 | 60fps / 16.6ms frame budget | Project-wide constraint | P3 |
 
 ### Notes on beatclock/input/save gaps
 
-The 37 gaps in beatclock (13), input (13), and save (11) systems are **expected** — these systems have Approved GDDs that serve as the normative architecture specification. No separate ADR is needed for their internal design; the GDD is the architecture doc.
+beatclock(13)/input(13)/save(11) 的 37 项 Gap 为**预期**——这些系统的 GDD 即规范架构文档，
+内部设计无需单独 ADR。
+
+---
+
+## Cross-ADR Conflicts (this review)
+
+见 `architecture-review-2026-08-11.md` Phase 4。摘要：A1 (D1/D10 生命周期 🔴BLOCKING)、
+A2 (接口所有权 🟠)、A3 (D1 命名过时 🟠)、A4 (BeatClock 事件 schema 无权威 🟠)、
+A5 (authoredBpm 边界 🟡)、A6 (D6 文档误标 🟢)。无循环依赖，无预算冲突。
 
 ---
 
@@ -75,16 +93,12 @@ The 37 gaps in beatclock (13), input (13), and save (11) systems are **expected*
 
 | Review | Date | ADRs | TRs | Covered | Partial | Gap | Coverage % |
 |--------|------|------|-----|---------|---------|-----|-----------|
-| v1 | 2026-07-15 | 2 (D6, D7) | 69 | 14 | 6 | 49 | 20.3% |
-| v2 | 2026-07-16 | 3 (D1, D6, D7) | 71 | 14 | 6 | 51 | 19.7%* |
-| v3 | 2026-07-18 | 5 (D1-D2, D5-D7) | 79 | 22 | 8 | 49 | 27.8% |
-| v4 | 2026-07-18 | 5 (D1-D2, D5-D7) | 79 | 22 | 8 | 49 | 27.8%* |
-| v5 | 2026-07-18 | 5 (D1-D2, D5-D7) | 79 | 28 | 11 | 40 | 35.4% |
-| **v6** | **2026-07-19** | **7 (D1-D7)** | **83** | **29** | **8** | **46** | **34.9%** |
+| v5 | 2026-07-18 | 5 | 79 | 28 | 11 | 40 | 35.4% |
+| v6 | 2026-07-19 | 7 | 83 | 29 | 8 | 46 | 34.9% |
+| **v7** | **2026-08-11** | **8 (D1-D7, D10)** | **146** | **81** | **15** | **50** | **55.5%** |
 
-*v2 was a focused ADR-D1 review, not a full recount; total rose to 71 due to 2 new TRs.
-v4 re-ran with fresh engine specialist; no new ADRs or GDD changes → same coverage.
-v6: +2 ADRs (D3, D4), +4 TRs (tde-009~012). Coverage % dipped slightly due to new TRs added to denominator; absolute covered count rose. ADR-D4 converts 10 datalayer gaps to covered. D3+D4 accepted 2026-07-19.
+v7: 首次纳入 Core 层（+63 TR）与 ADR-D10。绝对覆盖数与百分比因 D2/D3/D4/D5/D10 承接 Core 跨切面
+决策而显著上升。残留 Gap 主要为 A2 接口所有权（待 ADR-D8）+ Foundation GDD=规范项 + 未写的 Feature 层。
 
 ---
 
@@ -92,9 +106,7 @@ v6: +2 ADRs (D3, D4), +4 TRs (tde-009~012). Coverage % dipped slightly due to ne
 
 | Milestone | ADRs Added | Projected Coverage |
 |-----------|------------|-------------------|
-| After ADR-D3 (P1) | D3 | ~50% |
-| After ADR-D3 + D4 (P1+P2) | D3, D4 | ~60-65% |
-| After all P1-P3 ADRs | D3, D4, D8, D9 | ~75-80% |
-| After all planned ADRs | All | ~85-90% |
-
-Remaining 10-15% will be Feature/Presentation layer TRs that emerge when those GDDs are written.
+| After ADR-D8 (DI seam, P1) | D8 | ~60% |
+| After F4 schema + D1/D2/D5 修订 | — | ~62% |
+| After FE3/C5 GDDs | — | ~70-75% |
+| After all Feature/Presentation GDDs | All | ~85-90% |
