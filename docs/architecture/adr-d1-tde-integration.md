@@ -85,7 +85,7 @@ F6 consists of **two components** working in concert:
 
 ### FMOD Init Constraint
 
-`TDELifecycleAdapter.Start()` (not `Awake()` — to avoid Script Execution Order race with `FMODUnity.RuntimeManager`) verifies that FMOD RuntimeManager is initialized and running in async mode. If this check fails, the adapter logs a fatal error and does not proceed — the scene remains in a safe frozen state.
+`TDELifecycleAdapter.Start()` (not `Awake()` — to avoid Script Execution Order race with `FMODUnity.RuntimeManager`) performs a **read-only probe** of whether FMOD RuntimeManager is initialized and running in async mode, caching the result into `_fmodVerified`. Per the A1 裁定, `Start()` does not gate proceeding — the acting readiness guard (loud `[F6-FATAL]` log + early return, keeping the scene in a safe frozen state) lives in `OnSceneLoaded()`, alongside the `ISaveService.IsInitialized` check.
 
 ### Lifecycle Subscription (A1 裁定 2026-08-11)
 
@@ -284,7 +284,14 @@ public sealed class TDELifecycleAdapter : MonoBehaviour,
         if (mode != LoadSceneMode.Single) return;
         // A1 裁定: readiness guards are handler-body early-returns, NOT subscription gates.
         // FMOD (ADR-D6) + SaveService (ADR-D10) must both be ready before any Play()/input.
-        if (!_fmodVerified || !_saveService.IsInitialized) return;
+        // Release-active runtime guard (NOT Debug.Assert — must fail loudly in shipped builds;
+        // matches ADR-D10 sample + the "Assert ... initialized" step in the Boot Sequence above):
+        if (!_fmodVerified || !_saveService.IsInitialized)
+        {
+            Debug.LogError("[F6-FATAL] FMOD or SaveService not ready before first scene Play() " +
+                           "— the bootstrap driver did not order SaveServiceBootstrap first.");
+            return;                                            // scene stays in a safe frozen state; no Play()/input
+        }
 
         // ADR-D10 owns the one-time offset boot-inject here (before the first Play()).
         _beatClock.Play(
@@ -380,7 +387,7 @@ public sealed class TDELifecycleAdapter : MonoBehaviour,
 | audio-beat-clock.md (F2) | F6 → F2: BGM FMOD asset ref; pause/resume signals | F6 calls `BeatClock.Play/Pause/Resume/Stop` exclusively; 3-step BGM protocol internal to BeatClock |
 | audio-beat-clock.md (F2) | Core Rule 11: subscriber lifecycle; F6 pre-signal for room unload | F6 can broadcast room-unload pre-signal before `BeatClock.Stop()`; subscribers unsubscribe in `OnDestroy()` |
 | so-data-layer.md (F4) | TR-datalayer-012: LevelConfigSO BPM/time-sig consumed by F2 | TDELifecycleAdapter reads `LevelConfigSO` and passes `.Bpm`, `.TimeSignature`, `.BgmFilePath` to `BeatClock.Play()` |
-| input-event-system.md (F3) | E6 / DeferredAC-F3-16: FMOD async mode (`FMOD_INIT_NORMAL`) | `TDELifecycleAdapter.Start()` asserts FMOD RuntimeManager initialized; async mode enforcement deferred to F6 GDD detail |
+| input-event-system.md (F3) | E6 / DeferredAC-F3-16: FMOD async mode (`FMOD_INIT_NORMAL`) | `TDELifecycleAdapter.Start()` probes + caches FMOD RuntimeManager init state; the acting readiness guard runs in `OnSceneLoaded()` (A1 裁定); async mode enforcement deferred to F6 GDD detail |
 | game-concept.md (F1) | Enemy AI beat-locked attacks require TDE character lifecycle | F6 lifecycle hooks (death/respawn) defined; CombatDirector token integration deferred to ADR-D2 |
 
 ## Performance Implications
