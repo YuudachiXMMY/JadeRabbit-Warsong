@@ -347,7 +347,7 @@ public sealed class TDELifecycleAdapter : MonoBehaviour,
                 _inputEventBus.DisableAllInput();
                 break;
             case TopDownEngineEventTypes.RespawnComplete:  // ← 不是 Respawn
-                _beatClock.Play(_levelConfig.BgmAssetReference,
+                _beatClock.Play(_levelConfig.BgmFilePath,       // A3: 字段名统一 BgmAssetReference→BgmFilePath (per ADR-D4/D8)
                     _levelConfig.Bpm, _levelConfig.TimeSignature);
                 _inputEventBus.EnableGameplayInput();
                 break;
