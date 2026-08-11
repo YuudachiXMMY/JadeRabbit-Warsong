@@ -1,14 +1,15 @@
 # Traceability Index
 
-> **Last Updated**: 2026-08-11 (Rev.7 · A2 消解验证增量)
+> **Last Updated**: 2026-08-11 (Rev.8 · ADR-D8 Accepted，step-1 spike + CI 门控)
 > **Source**: `/architecture-review full` → `/architecture-review 验证 A2 消解后`
 > **TR Registry**: `docs/architecture/tr-registry.yaml` (146 entries, v2)
 > **Verdict this review**: CONCERNS — see `architecture-review-2026-08-11.md`
 >
-> **A2 消解验证（2026-08-11）**：A2 接口所有权本体已由 **ADR-D8** 声明并归属（五 DI 缝隙接口
+> **A2 消解 + D8 Accept（2026-08-11）**：A2 接口所有权本体已由 **ADR-D8** 声明并归属（五 DI 缝隙接口
 > + 规范 pause/resume 源 + Mock 契约；registry `architecture.yaml:297/445/574` + systems-index 依赖已登记）。
-> 但 **D8 状态 `Proposed`** —— 引用 Proposed ADR 的故事自动阻塞，故 80% 单测硬门仍锁定，
-> D8 → Accepted 后方转 Covered。以下矩阵**保留原 Gap 计数**（未虚增 Covered），Notes 反映归属状态。
+> **D8 状态 `Accepted`**（step-1 缝隙 spike 落地 + CI 门控，见 `adr-d8-di-test-seams.md` § Spike Verification）
+> —— C1-C4 不再引用 Proposed ADR，80% 单测硬门**已解锁**。以下矩阵**保留原 Gap 计数**（未虚增 Covered）；
+> Core 4 残留 Gap 现可在下次 `/architecture-review` 转 Covered（本轮不擅自重算，避免绕过评审）。
 
 ---
 
@@ -22,15 +23,15 @@
 | datalayer | so-data-layer.md | 12 | 11 | 1 | 0 | **D4 全覆盖** |
 | save | save-persistence.md | 13 | 2 | 0 | 11 | GDD=规范 |
 | tde | tde-integration.md | 12 | 8 | 0 | 4 | D10 补齐初始化时序 |
-| **rhythm (C1)** | rhythm-core.md | 18 | 15 | 2 | 1 | D3 主架构；接口所有权已归 ADR-D8(Proposed)，待 Accept |
-| **combo (C2)** | combo-system.md | 14 | 11 | 2 | 1 | D3/D4/D5；IComboCounter 已归 ADR-D8(Proposed) |
-| **perk (C3)** | perk-system.md | 13 | 11 | 1 | 1 | D4；IRandomSource/pause 源已归 ADR-D8(Proposed) |
-| **director (C4)** | combat-director.md | 18 | 15 | 2 | 1 | D2/D6/D10；IDSPClock mock 已归 ADR-D8(Proposed) |
+| **rhythm (C1)** | rhythm-core.md | 18 | 15 | 2 | 1 | D3 主架构；接口所有权已归 ADR-D8(Accepted)，硬门已解锁 |
+| **combo (C2)** | combo-system.md | 14 | 11 | 2 | 1 | D3/D4/D5；IComboCounter 已归 ADR-D8(Accepted) |
+| **perk (C3)** | perk-system.md | 13 | 11 | 1 | 1 | D4；IRandomSource/pause 源已归 ADR-D8(Accepted) |
+| **director (C4)** | combat-director.md | 18 | 15 | 2 | 1 | D2/D6/D10；IDSPClock mock 已归 ADR-D8(Accepted) |
 | **Total** | | **146** | **81** | **15** | **50** | |
 
 > Core 层"Covered"以跨切面 ADR（D2/D3/D4/D5/D6/D10）承接为准；应用层状态机/调度器逻辑
 > 以 GDD 为规范文档，不单列 ADR 缺口。各 Core 系统的单一残留 Gap 均归结为 **A2 接口所有权**
-> ——已由 **ADR-D8** 声明并归属（D8 状态 `Proposed`）；D8 → Accepted 后方转 Covered、解锁 80% 单测硬门。
+> ——已由 **ADR-D8** 声明并归属（D8 状态 `Accepted`，step-1 spike + CI 门控）；80% 单测硬门已解锁，残留 Gap 待下次 `/architecture-review` 转 Covered。
 
 ---
 
@@ -45,6 +46,7 @@
 | ADR-D5 (Animation Pipeline) | Accepted | TR-concept-004, TR-tde-004/005, TR-combo-006 |
 | ADR-D6 (Audio Middleware) | Accepted | TR-concept-005, TR-beatclock-002/010, TR-director-008/009 |
 | ADR-D7 (Save/Persistence) | Accepted | TR-save-005/008, TR-datalayer-009 |
+| ADR-D8 (DI/Test Seams) | Accepted | TR-rhythm-015, TR-combo(count seam), TR-perk(RNG/pause), TR-director(clock mock) — 五 DI 缝隙接口 + 规范 pause/resume 源；step-1 spike CI 门控 |
 | ADR-D10 (Bootstrap Sequencing) | Accepted | TR-save (Initialize), TR-beatclock-007 (LatencyOffset), TR-tde (boot order), TR-director-015 |
 
 ---
@@ -55,7 +57,7 @@
 |-------|-----------|---------|---------|-----|-------|
 | Foundation (F2-F6) | 69 | 24 | 4 | 41 | datalayer/tde 覆盖佳；beatclock/input/save GDD=规范 |
 | Core-concept | 14 | 5 | 4 | 5 | D3 覆盖 concept-006/007 |
-| **Core (C1-C4)** | 63 | 52 | 7 | 4 | 跨切面 ADR 承接；4 残留 Gap = A2 接口所有权（已归 ADR-D8，待 Accept） |
+| **Core (C1-C4)** | 63 | 52 | 7 | 4 | 跨切面 ADR 承接；4 残留 Gap = A2 接口所有权（已归 ADR-D8 **Accepted**，硬门已解锁，待评审转 Covered） |
 | Feature | 0 | 0 | 0 | 0 | 尚无 GDD |
 | Presentation | 0 | 0 | 0 | 0 | 尚无 GDD |
 
@@ -63,11 +65,11 @@
 
 ## Gap Priority
 
-### 最高价值缺口 — A2 接口所有权（ADR-D8 已建，`Proposed`，待 Accept）
+### 最高价值缺口 — A2 接口所有权（ADR-D8 **Accepted**，硬门已解锁，待评审转 Covered）
 
 | 缺口 | 涉及 TR | 建议动作 | 优先级 |
 |------|---------|---------|--------|
-| DI/测试缝隙接口 ADR 归属 | TR-rhythm-015, TR-combo(count seam), TR-perk(RNG/pause), TR-director(clock mock) | **ADR-D8 已写**：统一拥有 IBeatClock/IInputEventBus/IDSPClock(+mock)/IComboCounter/IRandomSource/规范 pause-resume 事件源。**下一步：`/test-setup` 建 CombatCore EditMode asmdef + `InternalsVisibleTo` + 纯 C# NUnit spike → D8 Accept** | **P1（D8 Proposed，硬门待 Accept 解锁）** |
+| DI/测试缝隙接口 ADR 归属 | TR-rhythm-015, TR-combo(count seam), TR-perk(RNG/pause), TR-director(clock mock) | **ADR-D8 已写**：统一拥有 IBeatClock/IInputEventBus/IDSPClock(+mock)/IComboCounter/IRandomSource/规范 pause-resume 事件源。**已完成：CombatCore EditMode asmdef + `InternalsVisibleTo` + 纯 C# NUnit spike（step-1，`IRandomSource` 代表）→ D8 Accepted（CI 门控）** | **✅ 解锁（D8 Accepted）** |
 
 ### 其余架构缺口（需未来 ADR 或 GDD）
 

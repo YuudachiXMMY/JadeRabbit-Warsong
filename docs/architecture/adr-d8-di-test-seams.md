@@ -1,13 +1,31 @@
 # ADR-D8: DI / Deterministic Test Seam Contracts（依赖注入与确定性测试缝隙契约）
 
 ## Status
-Proposed
+Accepted（2026-08-11，step-1 spike CI 门控 — 见下方 Spike Verification）
 
 ## Date
 2026-08-11
 
 ## Last Verified
-2026-08-11
+2026-08-11（step-1 DI 缝隙 spike 落地：`Assets/Scripts/Core/CombatCore.asmdef` + `IRandomSource` + `InternalsVisibleTo` + 纯 C# NUnit 测试）
+
+## Spike Verification（step-1，2026-08-11）
+
+本 ADR 的 Proposed→Accepted 以 **step-1 缝隙 spike 在 CI（`.github/workflows/tests.yml`，game-ci unity-test-runner, testMode=editmode）跑绿** 为强制前置门（`coding-standards.md`：测试失败不得合并）。spike 以 **`IRandomSource`** 为代表接口，隔离验证 Risk 表中影响最高（HIGH）的 `CS0122 跨 asmdef 不可见` 与"纯 C# 可 mock 性"两项：
+
+| 交付物 | 路径 | 证明 |
+|---|---|---|
+| CombatCore Runtime 程序集 | `Assets/Scripts/Core/CombatCore.asmdef` | 首次创建（Migration Plan §6）；`technical-preferences.md` 边界合约的 CombatCore asmdef 落地 |
+| `IRandomSource` 接口（§4 逐字） | `Assets/Scripts/Core/Interfaces/IRandomSource.cs` | 与 registry `architecture.yaml:297` 契约逐字一致 |
+| 生产实现 `SystemRandomSource` | `Assets/Scripts/Core/RNG/SystemRandomSource.cs` | 固定种子可复现（确定性测试规则） |
+| `InternalsVisibleTo` 声明 | `Assets/Scripts/Core/AssemblyInfo.cs` | `[assembly: InternalsVisibleTo("EditModeTests")]` — 消解 CS0122 |
+| 缝隙探针 `InternalSeamProbe` | `Assets/Scripts/Core/RNG/InternalSeamProbe.cs` | `#if UNITY_EDITOR\|\|DEVELOPMENT_BUILD` internal setter，非 MonoBehaviour 缩影 |
+| Mock 契约 `MockRandomSource` | `Assets/Tests/EditMode/CombatCore/Mocks/MockRandomSource.cs` | 纯 C#、禁 using FMOD/TDE/Feel（边界隔离） |
+| NUnit spike 套件（5 用例） | `Assets/Tests/EditMode/CombatCore/CombatCore_DiSeamSpike_Test.cs` | 构造注入确定性 + 无保底(AC-C3-14 范式) + InternalsVisibleTo 可见性 + 种子可复现 + 非法输入拒绝 |
+
+**spike 未覆盖（沿用同一已验证模式，随各系统故事落地时验证）**：`IBeatClock`/`IInputEventBus`/`IComboCounter`/`IDSPClock` 的具体 Mock（`MockBeatClock`/`MockInputEventBus`/`MockComboCounter`/`MockDSPClock`）在 C1/C2/C4 实现冲刺中按本 spike 证实的字段注入 + InternalsVisibleTo 范式补齐。step-1 只需证实**模式本身**可行——HIGH 风险已消解。
+
+> **验证约束**：本环境无 Unity/dotnet 运行时，spike 的实际"跑绿"由项目 CI 在 PR 上执行；PR 的 merge-gate（测试失败不合并）即"spike 通过"的强制判据。若 EditMode 测试在 CI 失败，本 ADR 不得以 Accepted 合入 main。
 
 ## Decision Makers
 lead-programmer（接口所有权与命名裁定）、technical-director（架构一致性，lean 模式未强制评审）、unity-specialist（Unity 6.3 惯用性校验）、user（问题框定与四项设计裁定，2026-08-11）
