@@ -165,7 +165,7 @@ BPM 变更事件 `OnMeterChanged`（BPM: `bpm_before → bpm_after`）后的适�
 
 | 变量 | 类型 | 范围 | 含义 |
 |---|---|---|---|
-| `adaptationWindowBeats` | int | [0, 4]，**默认 2** | BD-2 适应窗口时长（拍）；0 = 关闭宽容立即用新 BPM 宽度 |
+| `adaptationWindowBeats` | int | [0, 4]，**锁定 2**（owner 联合锁定 2026-08-11） | BD-2 适应窗口时长（拍）；0 = 关闭宽容立即用新 BPM 宽度。单一 owner=`RhythmConfigSO.AdaptationWindowBeats`（C1 权威），本名为引用别名、语义等同；registry `adaptation_window_beats` |
 | `bpm_before` / `bpm_after` | float | bpm_range [80, 240] | `OnMeterChanged` 变更前/后 BPM |
 | `cancelWeight` | float | [0.0, 1.0] | 取消窗开启点（逐节点 authored，F4）|
 | `animBaseDurationMs` | float | >0 | 该节点动画在 `authoredBpm` 下的基准毫秒时长（F4）|
@@ -226,7 +226,7 @@ BPM 变更事件 `OnMeterChanged`（BPM: `bpm_before → bpm_after`）后的适�
 | `ComboMax` | 固定 | 999 | 段数上限/combo_multiplier 定义域/HUD 连击天花板 |
 | `inputBufferBeats` | [0, 0.25] | 0.1 | 取消输入缓冲宽容；偏高会让玩家误以为能抢拍 |
 | `comboHoldBeats` | [0, 0.5] | 0.25 | 连招保持窗宽容；偏高削弱「节奏断=连招断」张力 |
-| `adaptationWindowBeats`（BD-2）| [0, 4] | 2 | BPM 变更后取消窗 `max` 宽容期时长（拍）；偏高延长「旧手感」惯性、偏低回归 BPM 尖峰。须与 C1 判定窗适应窗口同值对齐（BD-2）|
+| `adaptationWindowBeats`（BD-2）| [0, 4] | **2**（owner 联合锁定 2026-08-11） | BPM 变更后取消窗 `max` 宽容期时长（拍）；偏高延长「旧手感」惯性、偏低回归 BPM 尖峰。与 C1 判定窗适应窗口同值对齐、单一 owner=`RhythmConfigSO.AdaptationWindowBeats`（本名为引用别名）；C1/C2/C4 已联合锁定，registry `adaptation_window_beats`（BD-2）|
 | `cancelWeight`（逐节点，F4）| [0.0, 1.0] | 逐招 authored | 取消窗口开启点，决定连招节奏松紧 |
 | `cancelWindowType`（逐节点，F4）| enum | 逐招 authored | 分支评级门（None/Standard/Advanced）|
 
