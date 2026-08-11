@@ -467,6 +467,8 @@ F2-F8 (beat_index_in_measure)          [依赖 time_sig_segment_beat_index + num
 
 - **如果 BPM/拍号变更请求发起时距下一个小节边界不足 500ms**：因 BGM 换片调度须满足 `IAudioPlayer.PlayScheduled()` 的 500ms 最低提前量（见 F2-F3 BGM 播放规范第 1 条），若变更在最近的边界生效将使 F6 无足够提前量完成无缝换片。F2 将该变更**顺延至再下一个小节边界**生效（而非最近的边界）。`OnMeterChangeAccepted` 仍在接受时立即广播，其 `predictedEffectiveDspTimeRaw` 指向**顺延后**的边界时刻；`OnMeterChanged` 在顺延后的边界广播。记录 Info 日志说明顺延。此规则仅影响 BGM 有实际换片需求的变更；纯时钟层 BPM 变更（无 BGM 切换）不受 500ms 约束，仍在最近边界生效。
 
+- **Perfect 冻帧 / 命中停顿信号（冻帧不通过 F2）**：Perfect 冻帧（33–66ms）是**表现层**效果，**不通过 F2**。任何系统（含 PL2 VFX 节奏反馈）**禁止**以冻帧为由调用 `BeatClock.Play/Stop/Pause/Resume`、重锚 DSP 时钟、或置 `Time.timeScale=0`。F2 在冻帧期间**持续广播拍点**，FMOD DSP 时钟不受影响。登记 registry forbidden pattern `freeze_pauses_beatclock`。理由：音乐连续性是 F2 缺席型幻想的核心与支柱一（节奏即战斗）的物理前提；每次 Perfect 暂停音乐都会造成可听卡顿。BC-6 的 `Pause()`/`Resume()` 为**菜单暂停**设计，非逐击微暂停——二者不可混用。
+
 ---
 
 ## Dependencies

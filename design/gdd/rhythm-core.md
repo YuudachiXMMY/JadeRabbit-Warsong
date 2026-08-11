@@ -702,6 +702,19 @@ if GoodHalfWindowMs_effective > gridIntervalMs / 2 - 1:
 
 ---
 
+### E11：Perfect 冻帧期间的判定连续性（Freeze-Frame Judgment Continuity，SG-1）
+
+**场景**：某次攻击评为 Perfect，触发 33–66ms 冻帧（表现层命中停顿）。
+
+**处理规则**：
+- 冻帧**不暂停 DSP 时钟**，C1 判定在冻帧期间照常按 `beat_dsp_time`（F2 广播的拍点时间）进行——C1 对冻帧**无感知**，冻帧仅存在于表现层（PL2/Feel）。
+- 冻帧**不**引入输入黑窗、**不**清空 `_pendingInput`、**不**改变 `_lateWindowActive`——区别于死亡（E10）/ 暂停（E6）路径的清空语义：那两条路径切断节奏承诺连续性并清空缓冲，冻帧则完全不触碰 C1 状态。
+- 因时钟（F2 DSP）与玩家攻击动画（C2 的 Animancer 攻击层）在冻帧期间都**不冻结**，C1 的 DSP 判定与 C2 的动画归一化取消窗恒处于**同一音乐时基**；冻帧后不产生「DSP 踩准却接不上连招」的时基竞态（SG-1 合约，与 C2 EC15 / F2 冻帧 Edge Case 对称）。
+
+> **设计意图**：Perfect 的奖励应当是「感官华彩」而非「判定/连招的时基扰动」。冻帧一旦泄漏进时钟或攻击动画时基，每次 Perfect 都会在 DSP 与动画之间累加 33–66ms 漂移，多次后连招接续崩坏——SG-1 合约将冻帧严格封在表现层以杜绝此类竞态。
+
+---
+
 ## Dependencies
 
 ### 上游依赖（C1 消费）

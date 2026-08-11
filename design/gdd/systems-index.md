@@ -91,10 +91,10 @@
 
 ### Core Layer（依赖 Foundation）
 
-1. **C1 节奏量化攻击系统** — 依赖：F2（拍点时序）+ F3（输入时间戳）
+1. **C1 节奏量化攻击系统** — 依赖：F2（拍点时序）+ F3（输入时间戳）+ F6（死亡/复活生命周期域事件 `OnPlayerDeath`，SC-2 清缓冲 / 幽灵评级守卫；Animancer 攻击动画播放，ADR-D5/ADR-D12）
 2. **C4 战斗导演** — 依赖：F2（拍槽分配 / 拍点时序）+ F4（EnemyInfoSO.attackWindupBeats，令牌落拍计算）
-3. **C2 连招图系统** — 依赖：F4（AttackNodeSO/ComboGraphSO schema）+ C1（评级控制取消窗）
-4. **C3 心法构筑系统** — 依赖：F4（PerkSO schema）+ C1（心法修改节奏规则）
+3. **C2 连招图系统** — 依赖：F4（AttackNodeSO/ComboGraphSO schema）+ C1（评级控制取消窗）+ F2（currentBpm 来源 / `OnMeterChangeAccepted` BPM 变更事件）+ F6（Animancer 攻击层动画管线，ADR-D5）
+4. **C3 心法构筑系统** — 依赖：F4（PerkSO schema）+ C1（心法修改节奏规则）+ F2（`OnBeatClockPaused`/`OnBeatClockResumed`，心法冻结栈计时/解冻，BC-6）
 5. **C5 武器系统** — 依赖：F4（WeaponSO schema）+ C2（连招图运行时容器）
 6. **C6 Hitbox/受击判定系统** — 依赖：C2（连招图攻击帧，定义 hitbox 激活时机）+ F6（TDE 碰撞检测基础）
 
