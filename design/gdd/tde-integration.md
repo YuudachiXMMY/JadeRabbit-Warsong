@@ -1,8 +1,8 @@
 # F6: TopDownEngine & Animancer 集成层 (TDE Integration Layer)
 
-> **Status**: Approved
+> **Status**: Amended (2026-08-10 blocker fix) — Pending Re-review
 > **Author**: Jadyn Wu + Claude Code Agents
-> **Last Updated**: 2026-07-19 (R3 — 4 blockers resolved: authoredBpm guard, FMOD coroutine reentrancy, LevelConfigSO path, AC testability batch)
+> **Last Updated**: 2026-08-10 (SC-1 — F6 订阅 F2 `OnAudioUnavailable`，同帧 `TDE.Pause()` + `F3.DisableAllInput()` 承接音频断开降级) ｜ 2026-07-19 (R3 — 4 blockers resolved: authoredBpm guard, FMOD coroutine reentrancy, LevelConfigSO path, AC testability batch)
 > **Implements Pillar**: 支柱二：武侠手感不可妥协 (Wuxia Feel First)
 > **System ID**: F6
 > **Layer**: Foundation | **Milestone**: MVP | **Design Order**: 5
@@ -110,6 +110,23 @@ F6 的玩家幻想是**天衣无缝的动作应噬**——每一次出招、侧�
     - **BeatClock 是纯持有者**：F2 不自 load（见 `audio-beat-clock.md` Rule 7/Rule 10、registry forbidden pattern `f2_self_load_latency_from_f5`）；运行期 `LatencyOffsetMs` 唯一写者为 FE3。
     - 验收见 **AC-F6-23**。
 
+14. **音频设备断开降级承接（`OnAudioUnavailable` 订阅，SC-1）**
+    `TDELifecycleAdapter` 在 `OnEnable()` 额外订阅 F2 的 **`OnAudioUnavailable`** 事件（音频设备断开 / BGM 不可用时由 F2 广播），作为降级协调器承接 F2 降级序列「1 帧内暂停游戏」的要求——F2 自身仅有权停拍（`BeatClock` 内部 Paused），**无权暂停 TDE 或禁用 F3**（那是本适配器的独家职责，见 Rule 3/Rule 4）。收到事件后，`TDELifecycleAdapter` 在**同一 Update 帧内**原子执行：
+    - **`GameManager.Pause()`**（或等效 TDE 暂停 API，经 TDE 事件系统触发，不修改 TDE 源码）——冻结 TDE 移动/物理，玩家无法再移动。
+    - **`InputEventBus.DisableAllInput()`**——切断 F3 攻击/输入通道，防止 C1 收到无拍点参照的攻击输入被静默丢弃。
+
+    此举消除「F2 停拍但 TDE 仍可移动、F3 仍 GameplayActive、攻击照发」的半暂停半运行战场，贯彻「无音频不惩罚玩家」意图。
+
+    **恢复对称路径**：若 F2 在设备重连时广播 `OnAudioRestored`（恢复事件的最终命名以 F2 GDD 定义为准；BC-6 已定义的 `OnBeatClockResumed` 可复用于时钟重启信号），`TDELifecycleAdapter` 同帧对称执行 **`GameManager.UnPause()`** + **`InputEventBus.EnableGameplayInput()`**，恢复 TDE 运行与输入通道。恢复顺序遵 EC-05 约束：节拍参照（BeatClock）先于输入通道开放，避免玩家在时钟未就绪时触发攻击导致判定窗口计算错误。
+
+    此降级/恢复响应独立于 `TopDownEngineEvent(Pause/UnPause)`（玩家主动暂停走 UIActive 路径），语义为「无音频不可玩，全局冻结」。验收见 **AC-F6-24**。
+
+15. **死亡/复活域事件桥接（C1 反幽灵评级承接，SC-2）**
+    `TDELifecycleAdapter` 通过 `MMEventListener<TopDownEngineEvent>` 消费 TDE 的 `TopDownEngineEvent(PlayerDeath / RespawnComplete)`（见状态表）。但 **CombatCore 程序集**（C1 节奏核心所在）受 TDE 边界合约约束 **禁止 `using` TopDownEngine 命名空间**，无法直接订阅 TDE 事件类型。故 F6 承担桥接职责：在处理这两个 TDE 事件的**同一 Update 帧内**，将其重广播为 **CombatCore 可见的域事件** `OnPlayerDeath` / `OnRespawnComplete`（`TDELifecycleAdapter` 上的纯 C# `event`，负载**不含任何 TDE 类型**），供 C1 订阅（`rhythm-core.md` E10 / SC-2）：
+    - **`PlayerDeath`**：F6 同帧 `BeatClock.Stop()` + `InputEventBus.DisableAllInput()`（状态表）→ 同帧广播 `OnPlayerDeath`；C1 订阅后清空 `_pendingInput`、置 `_lateWindowActive = false`、停止处理 `OnHalfBeatLookahead`。
+    - **`RespawnComplete`**：F6 同帧 `BeatClock`（重启 `Play()`）+ `InputEventBus.EnableGameplayInput()` → 同帧广播 `OnRespawnComplete`；C1 订阅后清空任何过期评级状态并以「等待输入」重激活，复活后首个 `OnHalfBeatLookahead` **不评级**任何跨死亡边界的 pending 输入（防幽灵评级）。
+    - **边界隔离**：C1 只依赖 F6 的域事件抽象，不感知 TDE——等同 F6 桥接 `InputEventBus` 的既有模式（Rule 3/Rule 4）。此为**跨系统场景 G（死亡复活幽灵评级）**的 F6 承接侧合约，与 C1 `rhythm-core.md` 双向合约「F6 ↔ C1（SC-2 复活清空）」对称。验收见 **AC-F6-25**。
+
 ---
 
 ### States and Transitions
@@ -124,8 +141,10 @@ F6 自身不维护内部状态机，但其事件响应决定了系统的全局�
 | **已暂停** | `TopDownEngineEvent(Pause)` | UIActive | Paused |
 | **玩家死亡** | `TopDownEngineEvent(PlayerDeath)` | AllDisabled | Stopped |
 | **复活完成** | `TopDownEngineEvent(RespawnComplete)` | GameplayActive | Playing（重启） |
+| **音频降级冻结（SC-1）** | F2 `OnAudioUnavailable` | AllDisabled（`DisableAllInput()`） | Paused（F2 自身停拍，F6 同帧 `GameManager.Pause()`） |
+| **音频恢复（SC-1）** | F2 `OnAudioRestored` / `OnBeatClockResumed` | GameplayActive | Playing（`GameManager.UnPause()`，节拍先于输入） |
 
-阶段转换的**原子性保证**：每次 `TDELifecycleAdapter` 响应 TDE 事件时，BeatClock 调用与 InputEventBus 调用在**同一 Update 帧内**完成，消除半途不一致状态。
+阶段转换的**原子性保证**：每次 `TDELifecycleAdapter` 响应 TDE 事件时，BeatClock 调用与 InputEventBus 调用在**同一 Update 帧内**完成，消除半途不一致状态。响应 `PlayerDeath` / `RespawnComplete` 的帧内还**同帧重广播** CombatCore 域事件 `OnPlayerDeath` / `OnRespawnComplete` 供 C1 承接（防复活幽灵评级，见 Rule 15 / SC-2）。
 
 ---
 
@@ -134,8 +153,10 @@ F6 自身不维护内部状态机，但其事件响应决定了系统的全局�
 | 方向 | 系统 | 数据内容 | 接口类型 |
 |------|------|---------|---------|
 | TDE **→** F6 | TopDownEngine | `TopDownEngineEvent`（Pause/UnPause/PlayerDeath/RespawnComplete） | `MMEventListener<TopDownEngineEvent>` 事件订阅 |
+| F2 **→** F6 (SC-1) | BeatClock | `OnAudioUnavailable`（设备断开降级信号）；`OnAudioRestored` / `OnBeatClockResumed`（恢复信号） | 事件订阅；F6 承接降级序列，同帧 `GameManager.Pause()` + `InputEventBus.DisableAllInput()`（恢复时对称 UnPause + `EnableGameplayInput()`） |
 | F6 **→** F2 | BeatClock | `Play(bgmRef, bpm, timeSig)` / `Stop()` / `Pause()` / `Resume()` | 直接方法调用（独家控制） |
 | F6 **→** F3 | InputEventBus | `EnableGameplayInput()` / `EnableUIInput()` / `DisableAllInput()` | 直接方法调用 |
+| F6 **→** C1 (SC-2) | 节奏量化攻击系统 | `OnPlayerDeath` / `OnRespawnComplete`（CombatCore 可见域事件，桥接 TDE `PlayerDeath`/`RespawnComplete`，负载不含 TDE 类型；C1 据此清空过期 `_pendingInput`/评级状态防幽灵评级） | 事件订阅（纯 C# event） |
 | F4 **→** F6 | LevelConfigSO | `Bpm`、`TimeSignature`、`BgmAssetReference`（每场景注入） | Inspector 序列化字段 |
 | C2 **→** F6 | 连招图系统 | 调用 `AnimancerAttackPlayer.PlayAttack(attackNode, clip, onComplete)` 发起攻击；`StopAttack()` 取消；`UpdateBpm(newBpm)` 中途更新速度 | 访问 F6 在 Character Prefab 上配置的 `AnimancerAttackPlayer` 组件引用 |
 | FE2 **→** F6 | 房间系统 | `BeatClock.RequestBPMChange(newBpm)`（房间级 BPM 切换） | 通过 F2 的 `RequestBPMChange()` API（非重新调用 `Play()`） |
@@ -154,9 +175,9 @@ F6 自身不维护内部状态机，但其事件响应决定了系统的全局�
 
 1. **接受时预加载 + 预调度**：`TDELifecycleAdapter` 订阅 F2 的 **`OnMeterChangeAccepted`** 事件（接受时广播，见 `audio-beat-clock.md` Core Rule 14）。接到通知后立即通过 FMOD（ADR-D6）预加载目标 BGM 资产（`LevelConfigSO.BgmAssetReference` 或 Boss 阶段 SO 中的变体引用）。**关键**：该事件在接受时（而非小节边界）广播，F6 由此获得从接受到边界的**全部提前量**，满足 `PlayScheduled()` 的 500ms 最低提前量约束——无需再手写 `OnBeatExact` + `beat_index_in_measure == numerator - 1` 的边界轮询判定。
 2. **以事件负载的 raw 边界时刻精确对齐**：直接使用 `OnMeterChangeAccepted` 负载中的 `predictedEffectiveDspTimeRaw`（**raw 坐标系，禁止叠加 latency offset**——见 F2 Core Rule 13）作为无缝换片的调度目标时刻。此值在接受时即由 F2-F3 确定性给出，与实际小节边界一致。
-3. **无缝换片**：通过 `_beatClock.ScheduleBGMTransition(predictedEffectiveDspTimeRaw, newBgmRef)` 精确对齐执行新 BGM 的起始播放（或 Crossfade）。F2 的时钟参数由 F2 在小节边界自行切换并广播 `OnMeterChanged`（生效时），F6 无需同帧手动更新 BeatClock 时钟——职责回归 F2。
+3. **无缝换片**：通过 `_beatClock.ScheduleBGMTransition(newBgmRef, predictedEffectiveDspTimeRaw)` 精确对齐执行新 BGM 的起始播放（或 Crossfade）。F2 的时钟参数由 F2 在小节边界自行切换并广播 `OnMeterChanged`（生效时），F6 无需同帧手动更新 BeatClock 时钟——职责回归 F2。
 
-    **接口归属（仍为 F2 API 缺口，W-2c-01，本轮未解决）**：`BeatClock.ScheduleBGMTransition(double dspTimeRaw, AssetReference bgmRef)` 是 F2 BeatClock 的**公开方法**（尚未在 F2 GDD 定义）。F2 本轮（2026-08-08）仅补订了 `OnMeterChangeAccepted`/`OnMeterChanged` 双事件契约，`ScheduleBGMTransition` 的 F2 侧定义仍为待办（见 cross-review W-2c-01 与 F2 后续修订）。在其落地前，F6 依赖 `OnMeterChangeAccepted` 负载已可获得精确 raw 边界时刻，换片调度机制的最终 API 形态待 F2 定义。
+    **接口归属（B3，F2 已定义，W-2c-01 已消解）**：`BeatClock.ScheduleBGMTransition(FMODAudioAssetRef nextBgm, double boundaryDspTimeRaw)` 已在 F2 GDD 权威定义（`audio-beat-clock.md` Formulas §BGM 过渡策略，B3）——**参数顺序为 `(nextBgm, boundaryDspTimeRaw)`**，`boundaryDspTimeRaw` 取自 `OnMeterChangeAccepted` 负载的 `predictedEffectiveDspTimeRaw`（raw 坐标系，禁止叠加 offset，遵 F2 Core Rule 13），`nextBgm` 句柄由 F6 提供。此方法与 `OnMeterChangeAccepted` 订阅路径互斥使用（F6 择一，勿双重调度同一换片）。
 
 **MVP 限制**：MVP 阶段每个关卡 BPM 固定（通过 `LevelConfigSO`），仅 Boss 阶段切换可能触发 BPM 变化。Boss 战 BGM 切换的完整细节（含阶段 SO schema）由 `design/gdd/boss-battle.md`（FE4 GDD）进一步定义；F6 提供基础的换片基础设施，FE4 提供配置数据。
 
@@ -288,7 +309,7 @@ attackAnimSpeed = clamp(currentBPM / authoredBpm, SPEED_MIN, SPEED_MAX)
 
 | 系统 | 系统 ID | 依赖内容 | F6 使用方式 |
 |------|---------|---------|------------|
-| BeatClock | F2 | `Play(bgmRef, bpm, timeSig)` / `Stop()` / `Pause()` / `Resume()` / `RequestBPMChange()` / `OnBeat` 事件 | `TDELifecycleAdapter` 独家控制生命周期；C2 通过 `OnBeat` 读取 `currentBPM` 更新 `attackAnimSpeed` |
+| BeatClock | F2 | `Play(bgmRef, bpm, timeSig)` / `Stop()` / `Pause()` / `Resume()` / `RequestBPMChange()` / `OnBeat` 事件；**`OnAudioUnavailable`（SC-1 降级信号）** + `OnAudioRestored`/`OnBeatClockResumed`（恢复信号） | `TDELifecycleAdapter` 独家控制生命周期；C2 通过 `OnBeat` 读取 `currentBPM` 更新 `attackAnimSpeed`；**订阅 `OnAudioUnavailable` 同帧 `GameManager.Pause()` + `DisableAllInput()` 承接 F2 降级（SC-1）** |
 | InputEventBus | F3 | `EnableGameplayInput()` / `EnableUIInput()` / `DisableAllInput()` | `TDELifecycleAdapter` 在生命周期事件后调用，控制输入通道开关 |
 | LevelConfigSO 数据层 | F4 | `LevelConfigSO.Bpm` / `TimeSignature` / `BgmAssetReference` | `TDELifecycleAdapter` 在 `OnSceneLoaded(Single)` 时读取，注入 `BeatClock.Play()` |
 | TopDownEngine | 外部插件 | `InputSystemManagerEventsBased` / `TopDownEngineEvent` / `MMEventListener<T>` / TDE Animator Controller 基础设施 | `JadeRabbitInputManager` 继承 TDE 输入类；`TDELifecycleAdapter` 订阅 TDE 事件总线 |
@@ -311,9 +332,13 @@ attackAnimSpeed = clamp(currentBPM / authoredBpm, SPEED_MIN, SPEED_MAX)
 
 > **F2（BeatClock）GDD** 中须记录：F6 `TDELifecycleAdapter` 是 `BeatClock.Play/Stop/Pause/Resume` 的唯一调用者。
 >
+> **F2（BeatClock）GDD** 中须记录（SC-1）：F2 广播 `OnAudioUnavailable`（及恢复事件 `OnAudioRestored`/`OnBeatClockResumed`）后，由 F6 `TDELifecycleAdapter`（降级协调器）订阅并承接「1 帧内暂停游戏」——F2 自身只停拍，暂停 TDE（`GameManager.Pause()`）与禁用 F3（`DisableAllInput()`）由 F6 独家执行；恢复时对称 `GameManager.UnPause()` + `EnableGameplayInput()`。
+>
 > **F3（InputEventBus）GDD** 中须记录：F6 `TDELifecycleAdapter` 在 TDE 生命周期事件后调用 InputEventBus 方法。`JadeRabbitInputManager` 通过继承保留 TDE `AbilityInputAuthorization` 管线，但不直接调用 `InputActionMap.Enable()/Disable()`。
 >
 > **C2（连招图系统）GDD** 中须记录：C2 从 F6 获取 `AnimancerAttackPlayer` 引用；C2 调用 `PlayAttack(node, clip, onComplete)` / `StopAttack()` / `UpdateBpm(newBpm)` 控制攻击动画；C2 使用 F6-FORMULA-01 公式参数（`authoredBpm` 来自 `AttackNodeSO`）；死亡时动画清理由 `AnimancerAttackPlayer` 自行处理（F6 责任），C2 无需订阅 `PlayerDeath` 用于动画状态清零。
+>
+> **C1（节奏量化攻击系统）GDD** 中须记录（SC-2 反向登记）：F6 `TDELifecycleAdapter` 是 TDE `PlayerDeath`/`RespawnComplete` 的桥接方，同帧重广播 CombatCore 可见的域事件 `OnPlayerDeath` / `OnRespawnComplete`（纯 C# event，负载不含 TDE 类型）；**C1 订阅这两个域事件**（而非直接订阅 TDE 事件——CombatCore 禁止 `using` TopDownEngine），复活时清空过期 `_pendingInput` 与评级状态防幽灵评级（`rhythm-core.md` E10 / 双向合约「F6 ↔ C1（SC-2 复活清空）」）。见 Rule 15。
 >
 > **强制幂等性合约（来自 F6 EC-03 B3 项）**：C2 的 `onComplete` 连招图推进逻辑须**幂等**——在同帧收到两次相同 `onComplete` 时，连招图仅前进一步（推荐以 `_lastAdvanceFrame == Time.frameCount` 门控）。此合约因 `UpdateBpm()` + `OnEnd` 同帧竞争场景而强制要求，C2 GDD 接口合约节须显式接受。
 
@@ -612,11 +637,41 @@ EditMode 测试中注入返回 `false` 的 mock `IFMODRuntimeChecker`：断言 `
 
 ---
 
+### AC-F6-24 — 音频设备断开时 F6 同帧暂停 TDE 并禁用所有输入（SC-1）
+
+**类型**: Logic | **测试方式**: PlayMode 自动化测试（注入 mock F2 事件源 + Spy TDE 暂停/InputEventBus）
+
+覆盖 SC-1 降级承接链路。从 Gameplay Active 状态发布 F2 `OnAudioUnavailable` 事件后：
+
+1. **同帧原子性**：`GameManager.Pause()`（或等效 TDE 暂停触发，经 Spy 捕获）与 `InputEventBus.DisableAllInput()` 记录的 `Time.frameCount` 值相同（同一 Update 帧内，单主线程保证）；两者各调用恰好 1 次。
+2. **战场全冻结**：事件后 TDE 移动被冻结（模拟移动输入，角色 `Transform.position` 无变化）；输入通道对攻击指令无响应（`InputEventBus` 状态 `AllDisabled`）——不存在「TDE 仍可移动 / F3 仍 GameplayActive」的半运行状态。
+3. **恢复对称路径**：随后发布 F2 `OnAudioRestored`（或 `OnBeatClockResumed`）后，`GameManager.UnPause()` 与 `InputEventBus.EnableGameplayInput()` 各调用恰好 1 次；`UnPause()`/节拍恢复的调用顺序序号 < `EnableGameplayInput()`（节拍参照先于输入开放，遵 EC-05）；最终状态回到 GameplayActive。
+
+**通过条件**：以上 3 项全部通过。降级与恢复均通过 mock F2 事件源触发，无需真实音频设备断开。
+
+---
+
+### AC-F6-25 — 死亡/复活桥接域事件同帧广播供 C1 承接（SC-2）
+
+**类型**: Logic | **测试方式**: PlayMode 自动化测试（注入 mock `TopDownEngineEvent` 源 + Spy C1 域事件订阅者）
+
+覆盖 SC-2 桥接链路。从 Gameplay Active 状态注入 TDE `TopDownEngineEvent(PlayerDeath)`、随后 `TopDownEngineEvent(RespawnComplete)`：
+
+1. **PlayerDeath 桥接**：F6 收到后同帧广播 `OnPlayerDeath`（Spy 捕获恰好 1 次），且与 `BeatClock.Stop()` + `InputEventBus.DisableAllInput()` 记录的 `Time.frameCount` 相同（同一 Update 帧）。域事件负载类型**不含任何 TopDownEngine 命名空间类型**（编译期断言：事件签名仅引用 CombatCore 可见类型）。
+2. **RespawnComplete 桥接**：F6 收到后同帧广播 `OnRespawnComplete`（Spy 捕获恰好 1 次），与 `BeatClock` 重启 `Play()` + `InputEventBus.EnableGameplayInput()` 同帧。
+3. **C1 可订阅性**：Spy 订阅者仅通过 CombatCore 可见的 `TDELifecycleAdapter.OnPlayerDeath` / `OnRespawnComplete` C# event 注册成功，无需引用 TDE 类型——证明 C1 的边界隔离订阅路径可落地。
+
+**通过条件**：以上 3 项全部通过。桥接均通过 mock TDE 事件源触发。与 C1 `AC-C1-22e`（复活清空 pending）配对，形成 SC-2 的 F6 广播侧 + C1 消费侧完整闭环。
+
+---
+
 **依赖说明（执行阻断）**：
 - AC-F6-12 / AC-F6-15：需 C2 最小 stub 实现（提供可执行 `PlayAttack()` / `UpdateBpm()` 调用的测试替身），不依赖完整 C2 连招图逻辑
 - AC-F6-04 / AC-F6-21：需与 lead programmer 确认 `IFMODRuntimeChecker` 接口定义及程序集内部访问权限（`[InternalsVisibleTo]` 目标）
 - AC-F6-20：仅在原型阶段执行，须 C2 + AnimancerAttackPlayer 联调完成后安排人工盲测
 - AC-F6-23：需 F5 提供 `ISaveService` 消费者 seam + `MockSaveService` 测试替身（见 `save-persistence.md` Rule 15），并与 lead programmer 确认单一显式 bootstrap driver 的落地组件；子用例 4 须在 release-config 构建路径执行（fail-fast guard 非 Debug-only）
+- AC-F6-24（SC-1）：需 F2 GDD 正式定义 `OnAudioUnavailable` 降级事件及恢复事件（`OnAudioRestored` / 复用 `OnBeatClockResumed`）；测试注入 mock F2 事件源 + Spy TDE 暂停 API（`GameManager.Pause/UnPause`）与 `InputEventBus`，无需真实音频设备断开
+- AC-F6-25（SC-2）：需与 lead programmer 确认 `TDELifecycleAdapter` 桥接域事件 `OnPlayerDeath`/`OnRespawnComplete` 的程序集可见性（CombatCore 可引用，不引入 TDE 类型泄漏）；测试注入 mock `TopDownEngineEvent` 源 + Spy C1 订阅者，无需真实 TDE 死亡流程。与 C1 `AC-C1-22e` 配对验证 SC-2 闭环
 
 ---
 

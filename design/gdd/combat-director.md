@@ -1,6 +1,6 @@
 # 战斗导演 (Combat Director)
 
-> **Status**: In Design
+> **Status**: Revised (2026-08-10 blocker fix) — Pending Re-review
 > **Author**: Jadyn Wu + Claude Code Agents
 > **Last Updated**: 2026-08-10
 > **Implements Pillar**: 支柱一：节奏即战斗 (Rhythm IS Combat)
@@ -73,13 +73,13 @@ C4 本身对玩家不可见，但它直接产出玩家可感知的战斗质感�
 | **F2 音频/拍点时钟** | 上游 | C4 订阅 `OnBeatLookahead`（timestamp + 小节号 + 拍内索引）、`OnMeterChanged`；只读 `beat_dsp_time` | F2 拥有事件签名 |
 | **FE1 敌人 AI** | 下游 | `CombatDirector.RequestAttackToken(enemy)` → `enemy.OnTokenGranted(targetLandingBeat)`；`BeatClockBridge`（DefaultExecutionOrder −100）先于 `BehaviorGraphAgent`（−50）将拍数据写入 Blackboard | **ADR-D2 锁定**签名，C4 实现 |
 | **FE4 Boss** | 下游 | Boss 阶段拍号切换经 `OnMeterChanged` → C4 重算 `SlotCapacity`，以令牌密度承接阶段编排 | C4 拥有密度策略 |
-| **F4 SO 数据层** | 上游（数据） | `EnemyInfoSO` 提供 `attackWindupBeats`(W)、`TimeoutBeats`、威胁权重参数 | F4 拥有 SO schema |
+| **F4 SO 数据层** | 上游（数据） | **[BC-3]** `EnemyInfoSO`(F4-S5) 提供 per-敌 `attackWindupBeats`(W)、`timeoutBeats`；全局导演参数（`capacityTable`/威胁权重 `dNear/dMid/wNear/wMid/wFar`/`starvationWeight`/`starvationCeiling`/`subdivisionMode`）由 `CombatDirectorConfigSO`(F4-S8) 承载，**非** `EnemyInfoSO` | F4 拥有 SO schema |
 
 **provisional 标注**：FE1、FE4 GDD 尚未撰写，上述下游接口以 ADR-D2 契约为准，待 FE1 GDD 编写时双向对齐；`SlotCapacity` 与难度系统的耦合（是否叠加难度乘数）留待 Open Questions。
 
 ## Formulas
 
-C4 的调度决策由六条公式构成一条完整链路：**F-1 决定每拍名额 → F-2/F-3 决定谁该获得名额（合成为 F-4）→ F-6 按名额和优先级选出获令者 → F-5 计算获令者的命中落拍**。以下按此依赖顺序给出规格。所有数值常量均为 Tuning Knob（建议默认值 + 安全范围），与「Tuning Knobs」章节共享。
+C4 的调度决策由公式链路构成：**F-1 决定每拍名额 → F-1b 按 BPM 归一化名额（[BD-2]）→ F-2/F-3 决定谁该获得名额（合成为 F-4）→ F-6 按名额和优先级选出获令者 → F-5 计算获令者的命中落拍**。以下按此依赖顺序给出规格。所有数值常量均为 Tuning Knob（建议默认值 + 安全范围），与「Tuning Knobs」章节共享。
 
 ### F-1　SlotCapacity(meter, beatIndex) — 拍槽容量表
 
@@ -107,6 +107,34 @@ BeatsPerBar(meter) = length(CapacityTable[meter])          // 数据驱动，不
 **输出范围**：非负整数，逐拍位独立、无插值。0 表示该拍位刻意留白（弱拍静默，避免每拍齐射导致听觉噪音饱和）；建议安全范围 [0, 4]。
 
 **示例**：`meter="4/4"`, `beatIndex=2` → `SlotCapacity = CapacityTable["4/4"][2] = 1`，本拍最多授予 1 个令牌。
+
+### F-1b　EffectiveSlotCapacity — 每秒令牌速率归一化（**[BD-2]** BPM 尖峰缓解）
+
+**问题（BD-2，与 C1/C2 联锁）**：`CapacityTable` 仅按拍号给出「每拍」名额，与 BPM 无关。BPM 上升时每秒拍数线性上升，导致真实攻击时间密度（tokens/sec）随 BPM 线性上升——Boss 拍号切换的单一 `OnMeterChanged` 同时收窄 C1 判定窗、缩短 C2 取消窗绝对毫秒、并抬高 C4 攻击密度，三系统同向变难，形成心流反模式的难度尖峰。
+
+**归一化定义**：`SlotCapacity` 改按「每秒令牌速率」归一化——**目标 tokens/sec 恒定，实际每拍容量 = 目标速率 × 拍时长**。以参考 BPM（`bpmRef`，CapacityTable 的授权基准）锚定目标速率：
+
+```
+beatDuration(bpm)        = 60 / bpm                                   // 秒/拍
+targetTokenRate[m][i]    = CapacityTable[m][i] / beatDuration(bpmRef) // tokens/sec，恒定
+                         = CapacityTable[m][i] × bpmRef / 60
+
+EffectiveSlotCapacity(m, i, bpm)
+    = round( targetTokenRate[m][i] × beatDuration(bpm) )
+    = round( CapacityTable[m][i] × bpmRef / bpm )
+```
+
+即 BPM 相对 `bpmRef` 上升 k 倍时，每拍名额约降为 1/k，使 tokens/sec 恒定、攻击时间密度不随 BPM 线性上升。F-6 授令一律消费 `EffectiveSlotCapacity` 而非原始 `CapacityTable` 值。
+
+| 变量 | 类型 | 范围 | 说明 |
+|---|---|---|---|
+| bpm | float | 注册表合法 BPM 域 | 当前 BPM，来自 F2 拍事件（C4 纯消费，不做延迟补偿） |
+| bpmRef | float（**Tuning Knob**） | 默认 120，安全范围 [60, 200] | CapacityTable 授权基准 BPM；`bpm==bpmRef` 时 `EffectiveSlotCapacity==CapacityTable` |
+| EffectiveSlotCapacity | int（输出） | [0, 4] | 归一化后本拍实际可授名额 |
+
+**取整与防饥饿保障**：`round` 四舍五入；为不重新引入密度尖峰，不对个别拍位设下限。BPM 极高致某些拍位归一化到 0 时，防饥饿仍由 F-3 `starvationCeiling` 强制提优 + E10 保证（每拍号 `CapacityTable` 至少一拍位 `≥1`，且 `bpmRef` 处该位 `EffectiveSlotCapacity≥1`）兜底——提优敌人在有界拍数内必获令，不产生真饥饿。
+
+**互引 [BD-2]**：本归一化与 C1（判定窗适应窗口 `rhythm-core.md` Formulas）、C2（取消窗适应窗口 `combo-system.md` Formulas）三方共同承接 BPM 跃升——`OnMeterChanged` 生效时引入 2 拍适应窗口（Tuning Knob，默认 2、范围 [0,4]），窗口内 C1 判定窗 / C2 取消窗毫秒宽度取 `max(变更前, 变更后)`，C4 则由本 `EffectiveSlotCapacity` 保持 tokens/sec 恒定。三文档 Formulas 互相引用 BD-2，须同批锁定（详见 Edge Cases E15 与 AC-C4-30）。
 
 ### F-2　ThreatWeight(distance) — 威胁权重（分段阀值）
 
@@ -197,8 +225,8 @@ targetLandingBeat = min{ e ∈ EligibleSet(subdivisionMode, meter) | e ≥ rawTa
 ### F-6　GrantSelection — 授令选择算法
 
 ```
-function GrantSelection(pendingQueue, meter, beatIndex, currentEvalBeat, subdivisionMode):
-    capacity = SlotCapacity(meter, beatIndex)                      // F-1
+function GrantSelection(pendingQueue, meter, beatIndex, currentEvalBeat, subdivisionMode, bpm):
+    capacity = EffectiveSlotCapacity(meter, beatIndex, bpm)        // F-1b [BD-2]（归一化后名额，替代裸 F-1 CapacityTable）
     if capacity == 0 or pendingQueue.isEmpty():
         return []
 
@@ -229,7 +257,7 @@ function GrantSelection(pendingQueue, meter, beatIndex, currentEvalBeat, subdivi
 | 变量 | 类型 | 范围 | 说明 |
 |---|---|---|---|
 | pendingQueue | list\<PendingRequest\> | 0..N | 待评估的令牌请求集合 |
-| capacity | int | [0, 4]（F-1） | 本拍位可授名额 |
+| capacity | int | [0, 4]（F-1b [BD-2] 归一化输出） | 本拍位可授名额（`EffectiveSlotCapacity`，已按 BPM 归一化） |
 | granted | list\<PendingRequest\>（输出） | [0, min(capacity, \|pendingQueue\|)] | 本拍实际获令请求，其余保留 `Pending` 进入下一拍 |
 
 **示例**（`beatIndex=2`, `meter="4/4"` → `capacity=1`）：E1 near+wait7=44.0、E2 far+wait9(提优)=51.0、E3 mid+wait2=19.0 → 排序 E2>E1>E3 → 仅授 **E2**；E1/E3 保留 Pending，waitBeats 递增为 8、3。
@@ -258,6 +286,7 @@ function GrantSelection(pendingQueue, meter, beatIndex, currentEvalBeat, subdivi
 | E12 | `CapacityTable` 全零（拍号无任何可授拍位） | 属数据非法：Odin Validator 拒绝（见 E10 约束），阻止「敌人永远无法出手」的死配置。 |
 | E13 | 场上零敌人 / pending queue 为空 | F-6 直接返回空集，C4 空转，无副作用。 |
 | E14 | 极端配置：`W=8.0` 拍 @ `BPM=80` → 前摇约 6 秒 | 合法（W、BPM 均在注册表范围内），非错误。超长前摇的 telegraph 表现由 F6/C2 动画层负责，C4 只保证落拍正确。 |
+| E15 **[BD-2]** | Boss 拍号切换致 BPM 大幅跃升（如 `OnMeterChanged` 伴随 `bpm` 由 `bpmRef` 升至 ~2×） | C4 用 `EffectiveSlotCapacity`（F-1b）按 `bpmRef/bpm` 归一化每拍名额，tokens/sec 保持恒定，攻击时间密度**不**随 BPM 线性上升；避免与 C1 判定窗收窄、C2 取消窗毫秒缩短叠加成难度尖峰。归一化于 `OnMeterChanged` 生效即刻应用于未来拍（已授令牌不受影响，见 E4）。C1/C2 侧另有 2 拍适应窗口（`max` 宽度规则）承接，三系统 BD-2 联锁。 |
 
 ## Dependencies
 
@@ -266,7 +295,7 @@ function GrantSelection(pendingQueue, meter, beatIndex, currentEvalBeat, subdivi
 | 系统 | 依赖内容 | 双向引用状态 |
 |---|---|---|
 | **F2 音频/拍点时钟** | 订阅 `OnBeatLookahead`（timestamp + 小节号 + 拍内索引）、`OnMeterChanged`；只读 `BeatEventData.beat_dsp_time`。C4 的全部调度时机源于 F2 拍事件。 | ⚠️ F2 GDD 需反向引用 C4（`OnMeterChanged`/lookahead 消费者）——见 Open Questions 追踪项 |
-| **F4 SO 数据层** | `EnemyInfoSO` 提供 `attackWindupBeats`(W)、`TimeoutBeats`、威胁权重参数（`D_near/D_mid/W_near/W_mid/W_far`）与 `CapacityTable`、`subdivisionMode` 等 Tuning Knob 的数据载体。 | F4 拥有 SO schema；C4 为消费方 |
+| **F4 SO 数据层** | **[BC-3]** per-敌数据由 `EnemyInfoSO`(F4-S5) 承载：`attackWindupBeats`(W)、`timeoutBeats`。全局导演参数由 **`CombatDirectorConfigSO`(F4-S8)** 承载：`capacityTable`、威胁权重（`dNear/dMid/wNear/wMid/wFar`）、`starvationWeight`、`starvationCeiling`、`subdivisionMode`。`CapacityTable` 属 per-拍号全局数据，语义不归 `EnemyInfoSO`。 | F4 拥有 SO schema（F4-S5 `EnemyInfoSO` + F4-S8 `CombatDirectorConfigSO`）；C4 为消费方 |
 | **ADR-D2 敌人 AI 框架** | `CombatDirectorTokenAction` BT Action 节点契约（`Status.Running/Success/Failure`、`TimeoutBeats`）；`BeatClockBridge`（ExecOrder −100）先于 `BehaviorGraphAgent`（−50）写 Blackboard。**接口签名由 ADR-D2 锁定**。 | ✅ ADR-D2 已点名 C4（须与 FE1 并行撰写） |
 | **ADR-D6 F2 派发模型** | F2 拍事件为主线程 Update 轮询派发；C4 令牌逻辑运行同线程，无跨线程队列/同步原语。 | ✅ 架构约束，已在 Core Rule 11 落地 |
 | **ADR-D10 引导时序** | C4 须在 BeatClock ready 之后订阅拍事件；bootstrap 顺序保证不读取未初始化的拍状态。 | ✅ 架构约束 |
@@ -292,17 +321,18 @@ function GrantSelection(pendingQueue, meter, beatIndex, currentEvalBeat, subdivi
 
 | Knob | 默认值 | 安全范围 | 影响的玩法维度 | 数据归属 |
 |---|---|---|---|---|
-| `CapacityTable[meter]`（每拍位数组） | 4/4:[2,1,1,1]；3/4:[2,1,1]；5/8:[2,0,1,1,0]（3+2 分组，强拍在 0/3，待 playtest 校准） | 每元素 ∈ [0,4]；每拍号至少一位 ≥1 | **攻击密度与节奏留白**——决定每拍最多几个攻击落地，强拍高/弱拍低塑造攻击潮汐；调高→压力增、可预读性降 | C4（经 F4 SO 承载） |
-| `D_near` | 3.0m | [1.0, 6.0]m | **威胁近区边界**——多近算「贴脸高威胁」；调小→仅极近敌抢优先级 | C4 / F4 |
-| `D_mid` | 8.0m | [D_near+1.0, 15.0]m（须 > D_near） | **威胁中/远区边界**——远敌何时降为最低威胁 | C4 / F4 |
-| `W_near` | 30.0 | [10, 100] | **近区威胁权重**——贴脸敌抢令强度；同时影响 `BONUS_MAX` 派生值 | C4 / F4 |
-| `W_mid` | 15.0 | [5, W_near) | **中区威胁权重** | C4 / F4 |
-| `W_far` | 5.0 | [0, W_mid) | **远区威胁权重**——远敌基础出手意愿 | C4 / F4 |
-| `starvationWeight` | 2.0 /拍 | [0.5, 10.0] | **饥饿补偿斜率**——远处敌人多快「熬」出出手机会；调高→战场更平均、无被冷落敌 | C4 / F4 |
-| `starvationCeiling` | 8 拍 | [4, 32]；**须 < 该原型 `TimeoutBeats`** | **强制提优阈值**——等待多少拍后无条件抢到最高优先级；防永久饥饿 | C4 / F4 |
-| `subdivisionMode` | FullBeat | {FullBeat, HalfBeat, DownbeatOnly} | **命中落拍细分粒度**——攻击可落在整拍/半拍/仅强拍；越细→节奏越密、预读越难 | C4 / F4（可 per-关卡/原型） |
-| `TimeoutBeats` | 每原型配置（如轻型 2、重型 4） | ≥ `ceil(W) + maxSnapΔ`（见 E11） | **令牌耐心**——授令后多少拍未兑现则撤销；调小→敌人更「守时」，被打断即放弃 | F4 `EnemyInfoSO` |
-| `W`（`attackWindupBeats`，只读引用） | 每原型配置 | [0.5, 8.0] 拍（MVP 常见 [1.0, 4.0]） | **前摇拍数**——命中距授令多少拍，决定 telegraph 时长与可读窗口 | **F4 拥有**（注册表 locked，C4 不改） |
+| `CapacityTable[meter]`（每拍位数组） | 4/4:[2,1,1,1]；3/4:[2,1,1]；5/8:[2,0,1,1,0]（3+2 分组，强拍在 0/3，待 playtest 校准） | 每元素 ∈ [0,4]；每拍号至少一位 ≥1 | **攻击密度与节奏留白**——决定每拍最多几个攻击落地，强拍高/弱拍低塑造攻击潮汐；调高→压力增、可预读性降 | `CombatDirectorConfigSO`（F4-S8）**[BC-3]** |
+| `D_near` | 3.0m | [1.0, 6.0]m | **威胁近区边界**——多近算「贴脸高威胁」；调小→仅极近敌抢优先级 | `CombatDirectorConfigSO`（F4-S8）**[BC-3]** |
+| `D_mid` | 8.0m | [D_near+1.0, 15.0]m（须 > D_near） | **威胁中/远区边界**——远敌何时降为最低威胁 | `CombatDirectorConfigSO`（F4-S8）**[BC-3]** |
+| `W_near` | 30.0 | [10, 100] | **近区威胁权重**——贴脸敌抢令强度；同时影响 `BONUS_MAX` 派生值 | `CombatDirectorConfigSO`（F4-S8）**[BC-3]** |
+| `W_mid` | 15.0 | [5, W_near) | **中区威胁权重** | `CombatDirectorConfigSO`（F4-S8）**[BC-3]** |
+| `W_far` | 5.0 | [0, W_mid) | **远区威胁权重**——远敌基础出手意愿 | `CombatDirectorConfigSO`（F4-S8）**[BC-3]** |
+| `starvationWeight` | 2.0 /拍 | [0.5, 10.0] | **饥饿补偿斜率**——远处敌人多快「熬」出出手机会；调高→战场更平均、无被冷落敌 | `CombatDirectorConfigSO`（F4-S8）**[BC-3]** |
+| `starvationCeiling` | 8 拍 | [4, 32]；**须 < 该原型 `TimeoutBeats`** | **强制提优阈值**——等待多少拍后无条件抢到最高优先级；防永久饥饿 | `CombatDirectorConfigSO`（F4-S8）**[BC-3]** |
+| `subdivisionMode` | FullBeat | {FullBeat, HalfBeat, DownbeatOnly} | **命中落拍细分粒度**——攻击可落在整拍/半拍/仅强拍；越细→节奏越密、预读越难 | `CombatDirectorConfigSO`（F4-S8）**[BC-3]**（可 per-关卡覆写） |
+| `bpmRef`（**[BD-2]**） | 120 | [60, 200] | **归一化基准 BPM**——`CapacityTable` 授权基准；F-1b 按 `bpmRef/bpm` 归一化每拍名额，令 tokens/sec 恒定，消除 BPM 上升的攻击密度尖峰 | `CombatDirectorConfigSO`（F4-S8）**[BC-3]** |
+| `TimeoutBeats` | 每原型配置（如轻型 2、重型 4） | ≥ `ceil(W) + maxSnapΔ`（见 E11） | **令牌耐心**——授令后多少拍未兑现则撤销；调小→敌人更「守时」，被打断即放弃 | `EnemyInfoSO`（F4-S5）**[BC-3]** |
+| `W`（`attackWindupBeats`，只读引用） | 每原型配置 | [0.5, 8.0] 拍（MVP 常见 [1.0, 4.0]） | **前摇拍数**——命中距授令多少拍，决定 telegraph 时长与可读窗口 | `EnemyInfoSO`（F4-S5）**[BC-3]**（注册表 locked，C4 不改） |
 
 **派生值提醒**：`BONUS_MAX = W_near + starvationCeiling × starvationWeight` 非独立 Knob，随上述三项自动重算（Odin Validator 强制，禁止硬编码缓存）。
 
@@ -350,6 +380,8 @@ C4 无任何玩家可见 UI。它是敌人 AI 与 F2 拍钟之间的后台调度
   测试：`meter="5/8", beatIndex=1`（`CapacityTable=0`）→ 断言无论 pending 队列非空与否，`granted` 恒为空集。
 - **AC-C4-07**（Logic/BLOCKING）：`OnMeterChanged` 后，后续评估使用新拍号的 `CapacityTable`；已授令牌不受影响（与 AC-C4-25 联动）。
   测试：授予 1 个 `4/4` 令牌后触发 `OnMeterChanged("5/8")` → 断言下一次评估用 `CapacityTable["5/8"]` 计算 capacity，已授令牌 `targetLandingBeat` 保持不变。
+- **AC-C4-30**（Logic/BLOCKING，**[BD-2]**）：`EffectiveSlotCapacity`（F-1b）按每秒令牌速率归一化，攻击时间密度不随 BPM 线性上升。
+  测试：(a) `bpm == bpmRef`（=120）时断言 `EffectiveSlotCapacity(meter,i,bpm) == CapacityTable[meter][i]`（归一化在基准处恒等）；(b) `bpm == 2×bpmRef`（=240）时断言 `EffectiveSlotCapacity == round(CapacityTable[meter][i] × bpmRef/bpm)`（如 table=2 → 1），且实测 tokens/sec = `EffectiveSlotCapacity / (60/bpm)` 相对 `bpmRef` 处保持恒定（误差仅来自 `round` 取整，≤ 0.5 token/beat）；(c) 断言即便某拍位归一化到 0，防饥饿仍由 F-3 `starvationCeiling` 强制提优兜底（提优敌人在有界拍数内获令）。
 
 ### 优先级与防饥饿（F-2/F-3/F-4）
 

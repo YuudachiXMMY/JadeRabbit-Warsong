@@ -1,6 +1,6 @@
 # 心法构筑系统 (Perk System)
 
-> **Status**: In Design
+> **Status**: Revised (2026-08-10 blocker fix) — Pending Re-review
 > **Author**: user + design-system agents
 > **Last Updated**: 2026-08-10
 > **Implements Pillar**: 支柱四「构筑驱动复盘」(Build Depth Over Stat Inflation)；受支柱一「节奏即战斗」护栏约束
@@ -55,7 +55,7 @@
 
 **C3-R4 触发模型（PerkTrigger，F4 权威 5 值）**
 - `Passive`＝常驻，注册即生效；`maxStacks` 必为 1、`stackBehavior` 必为 `Capped`（F4 Odin 强制）。
-- `OnPerfect/OnGood/OnMiss/OnComboEnd` 由订阅 C1 `OnRhythmJudgment(RhythmJudgmentEvent)` 驱动：C3 读 `event.Rating` 映射触发器；`OnComboEnd` 依据连段结束判定（须与 C2 对齐——见 Open Questions）。
+- `OnPerfect/OnGood/OnMiss/OnComboEnd` 由订阅 C1 `OnRhythmJudgment(RhythmJudgmentEvent)` 驱动：C3 读 `event.Rating` 映射触发器；`OnComboEnd` 依据连段结束判定（须与 C2 对齐——见 Open Questions）。〔BC-6/W-04：事件名 `OnRhythmJudgment` 为 C1-F6 唯一规范名，载体结构类型名 `RhythmJudgmentEvent`（二者不冲突）；C3 订阅与 C1、C2 三方对齐同一事件/载体。〕
 
 **C3-R5 叠加行为（StackBehavior，F4 权威）**：`Additive`＝每次触发 stack+1（clamp 至 maxStacks），修改量按 stack 线性累积；`Capped`＝达 maxStacks 停止触发；`Replace`＝新触发覆盖旧（刷新时限）。
 
@@ -119,7 +119,7 @@ C3 实现，C1 属性注入并在计算 effective-window / 评级后果时查询
 |---|---|---|---|---|
 | **C1 节奏核心** | 双向（解耦） | 订阅 `OnRhythmJudgment`（触发器来源） | 实现 `IRhythmModifierProvider`（C1 查询聚合修改量）+ 增删心法时广播 `OnPerkStackChanged` 触发 C1 窗口重算 | 接口由 C3 定义，**C1 在 C1-F7 消费（BC-2 已接线）** |
 | **F4 SO 数据层** | C3→F4 | `PerkSO` schema（F4-S3）、克隆规则（F4 Rule 3） | 无（只读 schema） | F4 |
-| **F2 音频时钟** | 间接 | 经 C1（BPM/拍号变化触发窗口重算） | 无 | — |
+| **F2 音频时钟** | 间接 + 暂停/恢复直订〔BC-6〕 | 经 C1（BPM/拍号变化触发窗口重算）；直接订阅 F2 `OnBeatClockPaused`/`OnBeatClockResumed` 冻结/续算修改器栈 | 无 | F2（暂停/恢复事件权威定义） |
 | **C2 连招图** | 待对齐 | `OnComboEnd` 判定、`CancelTier` 语义 | `rhythm.cancel.*` 修改量（受护栏 3） | Open Question（与 C2 同轮对齐） |
 | **FE2 房间** | FE2→C3 | `RollPerkChoices()` 触发（房间奖励） | 三候选 PerkSO | C3（单向，C3 不依赖 FE2） |
 | **FE5 局外成长** | FE5→C3 | `ExpandUnlockedPool(perkId)` | 解锁池状态 | C3；持久化需 F4 变更 |
@@ -142,6 +142,8 @@ C3 实现，C1 属性注入并在计算 effective-window / 评级后果时查询
 **输出范围**：[0.5, 2.0]。MVP 现实构筑落 ~1.3–1.6×；上限主要护 Vertical Slice/Full 规模不失控。
 **示例**：A（Common +5%/层，4 层）→ 1+0.05×4=1.20；B（Rare +8%/层，2 层）→ 1.16；连乘 1.20×1.16=**1.392**（未触顶）。
 > `perk_multiplier` 是 game-concept 伤害公式 `final_damage = base_damage × rating_multiplier × combo_multiplier × perk_multiplier` 的第四项，C3 拥有。C2 的 final_damage 直接消费此值。
+>
+> **BD-1（Off 独立封顶）**：当 `QuantizationMode == Off` 时，聚合后的 `perk_multiplier` 在上表 clamp 之外**再独立 clamp 至 ≤ 1.0**（「节奏模式独占」护栏，覆盖 `PERK_MULT_MAX`），使无障碍 Off 档不获得任何净伤害增益——堵住「Off 恒 Perfect × 无限制 perk」的战力漏洞（反支柱「不存在绕过节奏的破坏性收益」）。非 Off 档沿用上表 [0.5, 2.0]。断言见 AC-C3-15(b)。
 
 ### 公式 2：判定窗拓宽聚合（RhythmRuleModifier，`rhythm.window.*`）
 
@@ -206,9 +208,9 @@ C3 实现，C1 属性注入并在计算 effective-window / 评级后果时查询
 - **若 `OnMiss` 心法产生正 `ComboDelta`**（违护栏 2）：`GetComboDelta(Miss)` 强制返回 0，记 Error。
 - **若 `rhythm.cancel.*` 心法对全评级开放 `Advanced`**（违护栏 3）：校验器拒绝；运行时忽略该修改、记 Error。
 - **若玩家在连段中途获得心法**（mid-run clone）：立即加入 `PerkLoadout`，下一次 `Evaluate` 生效；**不追溯**已结算的判定。
-- **若量化档位 = Off**（无障碍，恒 Perfect）：`rhythm.window.*` 拓宽无意义（Off 无窗口概念），C1 在 Off 下忽略窗口 delta；但 `DamageModifier`/`ComboModifier` 仍生效——**Off 档下心法数值增益是否计入功勋/merit 须与 Off 无障碍隔离契约对齐**（见 Open Questions，关联 C1/D1 裁定）。
+- **若量化档位 = Off**（无障碍，恒 Perfect）〔BD-1〕：`rhythm.window.*` 拓宽无意义（Off 无窗口概念），C1 在 Off 下忽略窗口 delta。`DamageModifier`/`ComboModifier` 仍参与聚合计算，**但聚合后的 `perk_multiplier` 在 `QuantizationMode == Off` 下独立封顶 1.0**（「节奏模式独占」护栏，防 Off 战力漏洞——见公式 1 的 BD-1 注）；`ComboModifier` 的 ΔCombo 仍受 C1 既有 combo≤5.0 封顶约束。**OQ-C3-3 锁定**：Off 下心法增益计入功勋/merit 时同样受 C1 既有 `meritMultiplierOff` Off 折算三重隔离，**不额外绕过**（即 Off 封顶 1.0 后再经 Off 功勋折算，无净放大路径）。
 - **若 BPM=0**（关卡配置错误）：C1 回退 120 BPM 内部时钟；C3 窗口 delta 照常经 C1 级联，无特殊处理。
-- **若音频设备断开**（游戏暂停）：C3 修改器栈冻结、不触发；恢复后续算——克隆叠加状态不受影响。
+- **若音频设备断开**（游戏暂停）〔BC-6〕：C3 订阅 F2 权威 `OnBeatClockPaused` 冻结 `PerkModifierStack`、不触发；收到 F2 `OnBeatClockResumed` 后续算——克隆叠加状态不受影响（暂停/恢复事件源已锁定为 F2 规范事件，废弃臆造的 `OnGamePaused/OnGameResumed`）。
 - **若 Boss 拍号切换（4/4→3/4）且玩家持 `rhythm.meter.*` 心法**：心法在切换后按其定义拍数窗口生效；进行中的攻击按原拍号完成（game-concept 边界），新判定窗从下一拍起算 + perk delta。
 - **若 `Additive` 心法已达 `maxStacks` 仍触发**：`Capped` 停止触发；`Additive` clamp 到顶；`Replace` 刷新时限。
 
@@ -219,8 +221,8 @@ C3 实现，C1 属性注入并在计算 effective-window / 评级后果时查询
 | 依赖 | 类型 | 数据接口 | 状态 |
 |---|---|---|---|
 | **F4 SO 数据层** | 硬 | `PerkSO` schema（F4-S3）、`PerkParameter`/`PerkRarity`/`PerkEffectType`/`PerkTrigger`/`StackBehavior` 枚举、克隆规则 F4 Rule 3、Odin 双模校验 | Approved |
-| **C1 节奏量化攻击** | 硬 | 订阅 `OnRhythmJudgment(RhythmJudgmentEvent{Rating,AttackType,CancelTier,ComboCountBefore,ComboCountAfter,OffsetMs})`；C3 实现 `IRhythmModifierProvider` 供 C1 查询 | **BC-2 已接线**（载体以 C1-F6、消费契约以 C1-F7 为准；C1-F4/F5 已纳入 perk delta）；Off 下是否生效待 **BD-1** 裁定 |
-| **F2 音频时钟** | 软（间接） | 经 C1；BPM/拍号变化触发 effective-window 重算 | Revised-Pending |
+| **C1 节奏量化攻击** | 硬 | 订阅 `OnRhythmJudgment(RhythmJudgmentEvent{Rating,AttackType,CancelTier,ComboCountBefore,ComboCountAfter,OffsetMs})`；C3 实现 `IRhythmModifierProvider` 供 C1 查询 | **BC-2 已接线**（载体以 C1-F6、消费契约以 C1-F7 为准；C1-F4/F5 已纳入 perk delta）；Off 下聚合 `perk_multiplier` 独立封顶 1.0（**BD-1 已锁定**，见公式 1 BD-1 注） |
+| **F2 音频时钟** | 软（间接）+ 暂停/恢复直订〔BC-6〕 | 经 C1；BPM/拍号变化触发 effective-window 重算；直接订阅 F2 权威 `OnBeatClockPaused`/`OnBeatClockResumed` 冻结/续算 `PerkModifierStack` | Revised-Pending |
 | **game-concept 规则五** | 设计约束 | 心法设计空间三护栏 + 伤害公式 `perk_multiplier` 项 | Approved（基准） |
 
 ### 下游依赖（依赖 C3，须反向引用本文件）
@@ -308,9 +310,9 @@ C3 **本身不拥有 UI**，只向 UI 层提供数据。两个 UI 触点：
 
 **AC-C3-14（BLOCKING）R9 排除/无保底/池<3**：GIVEN Perk-A 已满叠、Perk-B 已拥有未满叠（5 资产），WHEN `RollPerkChoices(3)`，THEN 池仅排除 A、结果无 A、无重复 id、可含 B；GIVEN 池减至 2，THEN 返回恰 2（不填充）；GIVEN 池=0，THEN 空结果、Info 日志、房间前进不阻塞；GIVEN 注入永不越 Legendary 带的 RNG stub 连抽 20 次，THEN 0 Legendary（无保底）。〔R9〕
 
-**AC-C3-15（ADVISORY，集成）mid-run 非追溯 + Off 窗口 delta 旁路**：(a) GIVEN 已结算判定 + 连段中途获心法，THEN 新克隆仅影响下一次 `Evaluate`，不追溯重算已结算判定；(b) GIVEN 量化=Off 且活跃克隆 `GetPerfectWindowDeltaMs()=40ms`，THEN C1 在 Off 下完全忽略该 delta，Damage/ComboModifier 贡献仍生效。〔**Off merit 计入未决，见 OQ-C3-3，暂作阻塞桩不可判 pass/fail**〕
+**AC-C3-15（(a) ADVISORY 集成 / (b) BLOCKING 单测）mid-run 非追溯 + Off perk 封顶**：(a) GIVEN 已结算判定 + 连段中途获心法，THEN 新克隆仅影响下一次 `Evaluate`，不追溯重算已结算判定；**(b)〔BD-1，可判定断言，替代原阻塞桩〕** GIVEN 量化=Off 且活跃 DamageModifier 克隆使非 Off 档 `perk_multiplier` 本应 = 1.6，WHEN 查询 `GetDamageMultiplier()`，THEN Off 封顶生效返回 **`perk_multiplier ≤ 1.0`**（精确 == 1.0）；且 `GetPerfectWindowDeltaMs()=40ms` 的窗口 delta 被 C1 在 Off 下完全忽略；计入功勋时受 `meritMultiplierOff` Off 折算、无额外绕过（OQ-C3-3 锁定）。〔R6/F1/BD-1〕
 
-**AC-C3-16（ADVISORY，集成，gap 标记）暂停冻结**：GIVEN 2 活跃克隆带进行中计时器，WHEN `OnGamePaused` 触发，THEN `PerkModifierStack` 冻结——暂停窗内注入的判定事件被证明忽略、不入队、不在恢复时双计；WHEN `OnGameResumed`，THEN stack 数/计时器与暂停前一致。〔**gap：暂停/恢复事件源未命名，见 OQ-C3-7**〕
+**AC-C3-16（ADVISORY，集成）暂停冻结**〔BC-6〕：GIVEN 2 活跃克隆带进行中计时器，WHEN F2 广播 `OnBeatClockPaused`，THEN `PerkModifierStack` 冻结——暂停窗内注入的判定事件被证明忽略、不入队、不在恢复时双计；WHEN F2 广播 `OnBeatClockResumed`，THEN stack 数/计时器与暂停前一致。〔事件源已锁定为 F2 权威 `OnBeatClockPaused`/`OnBeatClockResumed`，OQ-C3-7 已解阻〕
 
 ## Open Questions
 
@@ -318,8 +320,8 @@ C3 **本身不拥有 UI**，只向 UI 层提供数据。两个 UI 触点：
 |---|---|---|---|
 | OQ-C3-1 | `PlayerInfoSO.unlockedPerkIds` 缺失（F4-S7）→ FE5 心法池扩展需此字段，属 **Rule-4 F4 schema 变更** | F4 / technical-director | 先于 FE5 设计 |
 | OQ-C3-2 | `OnComboEnd` 触发精确定义（连段结束 vs 连击归零判定）须与 C2 同轮对齐 | C3 + C2 | C2 设计同轮 |
-| OQ-C3-3 | Off 量化档下心法数值增益是否计入功勋/merit——关联 Off 无障碍隔离契约（C1/D1 未决） | FE5 + creative-director | 先于 FE5/无障碍锁定 |
+| OQ-C3-3 | ~~Off 量化档下心法数值增益是否计入功勋/merit~~ **已锁定〔BD-1〕**：Off 下聚合 `perk_multiplier` 独立封顶 1.0；计入功勋时同样受 C1 `meritMultiplierOff` Off 折算三重隔离、不额外绕过（见公式 1 BD-1 注 + Edge Case「Off」条 + AC-C3-15(b)） | RESOLVED（BD-1 owner 决策） | 已随 2026-08-10 阻塞修订锁定 |
 | OQ-C3-4 | `RhythmRuleSubtype` 是否升为 PerkSO 一等公民枚举字段（当前用 `PerkParameter.key` 命名空间）——升级则 Rule-4 F4 变更 | C3 + F4 | Vertical Slice 前评估 |
 | OQ-C3-5 | `PerkEffectType` 最终锁定确认（本 GDD 锁定 5 值）——ADR-D4 gating，须 architecture-review 确认后解阻 C3 实现冲刺 | architecture-review | 实现冲刺前 |
 | OQ-C3-6 | `PerkRollService` 无可注入随机源接口（如 `IRandomSource`）——依 coding-standards 确定性规则，AC-C3-13 加权抽取无法成真单测；同 C1 `ITimeProvider` 缺陷类 | C3 + architecture | 实现冲刺前（须先于 C3 单测） |
-| OQ-C3-7 | 暂停/恢复事件源未命名（哪个系统发 `OnGamePaused`/`OnGameResumed`）——阻塞 AC-C3-16 成真自动化测试 | C3 + F6/technical-director | C3 实现前 |
+| OQ-C3-7 | ~~暂停/恢复事件源未命名（哪个系统发 `OnGamePaused`/`OnGameResumed`）~~ **已锁定〔BC-6〕**：C3 订阅 F2 权威 `OnBeatClockPaused`/`OnBeatClockResumed`（携恢复首拍 raw DSP 时间）——解阻 AC-C3-16 自动化测试 | RESOLVED（F2/C1/C3 同轮） | 已随 2026-08-10 阻塞修订锁定 |

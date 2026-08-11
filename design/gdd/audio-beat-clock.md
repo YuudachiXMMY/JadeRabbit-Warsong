@@ -1,6 +1,6 @@
 # 音频/拍点时钟系统 (Audio Beat Clock System)
 
-> **Status**: Approved (Amended — B1 事件契约补订 OnMeter*, Pending Re-review)
+> **Status**: Approved (Amended — B1 事件契约补订 OnMeter* + 2026-08-10 blocker fix — BC-6 OnBeatClockPaused/Resumed·IAudioPlayer.Pause/Resume, SC-1 F6 承接, B3 ScheduleBGMTransition, Pending Re-review)
 > **Author**: Jadyn Wu + Claude Code Agents
 > **Last Updated**: 2026-08-08
 > **Implements Pillar**: 支柱一：节奏即战斗 (Rhythm IS Combat)
@@ -48,17 +48,20 @@ F2 音频/拍点时钟系统是《玉兔：破阵》节奏战斗体系的时序�
 
 7. **玩家延迟偏移内化（两阶段写者，ADR-D10 D-5）**: F2 持有被外部注入的 `LatencyOffsetMs`（默认 0ms），**BeatClock 自身从不加载此值**——它是纯持有者（pure holder），遵循两阶段写者模型：**启动期**由 F6 `TDELifecycleAdapter` 在首个 `OnSceneLoaded(Single)` 内、首次 `BeatClock.Play()` 之前，从 F5 `LatencyCalibrationDTO` 一次性 boot-inject（`isCalibrated=false` 时注入默认 0ms）；**运行期**由 FE3 校准流程作为唯一写者更新（见 Rule 10）。BeatClock **禁止**自 load（registry forbidden pattern `f2_self_load_latency_from_f5`）。所有向上层广播的事件时间戳（`BeatEventData.beat_dsp_time`）均已应用偏移（`adjusted_beat_time = raw + offset/1000`），处于「玩家感知时间域」。**仅消费 F2 时间戳的系统**（P1 HUD、PL2 VFX、C4 战斗导演）无需自行处理延迟补偿。**跨域比较场景**：C1 需将 F3 的原始 DSP 时间戳（`inputDspTime`，未含偏移）与 F2 的已调整时间戳（`beat_dsp_time`，已含偏移）对齐——C1 须在 F3 时间戳上加 `latency_offset_s` 完成坐标系对齐（见 F3 GDD F3-F2 公式）。这不是"上层自行补偿延迟"，而是对齐两个不同时间域的标准操作。
 
-8. **游戏暂停规则**: 收到暂停信号时，停止广播新事件并保存当前进度（小节号、拍内序号、已播放 DSP 时间）。恢复时重新锚定 DSP 基准（暂停期间底层 DSP 仍在运行），从暂停位置无缝续播，下一个应广播的拍点事件在恢复后按正确时序继续。
+8. **游戏暂停规则（含暂停/恢复事件契约，BC-6）**: 收到暂停信号（F6 经 `Pause()` 方法调用发起）时，停止广播新事件并保存当前进度（小节号、拍内序号、已播放 DSP 时间），状态转入 `Paused`，**在状态翻转之后同帧广播 `OnBeatClockPaused` 事件**。恢复时（F6 经 `Resume()` 方法调用发起）重新锚定 DSP 基准（暂停期间底层 DSP 仍在运行，见 F2-F3 暂停恢复公式），从暂停位置无缝续播，状态转回 `Playing`，**在完成重锚定之后、恢复后首个拍点 Exact 事件广播之前的同帧广播 `OnBeatClockResumed` 事件**，下一个应广播的拍点事件在恢复后按正确时序继续。
+   - **事件契约（BC-6，F2 权威定义）**：`OnBeatClockPaused` 与 `OnBeatClockResumed` 均为 C# `event`（签名 `event Action<BeatClockPauseEventData>`，非 `EventHandler<T>`；payload `BeatClockPauseEventData` 为 `readonly struct`，全字段纯值类型，零 GC）。二者**成对广播**：任一次「暂停→恢复」周期各恰好触发 1 次，`OnBeatClockPaused` 必先于其配对的 `OnBeatClockResumed`。
+   - **`OnBeatClockResumed` payload 语义**：携带 `resumeFirstBeatDspTimeRaw`（**恢复后首拍的 raw DSP 时间戳**，遵循 Core Rule 13 raw 坐标系，**禁止叠加 offset**）与恢复时刻的 `beatIndexInMeasure`、`measureIndex`。**恢复即「下游可安全重锚」信号**：C1 订阅后重锚拍网格并清空过期 `_pendingInput`；C3 心法冻结栈订阅后恢复计时/解冻（见 Dependencies）。`OnBeatClockPaused` payload 携带暂停时刻的 `beatIndexInMeasure` 与 `fractionalProgressAtPause`（拍内已过去时间，秒），供下游冻结当前状态。
+   - **三方唯一信号源**：暂停/恢复由 F6 `TDELifecycleAdapter` 以 `Pause()` / `Resume()` **方法调用**驱动（发起方），F2 在状态翻转时广播这两个**事件**（C1/C3 为订阅方）。三系统共享 F2 这唯一一对暂停/恢复事件，禁止各自定义 `OnGamePaused`/`OnGameResumed` 等并行信号（消解 BC-6 信号机制不一致）。**状态字段必须在事件广播之前完成翻转**（与 Rule 14 一致），保证回调内同步查询 `BeatStateSnapshot.clockState` 读到新值。底层音频播放器的暂停/恢复通过 `IAudioPlayer.Pause()` / `IAudioPlayer.Resume()` 执行（见 Rule 12 接口契约）。
 
 9. **BPM=0 兜底 / 音频不可用降级**：
    - **BPM=0 兜底**：关卡配置 `bpm=0` 时，F2 回退到固定 120 BPM 的内部 DSP 时钟正常运行；HUD 节奏指示器继续工作；记录 Warning 日志。
-   - **音频设备不可用降级**：`IAudioPlayer.PlayScheduled()`（生产实现 `FMODAudioPlayerImpl`，见 ADR-D6）失败或音频设备断开时，F2 执行以下降级序列：(1) 立即暂停游戏（1 帧内，等同于发出 `Pause()` 信号）；(2) 发出 `OnAudioUnavailable` 事件，UI 层订阅后显示 "Audio Unavailable" Toast；(3) 同步发出 `OnVisualMetronomeActivated` 事件，P1（HUD）订阅后启动视觉节拍指示器（屏幕边缘随 `Time.unscaledTime` 闪烁；音频不可用时 FMOD DSP 时钟（经 `IDSPClock.GetCurrentTime()` 读取，生产实现 `FMODDSPClockImpl`）可能冻结，须以墙上时钟 `Time.unscaledTime` 驱动视觉动画）；(4) DSP 时钟在 `Paused` 状态下仍可查询，节奏判定（C1）暂停期间不触发；(5) 玩家恢复音频输出后可调用 `Resume()` 从暂停位置续播。**理由**：「节奏即战斗」支柱要求节奏判定仅在玩家可感知拍点时生效；无音频时不可隐式惩罚玩家（游戏暂停，判定亦暂停）。
+   - **音频设备不可用降级**：`IAudioPlayer.PlayScheduled()`（生产实现 `FMODAudioPlayerImpl`，见 ADR-D6）失败或音频设备断开时，F2 执行以下降级序列：(1) F2 自身在 1 帧内停止拍点广播并转入 `Paused`（等同于内部 `Pause()` 信号，同帧广播 `OnBeatClockPaused`）——**但 F2 无权暂停 TDE 或禁用 F3 输入**，实际的「1 帧内暂停游戏」由 **F6（`TDELifecycleAdapter` / 降级协调器）订阅本序列步骤 (2) 的 `OnAudioUnavailable` 事件后、同帧执行 `TDE.Pause()` + `F3.DisableAllInput()`** 承接（SC-1）；F2 只负责发事件，暂停执行归 F6；(2) 发出 `OnAudioUnavailable` 事件，UI 层订阅后显示 "Audio Unavailable" Toast、F6 订阅后承接实际暂停（见 SC-1）；(3) 同步发出 `OnVisualMetronomeActivated` 事件，P1（HUD）订阅后启动视觉节拍指示器（屏幕边缘随 `Time.unscaledTime` 闪烁；音频不可用时 FMOD DSP 时钟（经 `IDSPClock.GetCurrentTime()` 读取，生产实现 `FMODDSPClockImpl`）可能冻结，须以墙上时钟 `Time.unscaledTime` 驱动视觉动画）；(4) DSP 时钟在 `Paused` 状态下仍可查询，节奏判定（C1）暂停期间不触发；(5) 设备重连 / 音频恢复时，F2 在**同一帧**广播 **`OnAudioRestored`** 事件（SC-1 恢复对称信号，F6 `TDELifecycleAdapter` 订阅后对称执行 `GameManager.UnPause()` + `InputEventBus.EnableGameplayInput()`，节拍先于输入；见 `tde-integration.md` Rule 14），并从暂停位置调用 `Resume()` 续播（复用 BC-6 的 `OnBeatClockResumed` 首拍重锚信号）。**理由**：「节奏即战斗」支柱要求节奏判定仅在玩家可感知拍点时生效；无音频时不可隐式惩罚玩家（游戏暂停，判定亦暂停）。
 
 10. **DontDestroyOnLoad 单例**: BeatClock 使用 `DontDestroyOnLoad` 模式跨场景存活。房间切换时 F6 调用 `Stop()` 后再 `Play(newClip, newBpm, newTimeSig)` 重置。`Stop()` 将 `global_beat_index` 归零、清除所有 Pending 状态、释放 BGM AudioSource 引用（由 F6 在下一次 `Play()` 前重新注入）。**`LatencyOffsetMs` 不受 `Stop()` 影响**——延迟校准数据为设备级属性，跨房间、跨关卡保持有效。其写者遵循两阶段模型（ADR-D10 D-5）：**启动期**由 F6 gate 一次性 boot-inject，受 `_offsetInjected` 一次性 guard 保护——重入的 `OnSceneLoaded(Single)`（复活/换关）不重复注入、不覆盖运行期 FE3 写入；**运行期唯一写者为 FE3 校准流程**，Rule 10 的单一写者不变量在运行期完整保留。BeatClock 自身**禁止**调用 `SaveService.LoadLatencyCalibration()` 或以任何方式自 load（registry forbidden pattern `f2_self_load_latency_from_f5`）。下游系统不应假定 `global_beat_index` 或 `measure_index` 在跨房间场景中连续。
 
 11. **订阅者生命周期合约**: 所有订阅 F2 事件的系统**必须**在自身销毁时（`OnDestroy()` 或等价清理路径）解除订阅。F6 在触发房间卸载前**须先**广播房间卸载预信号，确保非持久化系统在 `BeatClock.Stop()` 之前完成取消订阅。F2 的事件类型为 C# `event`（非 UnityEvent），`BeatEventData` 为 `readonly struct`，避免装箱和 GC 分配。
 
-12. **时间戳精度承诺（非回调触发时机）**: F2 承诺的精度指标是——广播给上层的 DSP 时间戳**值**（`adjusted_beat_time`）与理论计算值误差 < 0.1ms。F2 **不**承诺 C# 事件回调在该时间戳对应的精确时刻触发——回调的实际触发时机受调度机制影响（Update 轮询 / OnAudioFilterRead / FMOD DSP callback），由 ADR-D6 决定。**下游系统接口合约**：订阅 F2 事件的系统**必须**使用事件负载中的 `BeatEventData.beat_dsp_time` 进行时序判定；**禁止**在回调触发时读取 `AudioSettings.dspTime` 作为参考时刻——后者是调度误差点，前者是 F2 精度承诺的实际体现（误差 < 0.1ms）。此合约须在 C1、C4、FE3 各 GDD 的 F2 依赖章节中明确引用。BeatClock 须支持通过 `IDSPClock` 接口注入时钟源，允许测试使用 `MockDSPClock` 进行确定性验证。BeatClock 须同等支持通过 `IAudioPlayer` 接口注入音频播放器（与 `IDSPClock` 对称），允许测试注入 `MockAudioPlayer` 以模拟 `PlayScheduled()` 失败场景（AC-F2-16b 的可测性前提）；`IAudioPlayer` 最低需暴露 `PlayScheduled(double dspTime)`、`Stop()`、`IsPlaying` 三个成员（`Stop()` 映射到**立即停止**，FMOD 对应 `FMOD_STUDIO_STOP_IMMEDIATE`；渐出 / 淡出逻辑属于 F6 BGM 过渡策略，不属于 `IAudioPlayer` 合约）。BeatClock 须同时暴露以下两个公开接口，供测试代码获取确认后的 DSP 锚点（见 AC-F2-19b）：
+12. **时间戳精度承诺（非回调触发时机）**: F2 承诺的精度指标是——广播给上层的 DSP 时间戳**值**（`adjusted_beat_time`）与理论计算值误差 < 0.1ms。F2 **不**承诺 C# 事件回调在该时间戳对应的精确时刻触发——回调的实际触发时机受调度机制影响（Update 轮询 / OnAudioFilterRead / FMOD DSP callback），由 ADR-D6 决定。**下游系统接口合约**：订阅 F2 事件的系统**必须**使用事件负载中的 `BeatEventData.beat_dsp_time` 进行时序判定；**禁止**在回调触发时读取 `AudioSettings.dspTime` 作为参考时刻——后者是调度误差点，前者是 F2 精度承诺的实际体现（误差 < 0.1ms）。此合约须在 C1、C4、FE3 各 GDD 的 F2 依赖章节中明确引用。BeatClock 须支持通过 `IDSPClock` 接口注入时钟源，允许测试使用 `MockDSPClock` 进行确定性验证。BeatClock 须同等支持通过 `IAudioPlayer` 接口注入音频播放器（与 `IDSPClock` 对称），允许测试注入 `MockAudioPlayer` 以模拟 `PlayScheduled()` 失败场景（AC-F2-16b 的可测性前提）；`IAudioPlayer` 最低需暴露 `PlayScheduled(double dspTime)`、`Stop()`、`IsPlaying`、以及 **`Pause()` / `Resume()`（BC-6）** 五个成员（`Stop()` 映射到**立即停止**，FMOD 对应 `FMOD_STUDIO_STOP_IMMEDIATE`；渐出 / 淡出逻辑属于 F6 BGM 过渡策略，不属于 `IAudioPlayer` 合约）。**`Pause()` / `Resume()`（BC-6）**：`Pause()` 暂停底层音频播放但**不释放**播放位置（FMOD 对应 `setPaused(true)`，DSP 时钟在暂停态仍可查询）；`Resume()` 从暂停位置续播（`setPaused(false)`）。BeatClock 的 `Pause()`/`Resume()` 方法内部委托这两个成员执行音频层暂停/恢复，再广播 `OnBeatClockPaused`/`OnBeatClockResumed` 事件（见 Rule 8）。测试可通过 `MockAudioPlayer` 注入以验证暂停/恢复调用序列（AC-F2-28 的可测性前提）。BeatClock 须同时暴露以下两个公开接口，供测试代码获取确认后的 DSP 锚点（见 AC-F2-19b）：
 - `double GetConfirmedDSPStart()`：返回最近一次 `ConfirmDSPStart()` 写入的 `dsp_start_time` 值；**`Play()` 后、首次 `ConfirmDSPStart()` 调用前返回 `-1.0` 作为零状态标志**（`AudioSettings.dspTime` 始终 ≥ 0，`-1.0` 唯一标识"尚未确认"状态，与 `double.MaxValue` 的 `nextBeatDspTime` 零状态对称设计）。
 - `bool IsStartConfirmed`：`ConfirmDSPStart()` 至少调用过一次后为 `true`；消费方在使用 `GetConfirmedDSPStart()` 前**须**先检查此属性，`false` 时不得以返回值构造时序计算（避免以 `-1.0` 作为 DSP 锚点）。
 
@@ -89,8 +92,8 @@ F2 音频/拍点时钟系统是《玉兔：破阵》节奏战斗体系的时序�
 | 来源状态 | 触发条件 | 目标状态 |
 |---------|---------|---------|
 | `Stopped` | `Play(clip, bpm, timeSig)` 调用 | `Playing` |
-| `Playing` | 收到 TDE 暂停信号 | `Paused` |
-| `Paused` | 收到 TDE 恢复信号 | `Playing` |
+| `Playing` | 收到 TDE 暂停信号（F6 调用 `Pause()`；状态翻转后广播 `OnBeatClockPaused`，BC-6） | `Paused` |
+| `Paused` | 收到 TDE 恢复信号（F6 调用 `Resume()`；重锚定后、首拍 Exact 前广播 `OnBeatClockResumed`，BC-6） | `Playing` |
 | `Playing` | `RequestBPMChange(newBpm)`（广播 `OnMeterChangeAccepted`） | `PendingBPMChange` |
 | `PendingBPMChange` | 当前小节最后一拍 Exact 事件广播后（广播 `OnMeterChanged`） | `Playing`（新 BPM） |
 | `Playing` | `RequestTimeSignatureChange(num, den)`（广播 `OnMeterChangeAccepted`） | `PendingTimeSignatureChange` |
@@ -107,6 +110,8 @@ F2 音频/拍点时钟系统是《玉兔：破阵》节奏战斗体系的时序�
 | F2 **→** C4 | 战斗导演 | `OnBeatLookahead`（时间戳 + 小节号 + 拍内序号） | 事件订阅 |
 | F2 **→** F6 | TDE 集成层 | `OnMeterChangeAccepted`（接受时；`MeterChangeEventData`，含 `predictedEffectiveDspTimeRaw`，供 BGM 预加载/预调度） | 事件订阅 |
 | F2 **→** C1 / C4 | 量化 / 战斗导演 | `OnMeterChanged`（生效时；网格重锚定 / 令牌密度调整） | 事件订阅 |
+| F2 **→** C1 / C3 | 量化 / 心法 | `OnBeatClockPaused` / `OnBeatClockResumed`（BC-6；恢复携首拍 raw DSP，供 C1 重锚拍网格 + 清空过期 `_pendingInput`、C3 心法冻结栈恢复） | 事件订阅 |
+| F2 **→** F6 (SC-1) | TDE 集成层 | `OnAudioUnavailable`（设备断开降级信号，F6 同帧 `GameManager.Pause()`+`DisableAllInput()` 承接）；`OnAudioRestored`（恢复对称信号，F6 同帧 UnPause+EnableGameplayInput） | 事件订阅 |
 | FE3 **→** F2 | 延迟校准系统 | `LatencyOffsetMs`（float，毫秒） | 属性注入（可随时重写；FE3 每次校准完成后更新） |
 | F2 **→** FE3 | 延迟校准系统 | `GetCurrentDSPTime()`（double，秒） | 同步查询接口 |
 | F2 **→** P1 | HUD | `OnBeatExact` + `BeatProgress`（0–1，帧查询） | 事件订阅 + 帧查询 |
@@ -159,6 +164,22 @@ F2 音频/拍点时钟系统是《玉兔：破阵》节奏战斗体系的时序�
 | `newBeatIntervalS` | double | 变更后的 `beat_interval_s` = `60.0 / newBpm`（拍号-only 变更时 == 旧值） |
 
 > **`OnMeterChangeAccepted` vs `OnMeterChanged` 的字段差异**：两事件 payload 结构相同；`Accepted` 在接受时广播（`predictedEffectiveDspTimeRaw` 为**预测**的边界时刻），`Changed` 在边界生效时广播（同一字段为**已实现**的边界时刻，二者数值一致——F2-F3 边界时刻是确定性的，不存在预测偏差）。
+
+---
+
+### BeatClockPauseEventData 事件结构（BC-6）
+
+`OnBeatClockPaused` 与 `OnBeatClockResumed`（见 Core Rule 8）共用的 payload（`readonly struct`，全字段纯值类型，零 GC，坐标系遵循 Core Rule 13）。
+
+| 字段 | 类型 | 描述 |
+|------|------|------|
+| `isResume` | bool | `false` = 暂停事件（`OnBeatClockPaused`）；`true` = 恢复事件（`OnBeatClockResumed`）。用于订阅方在单一处理器内区分方向 |
+| `resumeFirstBeatDspTimeRaw` | double | **仅恢复事件有效**：恢复后首拍的 **raw** DSP 时间戳（未应用 latency offset，遵循 Core Rule 13）。C1 以此重锚拍网格；暂停事件时为 `-1.0` 零状态哨兵 |
+| `beatIndexInMeasure` | int | 事件时刻的小节内拍序号（暂停 = 冻结位置；恢复 = 续接位置，不重置为 0） |
+| `measureIndex` | int | 事件时刻的累计小节号 |
+| `fractionalProgressAtPause` | double | **仅暂停事件有效**：暂停时刻拍内已过去时间（秒，= F2-F3 暂停恢复公式的 `fractional_progress_at_pause`）；恢复事件时为 `0.0` |
+
+> **成对不变量**：单次「暂停→恢复」周期内，`OnBeatClockPaused`（`isResume=false`）先行，其配对 `OnBeatClockResumed`（`isResume=true`）随后，各恰好 1 次（AC-F2-28）。`resumeFirstBeatDspTimeRaw` 为 raw 坐标——消费方若需玩家感知域时间，须自行叠加 `latency_offset_ms/1000`（对齐 F2-F5），F2 不在此 payload 预应用 offset。
 
 ---
 
@@ -420,7 +441,7 @@ F2-F8 (beat_index_in_measure)          [依赖 time_sig_segment_beat_index + num
 
 - **如果 BPM 配置为 0 或未配置**：在 `Play()` 调用时检测，立即替换为 120 BPM 并记录 Warning 日志；系统不进入错误状态，以 120 BPM 正常启动。上层系统无感知。
 
-- **如果音频设备不可用（静音/设备断开）**：`AudioSource.PlayScheduled()` 失败时，F2 触发降级序列——游戏暂停（1 帧内），发出 `OnAudioUnavailable` 事件触发 UI 层 Toast 提示，发出 `OnVisualMetronomeActivated` 事件触发 P1 启动视觉节拍指示器。DSP 时钟在 `Paused` 状态下仍可查询，节奏判定暂停。玩家恢复音频后调用 `Resume()` 可从暂停位置续播。见 Core Rule 9 音频降级规格。
+- **如果音频设备不可用（静音/设备断开）**：`AudioSource.PlayScheduled()` 失败时，F2 触发降级序列——F2 自身停拍并转入 `Paused`（1 帧内，同帧广播 `OnBeatClockPaused`），发出 `OnAudioUnavailable` 事件触发 UI 层 Toast 提示，发出 `OnVisualMetronomeActivated` 事件触发 P1 启动视觉节拍指示器。**实际的 TDE 暂停 / F3 禁输入由 F6（降级协调器）订阅 `OnAudioUnavailable` 后同帧承接（`TDE.Pause()+F3.DisableAllInput()`，SC-1）——F2 无权暂停 TDE/禁 F3，只负责发事件**。DSP 时钟在 `Paused` 状态下仍可查询，节奏判定暂停。玩家恢复音频后调用 `Resume()` 可从暂停位置续播。见 Core Rule 9 音频降级规格。
 
 - **如果 BPM 超出安全范围 [80, 240]**：clamp 到最近边界值（< 80 → 80，> 240 → 240），记录 Warning 日志。不抛出异常。
 
@@ -468,6 +489,9 @@ F2 是 Foundation 层系统，**编译期无上游依赖**（不 `using` 其他�
 | **FE4** Boss 战系统 | **软依赖** | `RequestBPMChange()` / `RequestTimeSignatureChange()` | 方法调用（通过 C4 间接依赖，但也直接调用切换接口） |
 | **P1** HUD | **硬依赖** | `OnBeatExact` + `BeatProgress`（帧查询） | 事件订阅 + 帧查询 |
 | **PL2** VFX 节奏反馈 | **软依赖** | `OnBeatLookahead` / `OnHalfBeatLookahead` | 事件订阅（无节拍事件时降级为无节奏动画，不崩溃） |
+| **C3** 心法系统 | **软依赖** | `OnBeatClockResumed`（BC-6；心法冻结栈在恢复时解冻/重锚计时） | 事件订阅 |
+
+> **BC-6 暂停/恢复事件下游合约**：`OnBeatClockPaused` / `OnBeatClockResumed` 是 F2/C1/C3/F6 四方共享的唯一暂停/恢复信号源（见 Core Rule 8）。**C1**（硬依赖）订阅 `OnBeatClockResumed` 重锚拍网格并清空过期 `_pendingInput`（避免暂停期残留输入在恢复后被误判）；**C3**（软依赖）心法冻结栈订阅同一事件恢复计时。三系统均**不得**各自定义 `OnGamePaused`/`OnGameResumed` 并行事件——统一消费 F2 的这对事件（消解 BC-6 信号机制不一致）。F6 作为 `Pause()`/`Resume()` 方法调用的发起方，同样以此对事件与下游对齐。C1 / C3 / F6 各 GDD 的 F2 依赖章节须反向引用本对事件。
 
 ---
 
@@ -487,6 +511,7 @@ F2 的实例化必须在 F6 完成 BGM 加载之后。F6 GDD 须在接口合约�
 - **禁止**通过音频播放器 pitch 属性（FMOD `Channel.setPitch()` 等）实现 BPM 切换——变速会使编钟等中国传统乐器失调，违反支柱三（华风沉浸）
 - 推荐模型：F6 订阅 F2 的 **`OnMeterChangeAccepted`** 事件（接受时广播，见 Core Rule 14），接到通知后立即预加载目标 BGM，并以 payload 的 `predictedEffectiveDspTimeRaw`（**raw 坐标系，禁止叠加 offset**——见 Core Rule 13）通过 `IAudioPlayer.PlayScheduled()` 在小节边界精确对齐执行无缝换片或 Crossfade。接受时通知保证 F6 获得从接受到边界的全部提前量（满足 500ms 最低提前量约束），无需再自行手写 `beat_index_in_measure == numerator-1` 边界轮询
 - F2 不持有、不感知 BGM Clip 的切换——时钟层（F2）与音频内容层（F6）职责严格分离
+- **`ScheduleBGMTransition()` 方法契约（B3，F6 调用方）**：F2 暴露 `void ScheduleBGMTransition(FMODAudioAssetRef nextBgm, double boundaryDspTimeRaw)` 作为**时钟层边界对齐调度入口**——F6 在收到 `OnMeterChangeAccepted` 后，以此登记一次「在指定小节边界无缝换 BGM 片」的调度请求。**语义**：F2 以 `boundaryDspTimeRaw`（**raw 坐标系**，取自 payload 的 `predictedEffectiveDspTimeRaw`，遵循 Core Rule 13，**禁止叠加 offset**）通过 `IAudioPlayer.PlayScheduled(boundaryDspTimeRaw)` 在小节边界精确对齐启动 `nextBgm`，实现样本级无缝换片。**职责边界**：`nextBgm` 句柄由 **F6 提供**（F2 不选择、不感知素材内容），Crossfade / 淡入淡出策略仍属 F6（见本节 pitch 禁令）；本方法仅封装「边界对齐调度」这一时钟层能力，消解 F6 侧 `ScheduleBGMTransition` 调用的 F2 API 缺口（W-2c-01）。此方法为 `OnMeterChangeAccepted` 订阅路径的等价便捷封装，二者互斥使用（F6 择一，勿双重调度同一换片）。
 
 ---
 
@@ -541,7 +566,7 @@ F2 无运行时 UI。
 ## Acceptance Criteria
 
 > **测试位置**：`Assets/Tests/EditMode/F2/` + `Assets/Tests/PlayMode/F2/`
-> **门控级别**：BLOCKING — MVP 门控以 AC-F2-01 ~ AC-F2-20、AC-F2-23 及 AC-F2-24 ~ AC-F2-27（含拆分后的 a/b 子条目）为准，自动化覆盖率 ≥ 80%
+> **门控级别**：BLOCKING — MVP 门控以 AC-F2-01 ~ AC-F2-20、AC-F2-23 及 AC-F2-24 ~ AC-F2-28（含拆分后的 a/b 子条目；AC-F2-28 = BC-6 暂停/恢复事件）为准，自动化覆盖率 ≥ 80%
 > AC-F2-21/22（5/8 拍号，Post-MVP）标记为 ADVISORY，不阻塞 MVP 验收。AC-F2-07b 为手工 QA 证据步骤，CI 中以 MockDSPClock 替代（详见 AC-F2-07b CI 策略注记）
 > **可测性要求**：BeatClock 须通过 `IDSPClock` 接口注入时钟源，EditMode 测试使用 `MockDSPClock` 进行确定性验证
 >
@@ -716,6 +741,12 @@ F2 无运行时 UI。
 - **When** 触发一次 BPM 变更全程（接受 → 生效）；随后 A 的 GameObject `Object.Destroy()` 并等 1 帧后再触发一次变更
 - **Then** (1) 空订阅者路径不抛任何异常（镜像 AC-F2-19a）；(2) A 销毁后其回调**不被调用**（内部计数器维持 0），不抛 `MissingReferenceException` / `NullReferenceException`（镜像 AC-F2-19c）；(3) BeatClock 正常继续广播后续事件
 
+**AC-F2-28：暂停/恢复事件成对广播与 raw 首拍锚点（BC-6）** `[PlayMode]` `[BLOCKING]`
+- **Given** 时钟处于 `Playing`（BPM=120，`beat_interval_s=0.500 s`），注入 `MockAudioPlayer`；订阅 `OnBeatClockPaused` 与 `OnBeatClockResumed`，各记录单调递增的全局调用序号
+- **When** 在整拍到来后 0.200 s 处调用 `BeatClock.Pause()`，暂停 1.5 s 后调用 `BeatClock.Resume()`
+- **Then** (1) `OnBeatClockPaused` **恰好触发 1 次**，且在转入 `Paused` 的同帧（其序号在恢复后首个 `OnBeatExact` 之前），payload `isResume==false`、`fractionalProgressAtPause ∈ [0.183, 0.217]`（0.200±1 帧）；(2) `OnBeatClockResumed` **恰好触发 1 次**，序号 **>** `OnBeatClockPaused`、且 **<** 恢复后首个 `OnBeatExact`（重锚定后、首拍前广播）；(3) `OnBeatClockResumed` payload `isResume==true`、`resumeFirstBeatDspTimeRaw` 为 **raw** 坐标（`latency_offset_ms != 0` 时断言其**不含** offset），等于恢复后首拍的 F2-F3 raw DSP 时刻（误差 < 0.1ms）；(4) 回调内查询 `BeatStateSnapshot.clockState` 已翻转为 `Playing`（状态先于广播翻转）；(5) 全程 paused 计数 == resumed 计数 == 1（成对完整）；(6) `MockAudioPlayer` 记录到 `Pause()` 与 `Resume()` 各被调用 1 次（BeatClock 委托 `IAudioPlayer` 执行音频层暂停/恢复）
+- **空订阅者防御（EditMode 子用例）**：`OnBeatClockPaused` / `OnBeatClockResumed` 无任何订阅者时，触发一次「暂停→恢复」周期不抛任何异常（镜像 AC-F2-19a / AC-F2-27）
+
 ---
 
 **覆盖矩阵**
@@ -742,6 +773,7 @@ F2 无运行时 UI。
 | F2-25 | EditMode | `BeatClockMeterChangeEventTests` | BLOCKING |
 | F2-26 | EditMode | `BeatClockMeterChangeEventTests` | BLOCKING |
 | F2-27 | EditMode + PlayMode | `BeatClockMeterChangeEventTests` / `BeatClockLifecycleTests` | BLOCKING |
+| F2-28 | PlayMode + EditMode | `BeatClockPauseResumeTests` | BLOCKING（BC-6 暂停/恢复事件成对性 + raw 首拍锚点） |
 
 ---
 
@@ -753,5 +785,5 @@ F2 无运行时 UI。
 | ~~OQ-2~~ | ~~ADR-D6（FMOD vs Unity Audio）~~ | **已解决** — ADR-D6 Accepted (2026-07-14)，选定 FMOD Studio 2.x | — | `docs/architecture/adr-d6-audio-middleware.md`；F2 实现阻塞已解除 |
 | OQ-3 | BeatAccentMap（5/8 节奏分组 2+3 或 3+2）是否作为 F2 可选配置 | 不阻塞 F2；影响 C4 设计 | C4 设计者 | 待 C4 GDD 明确需求后决定是否在 F2 Tuning Knobs 增加 `accentPattern` 参数 |
 | ~~OQ-4~~ | **B2b 初始化时序**（W-4-01）。**已解决** — ADR-D10 Accepted (2026-08-09)：D-4 定 `SaveService.Initialize()` 同步阻塞 + `ISaveService` 消费 seam；D-5 定 `LatencyOffsetMs` 两阶段写者（F6 gate 一次性 boot-inject + FE3 运行期唯一写者），F2 不再自 load。Rule 7/10 已按两阶段模型修订，依赖文案同轮更新 | — | technical-director | `docs/architecture/adr-d10-bootstrap-sequencing.md`；F5 `:127/:221/:316` + F6 启动链路（AC-F6-23）已同轮修订 |
-| OQ-5 | **B2a 暂停/恢复事件**：`OnBeatClockPaused` / `OnBeatClockResumed` 本轮**延后**。依赖 `IAudioPlayer.Pause()/Resume()`（当前接口缺失，Core Rule 12 仅有 `PlayScheduled/Stop/IsPlaying`）、C1/C2 消费需求确认、`Stopped` 态转移补全 | 不阻塞 B1；阻塞 Scenario 3（暂停中充能恢复）跨系统语义 | C2 设计者 + audio（IAudioPlayer 契约） | C1/C2 GDD 编写时确认消费需求，同轮补 `IAudioPlayer` 暂停能力与 AC 后再定事件 |
+| ~~OQ-5~~ | **B2a 暂停/恢复事件**（BC-6）。**已解决**（cross-review 2026-08-10 blocker fix）：F2 权威定义 `OnBeatClockPaused` / `OnBeatClockResumed`（Core Rule 8 + `BeatClockPauseEventData` 结构），补 `IAudioPlayer.Pause()/Resume()`（Rule 12），恢复事件携 `resumeFirstBeatDspTimeRaw`（raw 首拍锚点）；C1 重锚拍网格+清空过期 `_pendingInput`、C3 冻结栈恢复统一订阅此对事件（Dependencies BC-6 合约）；AC-F2-28 覆盖成对性 | — | audio（IAudioPlayer 契约） | 本文件已落定；C1/C3/F6 反向引用为同轮跟进（见各文件任务清单） |
 | ~~OQ-6~~ | **ADR-D6 线程模型回填**。**已解决** — ADR-D6 Threading Model Addendum (2026-08-08)：调度确定为 FMODUnity RuntimeManager + 主线程 `Update()` 轮询，否决 `OnAudioFilterRead`；`ConcurrentQueue` 不需要且禁止引入。Core Rule 12 `:65` / Rule 14 的条件句已删除并改为 normative 主线程模型；AC-F2-25 断言主线程单 dispatch pass 确定性顺序 | — | technical-director + ADR-D6 Addendum | `docs/architecture/adr-d6-audio-middleware.md` § Addendum；F2 Rule 12/14 已同轮回填 |
