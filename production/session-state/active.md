@@ -413,3 +413,7 @@ Task: 对 C2 跑 /design-review；follow-up 修 C1 clamp 50→999 (OQ1)
 - 可立即修 (与 ADR 无关): BC-1 rating 1.5→1.0; BC-4 非法拍号; BC-7 C1 ComboMax 50→999; W-03/W-04 C3 事件名
 - Recommended next: 优先修 BC-2 (C1 定义 IRhythmModifierProvider + C3 同轮)、BC-1、BD-1；机械修订 BC-1/BC-4/BC-7 可先落地
 - Report: design/gdd/gdd-cross-review-2026-08-10.md
+
+<!-- CONSISTENCY-CHECK: 2026-08-10 | GDDs checked: 9 | Registry entries: 9 (2 formulas, 7 constants) | Conflicts found: 2 (RESOLVED: rating_multiplier Perfect 1.5→1.0 in combo-system.md + registered — 对应 /review-all-gdds BC-1; TRACKED: combo_max 999 vs rhythm-core ComboMax 50 = BC-7, pending C1 revision) | Missing-registry candidates: 11 | Log: docs/consistency-failures.md -->
+<!-- CONSISTENCY-CHECK-FOLLOWUP: rhythm-core.md ComboMax 50→999 (C1 债务=BC-7, 已批准待修订); 建议登记 11 条跨系统事实 (final_damage 总公式, attackAnimSpeed 公式, beat_offset_ms, half_beat 30000/bpm, platformMinPerfectMs, 0.1ms 精度承诺, BPM=0→120 回退, CancelTier 映射, 拍号定义域, 500ms BGM 提前量, 5ms 重锚阈值) -->
+

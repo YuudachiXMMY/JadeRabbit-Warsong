@@ -268,6 +268,23 @@ constants:
     added: 2026-08-10
     revised: ""
 
+  - name: rating_multiplier
+    status: active
+    source: design/gdd/rhythm-core.md      # C1 评级表拥有 Perfect/Good/Miss → 伤害倍率映射（RhythmJudgmentEvent.Rating）
+    referenced_by:
+      - design/gdd/rhythm-core.md
+      - design/gdd/combo-system.md          # C2 final_damage 第二项，只读引用（F2 边界示例）
+      - design/gdd/perk-system.md           # C3 final_damage 第二项，只读引用
+      - design/gdd/game-concept.md          # 伤害总公式 final_damage 第二项
+    value: "Perfect:1.0, Good:0.75, Miss:0.5"
+    unit: multiplier
+    notes: "C1 节奏评级 → 伤害倍率映射，final_damage = base_damage × rating_multiplier × combo_multiplier × \
+      perk_multiplier 的第二项。owner=C1 rhythm-core，在评级表 (rhythm-core.md L127-131) 权威定义 \
+      Perfect 1.0× / Good 0.75× / Miss 0.5×；C2/C3/game-concept 仅只读引用。2026-08-10 /consistency-check \
+      登记并修正 combo-system.md F2 边界示例中 Perfect=1.5 的漂移（应为 1.0），示例 final_damage 连带重算。"
+    added: 2026-08-10
+    revised: ""
+
 # Example:
 #
 # constants:
