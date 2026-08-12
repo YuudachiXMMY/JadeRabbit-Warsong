@@ -13,7 +13,7 @@ Accepted
 | **Engine** | Unity 6.3 LTS (6000.3.19f1) |
 | **Domain** | Core / Integration (lifecycle) + Audio (BeatClock run-boundary stop) |
 | **Knowledge Risk** | LOW — Composes existing, verified mechanisms only: TDE `TopDownEngineEventTypes.PlayerDeath`/`.RespawnComplete` (M0 Spike verified, ADR-D1), `SceneManager.sceneLoaded` (`LoadSceneMode.Single`, stable since Unity 4), and the ADR-D10 boot path. No post-cutoff API introduced; TDE in-place respawn is *disabled* (Inspector config), not extended. |
-| **References Consulted** | `docs/architecture/adr-d1-tde-integration.md`, `docs/architecture/adr-d10-bootstrap-sequencing.md`, `design/gdd/rhythm-core.md` (C1 SC-2), `design/gdd/combat-director.md` (C4 SC-3), `design/gdd/reviews/gdd-cross-review-2026-08-11b.md`, `docs/game-concept.md` (:145/:164/:213) |
+| **References Consulted** | `docs/architecture/adr-d1-tde-integration.md`, `docs/architecture/adr-d10-bootstrap-sequencing.md`, `design/gdd/rhythm-core.md` (C1 SC-2), `design/gdd/combat-director.md` (C4 SC-3), `design/gdd/reviews/gdd-cross-review-2026-08-11b.md`, `design/gdd/game-concept.md` (:145/:164/:213) |
 | **Post-Cutoff APIs Used** | None — reuses the ADR-D1 lifecycle authority and ADR-D10 boot sequence verbatim. |
 | **Verification Required** | 1. Confirm TDE in-place respawn is disabled in the Inspector (Character/Health respawn config) so `RespawnComplete` does not fire in normal MVP play. 2. PlayMode test: `PlayerDeath` → assert `BeatClock.ClockState == Stopped`, `InputEventBus.CurrentState == AllDisabled`, and exactly one `OnPlayerDeath` broadcast. 3. PlayMode test: a fresh `LoadSceneMode.Single` reload after death drives a clean `Play()` with `globalBeatIndex == 0` (no double-`Play()`). |
 
@@ -32,7 +32,7 @@ Accepted
 The cross-review **2026-08-11b (FAIL)** raised **SG-2**: F6's lifecycle state table specced `RespawnComplete → BeatClock.Play()` (TDE-native **in-place respawn**), which contradicts the game's roguelike loop as fixed in the pillar documents:
 
 - **game-concept.md:145 / :164** — a run ends on death (and on victory/clear); there is **no in-same-run revival**; settlement is immediate at run end.
-- **F5 `save-persistence.md:316`** — **merit** (功勋) is the process-unique permanent currency, converted and persisted **at run settlement**.
+- **F5 `save-persistence.md:16/:193`** — **merit** (功勋) is the process-unique permanent currency (F5:16 infra overview), written into `PlayerProgressDTO` by FE5 `SaveSlotProgress()` **at run settlement** (F5:193).
 
 If `RespawnComplete` silently restarts the clock in place, the player continues the *same* run after dying, which **bypasses run settlement entirely** — merit is never converted/persisted, hollowing out the only permanent progression sink. This is a silent "restart-without-settlement" footgun and a direct conflict with two pillar documents.
 
@@ -88,12 +88,12 @@ Both consumers key off the single `OnPlayerDeath` boundary defined in D12-1.
 ## Alternatives Considered
 
 ### Model A — Death = new run (CHOSEN)
-Run ends on death; settlement fires; next run reuses the boot path. Aligns with game-concept.md:145/164 and F5:316; zero new infrastructure.
+Run ends on death; settlement fires; next run reuses the boot path. Aligns with game-concept.md:145/164 and F5:193; zero new infrastructure.
 
 ### Model B — Retain TDE in-place respawn (`RespawnComplete → Play()`) — REJECTED
 - **Description**: keep TDE's checkpoint-style in-place revival; clock restarts in place after death.
 - **Pros**: uses TDE's ready-made respawn convenience; no scene reload.
-- **Cons**: **hollows out merit persistence** — the player continues the same run without hitting run settlement, so merit (the process-unique permanent currency) is never converted/persisted; directly conflicts with game-concept.md:145/164 (no in-run revival, immediate settlement) and F5:316. It is the exact SG-2 defect the cross-review flagged.
+- **Cons**: **hollows out merit persistence** — the player continues the same run without hitting run settlement, so merit (the process-unique permanent currency) is never converted/persisted; directly conflicts with game-concept.md:145/164 (no in-run revival, immediate settlement) and F5:193. It is the exact SG-2 defect the cross-review flagged.
 - **Rejection Reason**: architecturally incompatible with the roguelike loop's two pillar documents; the convenience saved is not needed for MVP.
 
 ## Consequences
@@ -119,7 +119,7 @@ Run ends on death; settlement fires; next run reuses the boot path. Aligns with 
 | rhythm-core.md (C1) | SC-2 death-domain clear (`_pendingInput` / E10 ghost judgment) | Defines the `OnPlayerDeath` boundary C1 subscribes to; C1 GDD already lands the clear logic |
 | combat-director.md (C4) | SC-3 death token reclamation (orphan tokens) | Defines the `OnPlayerDeath` boundary C4 subscribes to (symmetric to C1 SC-2); C4 GDD already lands the reclamation |
 | game-concept.md | :145/:164 no in-run revival + immediate settlement; :213 anti-pillar (no rhythm-bypassing gain) | Enforces run-ends-on-death so merit settlement is never bypassed |
-| save-persistence.md (F5) | :316 merit = process-unique permanent currency, persisted at run settlement | Guarantees the settlement boundary (`OnPlayerDeath` → FE5) always fires; no in-run restart bypass |
+| save-persistence.md (F5) | :16/:193 merit = process-unique permanent currency (:16), written to `PlayerProgressDTO` by FE5 `SaveSlotProgress()` at run settlement (:193) | Guarantees the settlement boundary (`OnRunEnded(Death)` → FE5) always fires; no in-run restart bypass |
 
 ## Migration Plan
 Greenfield — no code to migrate. Deliverables this ADR governs:
@@ -140,4 +140,4 @@ Greenfield — no code to migrate. Deliverables this ADR governs:
 ## Related Decisions
 - ADR-D1 (TDE Integration) — F6 `TDELifecycleAdapter` sole BeatClock lifecycle controller; Death/Respawn node revised to point here (RespawnComplete dormant guard)
 - ADR-D10 (Bootstrap Sequencing) — the `OnSceneLoaded(Single)` boot path this ADR reuses as the "next run" clock start; `Stop()` zeroes `global_beat_index` (no F6 boot change needed)
-- `design/gdd/rhythm-core.md` (C1 SC-2 / E10), `design/gdd/combat-director.md` (C4 SC-3), `design/gdd/reviews/gdd-cross-review-2026-08-11b.md` (SG-2), `docs/game-concept.md` (:145/:164/:213), `design/gdd/save-persistence.md` (:316)
+- `design/gdd/rhythm-core.md` (C1 SC-2 / E10), `design/gdd/combat-director.md` (C4 SC-3), `design/gdd/reviews/gdd-cross-review-2026-08-11b.md` (SG-2), `design/gdd/game-concept.md` (:145/:164/:213), `design/gdd/save-persistence.md` (:16/:193)

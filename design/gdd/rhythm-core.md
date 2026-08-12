@@ -1,8 +1,8 @@
 # C1 节奏量化攻击系统 (Rhythm Quantization Attack System)
 
-> **Status**: Revised (2026-08-10 blocker fix) — Pending Re-review
+> **Status**: Approved (2026-08-12 — 死亡/run-end 语义收口 re-review 通过)
 > **Author**: Jadyn Wu + Claude Code Agents
-> **Last Updated**: 2026-07-21
+> **Last Updated**: 2026-08-12 (吸收 ADR-D12 死亡=换新局 + ADR-D13 统一 run-end 边界：OnRunEnded(RunOutcome) 取代 OnPlayerDeath、RespawnComplete MVP 休眠、Death/Victory 对称清空) ｜ 2026-07-21 (Round 4 blocker fix)
 > **Implements Pillar**: 支柱一：节奏即战斗 (Rhythm IS Combat) / 支柱二：武侠手感不可妥协 (Wuxia Feel First)
 > **System ID**: C1
 > **Layer**: Core | **Milestone**: MVP | **Design Order**: 6
@@ -183,6 +183,7 @@ C1 在 `BeatClock.IsStartConfirmed == true` 之前不对任何输入进行节奏
 |------|------|---------|---------|
 | F2 **→** C1 | 音频时钟 | `OnHalfBeatLookahead`（`BeatEventData.beat_dsp_time`）；`OnMeterChanged`（`MeterChangeEventData`，边界生效时重锚定网格）；`BeatClock.IsStartConfirmed` | 事件订阅 + 属性查询 |
 | F3 **→** C1 | 输入管线 | `AttackInputEvent`（attackType, inputDspTime, chargeStartDspTime） | 事件订阅（`OnAttackInput`） |
+| F6 **→** C1 | 生命周期适配 | `OnRunEnded(RunOutcome outcome)`（**MVP 活跃**，Death+Victory 均触发，SC-2 清 `_pendingInput`/评级状态防幽灵评级）；`OnRespawnComplete`（**MVP 休眠**，Post-MVP 预留） | 事件订阅（纯 C# event；ADR-D12/D13，见 E10 / 双向合约） |
 | C1 **→** C2 | 连招图系统 | `RhythmJudgmentEvent`（Rating, AttackType, CancelTier, ComboCountBefore, ComboCountAfter） | 事件广播（C2 订阅） |
 | C1 **→** P1 | HUD | `RhythmJudgmentEvent`（Rating, OffsetMs, ComboCountBefore 用于连击显示） | 事件广播 |
 | C1 **→** PL2 | VFX 节奏反馈 | `RhythmJudgmentEvent`（Rating=Perfect 触发冻帧/编钟/摄像机微切序列） | 事件广播 |

@@ -1,12 +1,12 @@
 # F6: TopDownEngine & Animancer 集成层 (TDE Integration Layer)
 
-> **Status**: Amended (2026-08-10 blocker fix) — Pending Re-review
+> **Status**: Approved (2026-08-12 — 死亡/run-end 语义收口 re-review 通过)
 > **Author**: Jadyn Wu + Claude Code Agents
-> **Last Updated**: 2026-08-10 (SC-1 — F6 订阅 F2 `OnAudioUnavailable`，同帧 `TDE.Pause()` + `F3.DisableAllInput()` 承接音频断开降级) ｜ 2026-07-19 (R3 — 4 blockers resolved: authoredBpm guard, FMOD coroutine reentrancy, LevelConfigSO path, AC testability batch)
+> **Last Updated**: 2026-08-12 (ADR-D12 死亡=换新局 + ADR-D13 统一 run-end 边界：单一入口 `EndRun(RunOutcome)` + 一次性闭锁 `_runEnded`、Death/Victory 双路径、`OnRunEnded(outcome)` 取代 `OnPlayerDeath`、RespawnComplete MVP 休眠诊断守卫) ｜ 2026-08-10 (SC-1 — F6 订阅 F2 `OnAudioUnavailable`，同帧 `TDE.Pause()` + `F3.DisableAllInput()` 承接音频断开降级) ｜ 2026-07-19 (R3 — 4 blockers resolved)
 > **Implements Pillar**: 支柱二：武侠手感不可妥协 (Wuxia Feel First)
 > **System ID**: F6
 > **Layer**: Foundation | **Milestone**: MVP | **Design Order**: 5
-> **ADR Reference**: `docs/architecture/adr-d1-tde-integration.md` (Accepted, M0 Spike verified 2026-07-16)
+> **ADR Reference**: `docs/architecture/adr-d1-tde-integration.md` (Accepted, M0 Spike verified 2026-07-16) ｜ `adr-d5-animation-pipeline.md` (Accepted) ｜ `adr-d10-bootstrap-sequencing.md` (Accepted) ｜ `adr-d12-death-run-lifecycle.md` (Accepted 2026-08-11 — 死亡=换新局) ｜ `adr-d13-run-end-victory-boundary.md` (Accepted 2026-08-12 — 统一 run-end 边界)
 
 ---
 
