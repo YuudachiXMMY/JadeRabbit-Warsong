@@ -8,6 +8,19 @@
 
 ---
 
+## Session Extract — /create-architecture (TD 主笔) 2026-08-12
+
+- **交付物**：`docs/architecture/architecture.md` v1.0 — 首次建立主架构蓝图（门禁硬长杆）
+- **TD Sign-Off**：APPROVED WITH CONDITIONS（4 条非阻塞 condition：H1 D8 InternalsVisibleTo 命名统一、D3 文本漂移、D14 仍 Proposed、D13-2 胜利事件名待引擎核对）
+- **LP-FEASIBILITY**：SKIPPED — Lean 模式（非 PHASE-GATE）
+- **综合来源**：10 GDD + 12 ADR(D1-D8,D10,D12,D13 Accepted;D14 Proposed) + traceability Rev.10(152 TR/89 Covered/Core Gap=0) + 引擎知识缺口(FMOD HIGH 为唯一 MVP 关键路径 HIGH 风险，已 M0 消解 API 面)
+- **文档结构**：Status / 引擎知识缺口 / 五层版图 / 模块所有权 / 数据流 / API 边界(D8 五接口逐字) / ADR 审计 / Required ADRs / 5 条架构原则 / Open Questions
+- **门禁就绪**：架构长杆已具备；pre-production gate 剩余前置 = ADR-D14 转 Accepted(仅阻塞 C2 BD-2，非 C1 关键路径) + /test-setup + /ux-design
+- **下一步 ADR（优先序）**：① ADR-D14 转 Accepted ② 核对 TDE 胜利事件名(D13-2) ③ /architecture-decision 延迟校准(FE3)/武器系统(C5)
+- **Worktree**：`.claude/worktrees/create-architecture-2026-08-12`（branch `worktree-create-architecture-2026-08-12`）→ draft PR
+
+---
+
 ## Completed This Session
 
 - [x] F3 Input 事件系统 GDD 首次评审（NEEDS REVISION，8 个阻塞项）
