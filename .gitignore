@@ -180,3 +180,9 @@ docs/consistency-failures.md
 
 # FMOD editor log
 fmod_editor.log
+
+# Local Claude Code worktrees (background-agent isolation checkouts)
+.claude/worktrees/
+
+# Visual Studio XML solution (generated, mirrors *.sln)
+*.slnx
