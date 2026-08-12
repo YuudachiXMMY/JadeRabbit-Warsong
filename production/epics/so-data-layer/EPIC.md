@@ -4,7 +4,7 @@
 > **GDD**: design/gdd/so-data-layer.md
 > **Architecture Module**: F4 SO 数据层
 > **Status**: Ready
-> **Stories**: Not yet created — run `/create-stories so-data-layer`
+> **Stories**: 8 stories（5 Logic / 3 Integration）
 
 ## Overview
 
@@ -37,6 +37,23 @@ This epic is complete when:
 - All Logic and Integration stories have passing test files in `tests/`
 - All Visual/Feel and UI stories have evidence docs with sign-off in `production/qa/evidence/`
 
+## Stories
+
+| # | Story | Type | Status | ADR |
+|---|-------|------|--------|-----|
+| 001 | 程序集结构与 Addressables/Odin 边界基础设施 | Integration | Ready | ADR-D4 |
+| 002 | 攻击节点与连招图 SO schema | Logic | Ready | ADR-D4 |
+| 003 | 心法 SO schema 与克隆隔离 | Logic | Ready | ADR-D4 |
+| 004 | 武器/敌人/关卡 SO schema | Logic | Ready | ADR-D4 |
+| 005 | 玩家持久化 SO schema 与 F5 DTO 契约 | Logic | Ready | ADR-D4, ADR-D7 |
+| 006 | 战斗导演全局配置 SO schema | Logic | Ready | ADR-D4 |
+| 007 | 全类型重复 ID 与 CI 门控 Validator（Plan B） | Integration | Ready | ADR-D4 |
+| 008 | 语义与跨字段 Validator（Plan B） | Integration | Ready | ADR-D4 |
+
+依赖顺序：001 → {002, 003, 005, 006} → 004 → {007, 008}。逐个按 `Depends on:` 字段推进。
+
+> **注**: Story 006 引入第 8 类 SO（CombatDirectorConfigSO），Story 007 的 AC-F4-01 grep 须由 7 类扩为 8 类——验收时提示 GDD 作者更正原文数字。
+
 ## Next Step
 
-Run `/create-stories so-data-layer` to break this epic into implementable stories.
+Run `/story-readiness production/epics/so-data-layer/story-001-assembly-addressables-odin-boundary.md` then `/dev-story` to begin implementation.
