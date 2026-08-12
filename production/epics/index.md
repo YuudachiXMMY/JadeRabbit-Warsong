@@ -9,7 +9,7 @@ Engine: Unity 6.3 LTS (6000.3.19f1)
 | F3 Input 事件系统 | Foundation | F3 InputEventBus | design/gdd/input-event-system.md | Not yet created | Ready |
 | F4 ScriptableObject 数据层 | Foundation | F4 SO 数据层 | design/gdd/so-data-layer.md | Not yet created | Ready |
 | F5 存档/持久化系统 | Foundation | F5 SaveService | design/gdd/save-persistence.md | Not yet created | Ready |
-| F6 TDE & Animancer 集成层 | Foundation | F6 TDELifecycleAdapter | design/gdd/tde-integration.md | Not yet created | Ready |
+| F6 TDE & Animancer 集成层 | Foundation | F6 TDELifecycleAdapter | design/gdd/tde-integration.md | 12 stories | Ready |
 
 ## Notes
 
