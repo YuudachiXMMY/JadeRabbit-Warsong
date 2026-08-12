@@ -8,7 +8,7 @@ Engine: Unity 6.3 LTS (6000.3.19f1)
 | F2 音频/拍点时钟系统 | Foundation | F2 BeatClock | design/gdd/audio-beat-clock.md | 14 stories | Ready |
 | F3 Input 事件系统 | Foundation | F3 InputEventBus | design/gdd/input-event-system.md | 8 stories | Ready |
 | F4 ScriptableObject 数据层 | Foundation | F4 SO 数据层 | design/gdd/so-data-layer.md | 8 stories | Ready |
-| F5 存档/持久化系统 | Foundation | F5 SaveService | design/gdd/save-persistence.md | Not yet created | Ready |
+| F5 存档/持久化系统 | Foundation | F5 SaveService | design/gdd/save-persistence.md | 8 stories | Ready |
 | F6 TDE & Animancer 集成层 | Foundation | F6 TDELifecycleAdapter | design/gdd/tde-integration.md | Not yet created | Ready |
 
 ## Notes
