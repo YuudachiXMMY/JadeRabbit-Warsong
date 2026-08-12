@@ -24,8 +24,8 @@
 #
 # STATUS VALUES: active | deprecated | superseded-by: TR-[system]-NNN
 
-version: 2
-last_updated: "2026-08-11"
+version: 3
+last_updated: "2026-08-12"
 
 requirements:
 
@@ -140,6 +140,14 @@ requirements:
     gdd: design/gdd/game-concept.md
     requirement: "Multiple weapon types (MiaoDao/Spear/Sword) with ComboGraph data"
     created: 2026-07-15
+    revised: ""
+    status: active
+
+  - id: TR-concept-015
+    system: concept
+    gdd: design/gdd/game-concept.md
+    requirement: "Run-ends-on-death/victory: no in-run revival; death AND victory both terminate the run with immediate settlement so merit (process-unique permanent currency) settlement is never bypassed (game-concept :145/:164, save-persistence :316). COVERED: ADR-D12 (death boundary, Accepted) + ADR-D13 (victory unification, Accepted)."
+    created: 2026-08-12
     revised: ""
     status: active
 
@@ -705,6 +713,22 @@ requirements:
     revised: ""
     status: active
 
+  - id: TR-tde-013
+    system: tde
+    gdd: design/gdd/tde-integration.md
+    requirement: "F6 unified run-end boundary: single entry EndRun(RunOutcome outcome) with per-run one-time latch _runEnded; same Update frame executes BeatClock.Stop() + InputEventBus.DisableAllInput() + broadcast single CombatCore-visible domain event OnRunEnded(outcome). Death (TDE PlayerDeath bridge) and Victory paths both funnel into EndRun(); OnRunEnded(Death) replaces the former OnPlayerDeath (no alias). Rule 15 / AC-F6-25. COVERED: ADR-D12 (death, Accepted) + ADR-D13 (victory unification, Accepted)."
+    created: 2026-08-12
+    revised: ""
+    status: active
+
+  - id: TR-tde-014
+    system: tde
+    gdd: design/gdd/tde-integration.md
+    requirement: "F6 victory/level-complete event bridging: TDE TopDownEventTypes member name for level-complete/victory MUST be verified against docs/engine-reference/unity/plugins/top-down-engine.md before F6/FE5 implementation (never inferred from training data; cf ADR-D1 .Respawn->.RespawnComplete). If no native TDE event, victory is fired explicitly by FE4/FE2/FE5 via EndRun(RunOutcome.Victory). PARTIAL: ADR-D13 VR1 pre-implementation hard gate; registered in entities.yaml pre_implementation_checks; member name unverified."
+    created: 2026-08-12
+    revised: ""
+    status: active
+
   # ── rhythm / C1 (design/gdd/rhythm-core.md) ───────────────────────────────
   # Added 2026-08-11 by /architecture-review (first Core-layer registration). Arch ref: ADR-D3.
 
@@ -852,6 +876,14 @@ requirements:
     revised: ""
     status: active
 
+  - id: TR-rhythm-019
+    system: rhythm
+    gdd: design/gdd/rhythm-core.md
+    requirement: "SC-2 run-end ghost-judgment guard: C1 subscribes F6 domain event OnRunEnded(outcome) (Death AND Victory both fire, ADR-D13, replaces former OnPlayerDeath, no alias) + OnRespawnComplete (MVP dormant, Post-MVP checkpoint). On run-end, same frame clears _pendingInput=null, _lateWindowActive=false, stops processing OnHalfBeatLookahead; no RhythmJudgmentEvent crosses the run-end boundary. E10 / AC-C1-22e. COVERED: ADR-D12 (Accepted) + ADR-D13 (Accepted)."
+    created: 2026-08-12
+    revised: ""
+    status: active
+
   # ── combo / C2 (design/gdd/combo-system.md) ───────────────────────────────
   # Added 2026-08-11 by /architecture-review. Arch ref: ADR-D3, ADR-D5, ADR-D4.
 
@@ -964,6 +996,14 @@ requirements:
     gdd: design/gdd/combo-system.md
     requirement: "perk_multiplier input set must exclude count/combo_multiplier (anti combo^2 explosion); exceptions via ADR"
     created: 2026-08-11
+    revised: ""
+    status: active
+
+  - id: TR-combo-015
+    system: combo
+    gdd: design/gdd/combo-system.md
+    requirement: "BD-2 cancel-window adaptation window (Rule 12 / F7): within adaptationWindowBeats (locked=2) the cancel window's effective ms width takes max(cancelWindowMs(bpm_before), cancelWindowMs(bpm_after)) (wider), so cancel timing does not abruptly narrow on BPM jump; restores bpm_after standard width after the window. AC-C2-40/41/42. PARTIAL: ADR-D14 (Proposed) retimes the protection trigger from OnMeterChanged to OnMeterChangeAccepted (head of window = accept, tail still aligned to C1 OnMeterChanged +2 beats). Stories auto-blocked until ADR-D14 is Accepted; C2 implementation not yet started (non-blocking for C1 sprint)."
+    created: 2026-08-12
     revised: ""
     status: active
 
@@ -1218,5 +1258,13 @@ requirements:
     gdd: design/gdd/combat-director.md
     requirement: "No persisted state - pure runtime scheduler, token lifecycle doesn't cross save (no F5 dependency)"
     created: 2026-08-11
+    revised: ""
+    status: active
+
+  - id: TR-director-019
+    system: director
+    gdd: design/gdd/combat-director.md
+    requirement: "SC-3 run-end token reclamation (symmetric to C1 SC-2): C4 subscribes F6 domain event OnRunEnded(RunOutcome outcome) (Death AND Victory both fire, ADR-D13, replaces former OnPlayerDeath). On run-end, same frame cancels ALL Pending+Granted tokens (-> Cancelled -> None), clears pending queue, releases all beat-slot occupancy. Rationale: run-end goes through BeatClock.Stop() which zeroes global_beat_index (F2 Rule 10), so absolute-beat Granted tokens (targetLandingBeat) lose anchor -> ghost attacks; must full-clear (unlike E6 Pause freeze-continue). C4 calls no BeatClock lifecycle method (beatclock_lifecycle_bypass). Core Rule 12 / E16 / AC-C4-31. COVERED: ADR-D12 (Accepted) + ADR-D13 (Accepted)."
+    created: 2026-08-12
     revised: ""
     status: active
