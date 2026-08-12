@@ -37,6 +37,7 @@ MonoBehaviour:
     assemblyNames:
     - Assembly-CSharp
     - Assembly-CSharp-firstpass
+    - CombatCore
     - DOTween.Modules
     - DOTweenPro.Scripts
     - FMODUnity
@@ -50,6 +51,7 @@ MonoBehaviour:
     - MoreMountains.Tools
     - MoreMountains.TopDownEngine
     - MoreMountains.TopDownEngine.InputSystem
+    - PlayModeTests
     - SingularityGroup.HotReload.Runtime
     - SingularityGroup.HotReload.Runtime.Public
     showAdvancedSettings: 0
