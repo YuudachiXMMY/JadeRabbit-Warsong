@@ -47,9 +47,9 @@
 |---|---|---|---|
 | **SG-1**（画面定格可见机制） | game-concept:381「画面定格」与「不冻玩家动画」措辞张力；可见机制未定义 | PL2 创建时定义（含时钟/动画关系） | 🔵 已承接（PL2 未开工） |
 | **I-5** | C1 变量表 `perk_multiplier` 范围 `[1.0,2.0]`(`rhythm-core.md` F5c) 与权威 `[0.5,2.0]` 不一致（漏 0.5 下界） | 已随 PR #29 dad6c485 修（W-A 补丁 I-5） | 🟢 Resolved |
-| **I-2** | C4「F2 需反向引用 C4」待办文本仍在（F2 实际早已引用 `audio-beat-clock.md:110/112/487`） | 可关闭陈旧待办 | 🟡 待清（零成本） |
-| **I-6** | C2 以载体类型名 `RhythmJudgmentEvent` 指代事件，未采用权威事件名 `OnRhythmJudgment`（C1-F6 已调和，无实质歧义） | 可择机统一命名 | 🟡 待清（低优先） |
-| **C4 头部记账** | `combat-director.md:3` 状态「Revised — Pending Re-review」相对 SC-3 陈旧，与 systems-index「Approved」不一致 | 已随 PR #29 W-E systems-index 回 Approved；C4 头部字符串待同步 | 🟡 待清（零成本） |
+| **I-2** | C4「F2 需反向引用 C4」待办文本仍在（F2 实际早已引用 `audio-beat-clock.md:110/112/489`） | 关闭陈旧待办：核实 F2 已反向引用 C4（:110/:112/:489），combat-director :299/:323 待办(1) 标 ✅ | 🟢 Resolved（本轮） |
+| **I-6** | C2 以载体类型名 `RhythmJudgmentEvent` 指代事件，未采用权威事件名 `OnRhythmJudgment`（C1-F6 已调和，无实质歧义） | combat-director 无关；combo-system 规则2(:39)+依赖表(:86) 改「订阅事件 `OnRhythmJudgment`（载荷 `RhythmJudgmentEvent`）」，对齐 rhythm-core §W-04 | 🟢 Resolved（本轮） |
+| **C4 头部记账** | `combat-director.md:3` 状态「Revised — Pending Re-review」相对 SC-3 陈旧，与 systems-index「Approved」不一致 | combat-director :3 头部同步为 Approved（+ :5 Last Updated 2026-08-12），与 systems-index:33 一致 | 🟢 Resolved（本轮） |
 
 ---
 
@@ -62,4 +62,6 @@
 
 ## 清账记录
 
-- **2026-08-12** — 建账（本文件）；清 W-2（F3 下游表 C2 行改为「经 C1 间接、不消费 Dash」），见本分支 commit。
+- **2026-08-12** — 建账（本文件）；清 W-2（F3 下游表 C2 行改为「经 C1 间接、不消费 Dash」），见 commit 3b31cc23。
+- **2026-08-12** — 清 D 组零成本项 I-2 / I-6 / C4 头部（第 1 步收尾）：combat-director :3/:5 头部同步 Approved+2026-08-12、:299/:323 双向引用待办(1) 标 ✅（F2 已反向引用 C4）；combo-system :39/:86 订阅点统一为「事件 `OnRhythmJudgment`（载荷 `RhythmJudgmentEvent`）」对齐 rhythm-core §W-04。见本分支 commit。
+- **2026-08-12** — B 组决策稿**已起草待审批**（第 2 步进行中，尚未落 GDD）：**W-1** technical-director 稿——裁定 Resume owner=F6，F2 仅广播 `OnAudioRestored`，两步时序契约 ①`BeatClock.Resume()`→②`EnableGameplayInput()`；判定**无需新 ADR**（Rule 4/ADR-D1/D10 既有边界的措辞对齐，可挂 ADR-D1 Addendum）；开放依赖 OQ-5。**SG-5** systems-designer 稿——裁定采用 (B) 过渡保护「保护提前」：F7 的 `max(before,after)` 触发点从 `OnMeterChanged` 提前到 `OnMeterChangeAccepted`，复用既有机制；建议起小 ADR（拟 ADR-D14，跨系统事件契约需 TD 会签）。**二稿均待 owner 审批后再落 GDD 修订**。

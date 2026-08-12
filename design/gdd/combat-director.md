@@ -1,8 +1,8 @@
 # 战斗导演 (Combat Director)
 
-> **Status**: Revised (2026-08-10 blocker fix) — Pending Re-review
+> **Status**: Approved（SC-3 令牌回收补丁 + SG-3 复审回归，2026-08-12；与 systems-index 一致）
 > **Author**: Jadyn Wu + Claude Code Agents
-> **Last Updated**: 2026-08-10
+> **Last Updated**: 2026-08-12
 > **Implements Pillar**: 支柱一：节奏即战斗 (Rhythm IS Combat)
 > **System ID**: C4
 > **Layer**: Core | **Milestone**: MVP | **Design Order**: 7
@@ -296,7 +296,7 @@ function GrantSelection(pendingQueue, meter, beatIndex, currentEvalBeat, subdivi
 
 | 系统 | 依赖内容 | 双向引用状态 |
 |---|---|---|
-| **F2 音频/拍点时钟** | 订阅 `OnBeatLookahead`（timestamp + 小节号 + 拍内索引）、`OnMeterChanged`；只读 `BeatEventData.beat_dsp_time`。C4 的全部调度时机源于 F2 拍事件。 | ⚠️ F2 GDD 需反向引用 C4（`OnMeterChanged`/lookahead 消费者）——见 Open Questions 追踪项 |
+| **F2 音频/拍点时钟** | 订阅 `OnBeatLookahead`（timestamp + 小节号 + 拍内索引）、`OnMeterChanged`；只读 `BeatEventData.beat_dsp_time`。C4 的全部调度时机源于 F2 拍事件。 | ✅ F2 已反向引用 C4（`audio-beat-clock.md:110` F2→C4 lookahead、`:112` F2→C1/C4 `OnMeterChanged`、`:489` 硬依赖表） |
 | **F4 SO 数据层** | **[BC-3]** per-敌数据由 `EnemyInfoSO`(F4-S5) 承载：`attackWindupBeats`(W)、`timeoutBeats`。全局导演参数由 **`CombatDirectorConfigSO`(F4-S8)** 承载：`capacityTable`、威胁权重（`dNear/dMid/wNear/wMid/wFar`）、`starvationWeight`、`starvationCeiling`、`subdivisionMode`。`CapacityTable` 属 per-拍号全局数据，语义不归 `EnemyInfoSO`。 | F4 拥有 SO schema（F4-S5 `EnemyInfoSO` + F4-S8 `CombatDirectorConfigSO`）；C4 为消费方 |
 | **ADR-D2 敌人 AI 框架** | `CombatDirectorTokenAction` BT Action 节点契约（`Status.Running/Success/Failure`、`TimeoutBeats`）；`BeatClockBridge`（ExecOrder −100）先于 `BehaviorGraphAgent`（−50）写 Blackboard。**接口签名由 ADR-D2 锁定**。 | ✅ ADR-D2 已点名 C4（须与 FE1 并行撰写） |
 | **ADR-D6 F2 派发模型** | F2 拍事件为主线程 Update 轮询派发；C4 令牌逻辑运行同线程，无跨线程队列/同步原语。 | ✅ 架构约束，已在 Core Rule 11 落地 |
@@ -320,7 +320,7 @@ function GrantSelection(pendingQueue, meter, beatIndex, currentEvalBeat, subdivi
 
 > **上游变更登记（SC-3，2026-08-11；ADR-D13 迁移，2026-08-12）**：C4 现有上游含 **F6 run-end 域事件 `OnRunEnded(RunOutcome outcome)`**（Death 与 Victory 均触发，ADR-D13 取代原 `OnPlayerDeath`；见「上游」表 F6 行）。SG-3 复审所指「C4 上游仅 F2/ADR-D2、不订阅死亡事件」的旧表述已被本轮补丁消解——C4 现有对称 C1 SC-2 的 run-end 令牌回收合约。
 
-**双向引用待办**：本 GDD 编写完成后须（1）在 F2 audio-beat-clock.md 追加 C4 为 `OnMeterChanged`/lookahead 消费者的反向引用；（2）FE1、FE4 GDD 编写时以 ADR-D2 契约与本节接口双向锁定。
+**双向引用待办**：（1）✅ 已完成（2026-08-12，I-2 清账）——F2 `audio-beat-clock.md` 已反向引用 C4 为 `OnMeterChanged`/lookahead 消费者（:110/:112/:489）；（2）FE1、FE4 GDD 编写时以 ADR-D2 契约与本节接口双向锁定（待 FE1/FE4 开工）。
 
 ## Tuning Knobs
 

@@ -36,7 +36,7 @@ C2 连招图系统是《玉兔战歌》战斗核心的**数据驱动连招状态
 
 **规则 1｜连招图加载**：武器装备时，C2 加载该武器 `WeaponSO.comboGraph` 指向的 `ComboGraphSO`，将其 `nodes` 构建为 `Dictionary<string, AttackNodeSO>`（键为 node id），并校验 `rootNodeId`。图位置（`_currentNodeId`）初始化为 `rootNodeId`。
 
-**规则 2｜出招输入触发**：C2 订阅 C1 发布的 `RhythmJudgmentEvent`。玩家每次攻击输入经 C1 判定后，事件携带 `Rating` / `AttackType` / `CancelTier` / `ComboCountBefore` / `ComboCountAfter` / `OffsetMs` 抵达 C2。C2 **只读** 这些字段，不回写。
+**规则 2｜出招输入触发**：C2 订阅 C1 发布的事件 `OnRhythmJudgment`（`event Action<RhythmJudgmentEvent>`；事件名 = `OnRhythmJudgment`、载荷类型名 = `RhythmJudgmentEvent`，二者不冲突，权威定义见 `rhythm-core.md` §C1-F6 W-04 规范化）。玩家每次攻击输入经 C1 判定后，事件携带 `Rating` / `AttackType` / `CancelTier` / `ComboCountBefore` / `ComboCountAfter` / `OffsetMs` 抵达 C2。C2 **只读** 这些字段，不回写。
 
 **规则 3｜分支匹配**：收到事件后，C2 在 `edges` 中查找满足 `fromNodeId == _currentNodeId` **且** `requiredInput` 匹配本次输入（`AttackType`）的 `ComboEdge`。**[BC-5 已解决]** `ComboEdge.requiredInput` 与 C1 `RhythmJudgmentEvent.AttackType`、F4-S1 同为权威 `AttackType {LightAttack, HeavyAttack, ChargedAttack}` 枚举（F3 权威），**直接比较无需映射**（上游 F4 已由 `AttackInputType {Normal,Heavy,Special}` 统一至此，全链无枚举转换）。
 
@@ -83,7 +83,7 @@ C2 连招状态机（图位置维度，独立于 C1 的评级状态）：
 
 | 系统 | 方向 | 数据流 / 接口 | 归属 |
 |---|---|---|---|
-| **C1 节奏核心** | 上游 | 订阅 `RhythmJudgmentEvent`（Rating/AttackType/CancelTier/ComboCount/OffsetMs）| C1 拥有评级与段数；C2 拥有图位置 |
+| **C1 节奏核心** | 上游 | 订阅事件 `OnRhythmJudgment`（载荷 `RhythmJudgmentEvent`：Rating/AttackType/CancelTier/ComboCount/OffsetMs）| C1 拥有评级与段数；C2 拥有图位置 |
 | **F4 SO 数据层** | 上游（数据）| 只读消费 `ComboGraphSO`/`AttackNodeSO`/`ComboEdge`，加载期构建节点字典 | F4 拥有 schema，C2 不改数据 |
 | **ADR-D5 / Animancer** | 依赖 | 播放 `node.animationClip`，`AnimancerState.Speed = currentBpm / authoredBpm` | C2 驱动攻击层动画（TDE Animator 层不变）|
 | **C5 武器系统** | 下游 | `WeaponSO.comboGraph` 引用 ComboGraphSO；换武器时 C2 重载连招图并回根 | C5 定义武器→连招图绑定 |
