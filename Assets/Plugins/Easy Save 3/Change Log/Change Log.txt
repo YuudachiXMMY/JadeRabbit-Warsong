@@ -1,3 +1,9 @@
+3.5.27
+- Performance enhancements.
+- Updates for Unity 6.6.
+- Reference manager now ignores all objects from namespaces prefixed with 'UnityEditor' to account for assets with incorrect hide flags.
+- Added explicit support for SortedDictionary.
+
 3.5.26
 - Updates for Unity 6.5
 - Performance and UX updates for referencing.
