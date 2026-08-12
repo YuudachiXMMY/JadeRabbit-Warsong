@@ -1,10 +1,10 @@
 # Systems Index: 玉兔：破阵 (Jade Rabbit: Warsong)
 
-> **Status**: Systems Design — Cross-review CONCERNS (2026-08-12)
+> **Status**: Systems Design — 全 10 个 MVP GDD Approved（C1/F6 死亡语义收口 re-review 通过 2026-08-12；无存活 BLOCKER，残留均 defer 给 owner 的非阻塞 WARNING）
 > **Created**: 2026-07-13
 > **Last Updated**: 2026-08-12
 > **Source Concept**: design/gdd/game-concept.md
-> **Latest Cross-review**: `design/gdd/gdd-cross-review-2026-08-12.md`（**CONCERNS** — c02bdced 补丁消解 3 BLOCKER 核心矛盾；无存活 BLOCKER。残留 coupled WARNING：C1 死亡模型传播/F6 措辞残留/胜利边界/systems-index 同步/registry 落地。C4 SG-3 已解回 Approved；C1/F6 保留待修订，死亡语义清理应在实现前完成）
+> **Latest Cross-review**: `design/gdd/gdd-cross-review-2026-08-12.md`（**CONCERNS** — c02bdced 补丁消解 3 BLOCKER 核心矛盾；无存活 BLOCKER。残留 coupled WARNING：C1 死亡模型传播/F6 措辞残留/胜利边界/systems-index 同步/registry 落地。C4 SG-3 已解回 Approved）。**收口更新（2026-08-12）**：C1/F6 死亡语义 coupled WARNING（W-A C1 传播 / W-B F6 措辞）实为 PR #30 已落地、报告先于补丁故列陈旧；经对抗式 re-review（3 审查者 death_semantics_consistent=true、零 blocks_approval 发现、cross-consistency CLEAN）确认死亡/run-end 语义跨 C1/F6/C4/ADR-D12/D13/game-concept/F5 完全一致，**C1/F6 翻 Approved**。残留 W-1/W-2/SG-4/SG-5/DT-1~4/W-F 归属 FE5/FE4/F3/C2/game-designer，不阻塞 C1/F6
 > **Prior Cross-review**: `design/gdd/gdd-cross-review-2026-08-11b.md`（FAIL — 3 跨系统场景 BLOCKER：冻帧×时钟 / 死亡语义 / C4 令牌孤儿）
 
 ---
@@ -26,8 +26,8 @@
 | F3 | Input 事件系统 | Foundation | **MVP** | **Approved** | `design/gdd/input-event-system.md` | — |
 | F4 | ScriptableObject 数据层（推断） | Foundation | **MVP** | **Approved** | `design/gdd/so-data-layer.md` | — |
 | F5 | 存档/持久化系统 | Foundation | **MVP** | **Approved** | `design/gdd/save-persistence.md` | ADR-D7 (Accepted), ADR-D10 (Accepted) |
-| F6 | TopDownEngine & Animancer 集成层 | Foundation | **MVP** | **Needs Revision** | `design/gdd/tde-integration.md` | ADR-D1 (Accepted), ADR-D5 (Accepted), ADR-D10 (Accepted), ADR-D12 (Accepted), ADR-D13 (Accepted) |
-| C1 | 节奏量化攻击系统 | Core | **MVP** | **Needs Revision** | `design/gdd/rhythm-core.md` | F2, F3, F6, ADR-D8 (Accepted), ADR-D12 (Accepted), ADR-D13 (Accepted) |
+| F6 | TopDownEngine & Animancer 集成层 | Foundation | **MVP** | **Approved** | `design/gdd/tde-integration.md` | ADR-D1 (Accepted), ADR-D5 (Accepted), ADR-D10 (Accepted), ADR-D12 (Accepted), ADR-D13 (Accepted) |
+| C1 | 节奏量化攻击系统 | Core | **MVP** | **Approved** | `design/gdd/rhythm-core.md` | F2, F3, F6, ADR-D8 (Accepted), ADR-D12 (Accepted), ADR-D13 (Accepted) |
 | C2 | 连招图系统 | Core | **MVP** | **Approved** | `design/gdd/combo-system.md` | F4, C1, ADR-D8 (Accepted) |
 | C3 | 心法构筑系统 | Core | **MVP** | **Approved** | `design/gdd/perk-system.md` | F4, C1, ADR-D8 (Accepted) |
 | C4 | 战斗导演 | Core | **MVP** | **Approved** | `design/gdd/combat-director.md` | F2, F4, F6, ADR-D8 (Accepted), ADR-D12 (Accepted), ADR-D13 (Accepted) |
@@ -200,9 +200,9 @@
 | 识别的系统总数 | 31 |
 | 设计文档已开始 | 10 |
 | 设计文档已审查 | 10 |
-| 设计文档已 Approved | 8 |
-| 设计文档 Needs Revision | 2 |
-| MVP 系统已设计 | 8 / 27 |
+| 设计文档已 Approved | 10 |
+| 设计文档 Needs Revision | 0 |
+| MVP 系统已设计 | 10 / 27 |
 | Vertical Slice 系统已设计 | 0 / 1 |
 | Alpha 系统已设计 | 0 / 1 |
 | Full Vision 系统已设计 | 0 / 1 |
