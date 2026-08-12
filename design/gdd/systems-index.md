@@ -26,11 +26,11 @@
 | F3 | Input 事件系统 | Foundation | **MVP** | **Approved** | `design/gdd/input-event-system.md` | — |
 | F4 | ScriptableObject 数据层（推断） | Foundation | **MVP** | **Approved** | `design/gdd/so-data-layer.md` | — |
 | F5 | 存档/持久化系统 | Foundation | **MVP** | **Approved** | `design/gdd/save-persistence.md` | ADR-D7 (Accepted), ADR-D10 (Accepted) |
-| F6 | TopDownEngine & Animancer 集成层 | Foundation | **MVP** | **Needs Revision** | `design/gdd/tde-integration.md` | ADR-D1 (Accepted), ADR-D5 (Accepted), ADR-D10 (Accepted) |
-| C1 | 节奏量化攻击系统 | Core | **MVP** | **Needs Revision** | `design/gdd/rhythm-core.md` | F2, F3, F6, ADR-D8 (Accepted) |
+| F6 | TopDownEngine & Animancer 集成层 | Foundation | **MVP** | **Needs Revision** | `design/gdd/tde-integration.md` | ADR-D1 (Accepted), ADR-D5 (Accepted), ADR-D10 (Accepted), ADR-D12 (Accepted), ADR-D13 (Accepted) |
+| C1 | 节奏量化攻击系统 | Core | **MVP** | **Needs Revision** | `design/gdd/rhythm-core.md` | F2, F3, F6, ADR-D8 (Accepted), ADR-D12 (Accepted), ADR-D13 (Accepted) |
 | C2 | 连招图系统 | Core | **MVP** | **Approved** | `design/gdd/combo-system.md` | F4, C1, ADR-D8 (Accepted) |
 | C3 | 心法构筑系统 | Core | **MVP** | **Approved** | `design/gdd/perk-system.md` | F4, C1, ADR-D8 (Accepted) |
-| C4 | 战斗导演 | Core | **MVP** | **Approved** | `design/gdd/combat-director.md` | F2, F4, F6, ADR-D8 (Accepted) |
+| C4 | 战斗导演 | Core | **MVP** | **Approved** | `design/gdd/combat-director.md` | F2, F4, F6, ADR-D8 (Accepted), ADR-D12 (Accepted), ADR-D13 (Accepted) |
 | C5 | 武器系统（推断） | Core | **MVP** | Not Started | `design/gdd/weapon-system.md` | F4, C2 |
 | C6 | Hitbox/受击判定系统（推断） | Core | **MVP** | Not Started | `design/gdd/hitbox-system.md` | C2, F6 |
 | FE3 | 延迟校准系统 | Feature | **MVP** | Not Started | `design/gdd/latency-calibration.md` | F2, F5 |
@@ -92,8 +92,8 @@
 
 ### Core Layer（依赖 Foundation）
 
-1. **C1 节奏量化攻击系统** — 依赖：F2（拍点时序）+ F3（输入时间戳）+ F6（死亡/复活生命周期域事件 `OnPlayerDeath`，SC-2 清缓冲 / 幽灵评级守卫；Animancer 攻击动画播放，ADR-D5/ADR-D12）
-2. **C4 战斗导演** — 依赖：F2（拍槽分配 / 拍点时序）+ F4（EnemyInfoSO.attackWindupBeats，令牌落拍计算）+ F6（死亡生命周期域事件 `OnPlayerDeath`，SC-3 死亡令牌回收 / 对称 C1 SC-2，ADR-D12）
+1. **C1 节奏量化攻击系统** — 依赖：F2（拍点时序）+ F3（输入时间戳）+ F6（run-end 生命周期域事件 `OnRunEnded(outcome)`，Death + Victory，SC-2 清缓冲 / 幽灵评级守卫；Animancer 攻击动画播放，ADR-D5/ADR-D12/ADR-D13）
+2. **C4 战斗导演** — 依赖：F2（拍槽分配 / 拍点时序）+ F4（EnemyInfoSO.attackWindupBeats，令牌落拍计算）+ F6（run-end 生命周期域事件 `OnRunEnded(outcome)`，Death + Victory，SC-3 令牌回收 / 对称 C1 SC-2，ADR-D12/ADR-D13）
 3. **C2 连招图系统** — 依赖：F4（AttackNodeSO/ComboGraphSO schema）+ C1（评级控制取消窗）+ F2（currentBpm 来源 / `OnMeterChangeAccepted` BPM 变更事件）+ F6（Animancer 攻击层动画管线，ADR-D5）
 4. **C3 心法构筑系统** — 依赖：F4（PerkSO schema）+ C1（心法修改节奏规则）+ F2（`OnBeatClockPaused`/`OnBeatClockResumed`，心法冻结栈计时/解冻，BC-6）
 5. **C5 武器系统** — 依赖：F4（WeaponSO schema）+ C2（连招图运行时容器）

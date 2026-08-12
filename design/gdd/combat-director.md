@@ -38,7 +38,7 @@ C4 本身对玩家不可见，但它直接产出玩家可感知的战斗质感�
 9. **兑现与释放（Consume/Release）**：敌人攻击 hitbox 激活即视为「兑现」，C4 标记令牌 `Consumed` 并释放该拍槽占用；攻击结束后敌人可再次请求。
 10. **F2 纯下游消费者**：只读 `BeatEventData.beat_dsp_time`，禁用 `AudioSettings.dspTime`（F2 Core Rule 12/14）；禁止调用 BeatClock 生命周期（`beatclock_lifecycle_bypass`）；无延迟补偿（F2 Core Rule 7）。
 11. **单线程**：C4 令牌逻辑运行于主线程 Update 轮询（ADR-D6），无跨线程队列、无同步原语。
-12. **死亡令牌回收（SC-3，对称 C1 SC-2）**：C4 订阅 F6 `TDELifecycleAdapter` 桥接的域事件 **`OnPlayerDeath`**（CombatCore 可见的纯 C# `event`，负载**不含任何 TopDownEngine 类型**——C4 与 C1 同受 TDE 边界合约约束，**禁止 `using` TopDownEngine 命名空间**，不直接订阅 TDE 事件）。收到 `OnPlayerDeath` 时，在 F6 广播的**同一 Update 帧内**（F6 同帧执行 `BeatClock.Stop()` + `DisableAllInput()` + 广播 `OnPlayerDeath`，见 `tde-integration.md` Rule 15）取消**全部**令牌：所有 `Pending` 与 `Granted` 令牌一律 `→ Cancelled → None`，清空 pending queue，释放所有拍槽占用记录。**理由**：MVP 死亡 = 换新局（ADR-D12），死亡走 `BeatClock.Stop()` 路径，F2 Rule 10 将 `global_beat_index` **归零**；Granted 令牌的绝对 `targetLandingBeat`（F-5，全局绝对拍计数）跨 `Stop()→换新局 Play()` 失锚，落拍数学必然性（规则 6）被打破 → 幽灵攻击 / 时机错乱。E6 的「冻结-续接」**仅适用于 Pause/Resume 连续路径**（菜单暂停，时钟连续），**不适用于死亡的 Stop 不连续路径**。C4 **不**调用任何 BeatClock 生命周期方法（`beatclock_lifecycle_bypass` 保持，只订阅广播、不回调时钟）。换新局时 C4 为新 Single 场景重建的实例；本清空合约同时保证「持有持久 C4 引用」实现下的干净起点。C4 **不需要**订阅 `OnRespawnComplete`（MVP 该事件不触发，见 ADR-D12；换新局由场景重建承接）。
+12. **run-end 令牌回收（SC-3，对称 C1 SC-2；Death + Victory，ADR-D13）**：C4 订阅 F6 `TDELifecycleAdapter` 广播的域事件 **`OnRunEnded(RunOutcome outcome)`**（CombatCore 可见的纯 C# `event`，负载为纯 C# `enum` `RunOutcome`，MVP 取值 `{Death, Victory}`，**不含任何 TopDownEngine 类型**——C4 与 C1 同受 TDE 边界合约约束，**禁止 `using` TopDownEngine 命名空间**，不直接订阅 TDE 事件；`OnRunEnded` 取代原 `OnPlayerDeath`，ADR-D13 落地方式 (a)，不保留别名）。收到 `OnRunEnded`（**任一 outcome**——`RunOutcome.Death` 或 `RunOutcome.Victory` 均触发）时，在 F6 广播的**同一 Update 帧内**（F6 同帧执行 `BeatClock.Stop()` + `DisableAllInput()` + 广播 `OnRunEnded(outcome)`，见 `tde-integration.md` Rule 15）取消**全部**令牌：所有 `Pending` 与 `Granted` 令牌一律 `→ Cancelled → None`，清空 pending queue，释放所有拍槽占用记录。**理由**：死亡与胜利同为 run-end（ADR-D13 统一 run-end 边界，落地方式 (a)）——两者 MVP 均 = 换新局（ADR-D12/ADR-D13），均走 `BeatClock.Stop()` 路径，F2 Rule 10 将 `global_beat_index` **归零**；Granted 令牌的绝对 `targetLandingBeat`（F-5，全局绝对拍计数）跨 `Stop()→换新局 Play()` 失锚，落拍数学必然性（规则 6）被打破 → 幽灵攻击 / 时机错乱——胜利分支与死亡分支同源失锚，无一幸免。E6 的「冻结-续接」**仅适用于 Pause/Resume 连续路径**（菜单暂停，时钟连续），**不适用于 run-end 的 Stop 不连续路径**（无论 Death 或 Victory）。C4 **不**调用任何 BeatClock 生命周期方法（`beatclock_lifecycle_bypass` 保持，只订阅广播、不回调时钟）。换新局时 C4 为新 Single 场景重建的实例；本清空合约同时保证「持有持久 C4 引用」实现下的干净起点。C4 **不需要**订阅 `OnRespawnComplete`（MVP 该事件不触发，见 ADR-D12；换新局由场景重建承接）。
 
 ### States and Transitions
 
@@ -288,7 +288,7 @@ function GrantSelection(pendingQueue, meter, beatIndex, currentEvalBeat, subdivi
 | E13 | 场上零敌人 / pending queue 为空 | F-6 直接返回空集，C4 空转，无副作用。 |
 | E14 | 极端配置：`W=8.0` 拍 @ `BPM=80` → 前摇约 6 秒 | 合法（W、BPM 均在注册表范围内），非错误。超长前摇的 telegraph 表现由 F6/C2 动画层负责，C4 只保证落拍正确。 |
 | E15 **[BD-2]** | Boss 拍号切换致 BPM 大幅跃升（如 `OnMeterChanged` 伴随 `bpm` 由 `bpmRef` 升至 ~2×） | C4 用 `EffectiveSlotCapacity`（F-1b）按 `bpmRef/bpm` 归一化每拍名额，tokens/sec 保持恒定，攻击时间密度**不**随 BPM 线性上升；避免与 C1 判定窗收窄、C2 取消窗毫秒缩短叠加成难度尖峰。归一化于 `OnMeterChanged` 生效即刻应用于未来拍（已授令牌不受影响，见 E4）。C1/C2 侧另有 2 拍适应窗口（`max` 宽度规则）承接，三系统 BD-2 联锁。 |
-| E16 **[SC-3]** | 玩家死亡（F6 桥接域事件 `OnPlayerDeath`；MVP 死亡 = 换新局，ADR-D12） | C4 取消**全部** `Pending`+`Granted` 令牌（`→ Cancelled → None`），清空 pending queue，释放所有拍槽占用。**区别于 E6**：E6 是 Pause 冻结续接（`BeatClock` 连续，`global_beat_index` 不变）；E16 是死亡 = `BeatClock.Stop()`、`global_beat_index` 归零（F2 Rule 10）、绝对拍令牌 `targetLandingBeat` 失锚，必须**全清**而非冻结（否则换新局后残留令牌落拍错乱 → 幽灵攻击）。执行于 F6 广播 `OnPlayerDeath` 的同帧（F6 同帧 `Stop()` + `DisableAllInput()`）。C4 不调用任何 BeatClock 生命周期方法。见 Core Rule 12 / AC-C4-31。 |
+| E16 **[SC-3]** | run-end（F6 桥接域事件 `OnRunEnded(outcome)`，Death 与 Victory 均触发，ADR-D13，取代原 `OnPlayerDeath`；MVP 均 = 换新局，ADR-D12/ADR-D13） | C4 取消**全部** `Pending`+`Granted` 令牌（`→ Cancelled → None`），清空 pending queue，释放所有拍槽占用。**区别于 E6**：E6 是 Pause 冻结续接（`BeatClock` 连续，`global_beat_index` 不变）；E16 是 run-end（Death 或 Victory）= `BeatClock.Stop()`、`global_beat_index` 归零（F2 Rule 10）、绝对拍令牌 `targetLandingBeat` 失锚，必须**全清**而非冻结（否则换新局后残留令牌落拍错乱 → 幽灵攻击）——胜利分支与死亡分支同源失锚。执行于 F6 广播 `OnRunEnded(outcome)` 的同帧（F6 同帧 `Stop()` + `DisableAllInput()`）。C4 不调用任何 BeatClock 生命周期方法。见 Core Rule 12 / AC-C4-31。 |
 
 ## Dependencies
 
@@ -301,7 +301,7 @@ function GrantSelection(pendingQueue, meter, beatIndex, currentEvalBeat, subdivi
 | **ADR-D2 敌人 AI 框架** | `CombatDirectorTokenAction` BT Action 节点契约（`Status.Running/Success/Failure`、`TimeoutBeats`）；`BeatClockBridge`（ExecOrder −100）先于 `BehaviorGraphAgent`（−50）写 Blackboard。**接口签名由 ADR-D2 锁定**。 | ✅ ADR-D2 已点名 C4（须与 FE1 并行撰写） |
 | **ADR-D6 F2 派发模型** | F2 拍事件为主线程 Update 轮询派发；C4 令牌逻辑运行同线程，无跨线程队列/同步原语。 | ✅ 架构约束，已在 Core Rule 11 落地 |
 | **ADR-D10 引导时序** | C4 须在 BeatClock ready 之后订阅拍事件；bootstrap 顺序保证不读取未初始化的拍状态。 | ✅ 架构约束 |
-| **F6 TDE 集成层** | 订阅 F6 桥接的域事件 **`OnPlayerDeath`**（CombatCore 可见纯 C# `event`，负载不含 TDE 类型）；据此同帧取消全部令牌（SC-3 死亡回收，见 Core Rule 12 / E16）。C4 禁止 `using` TopDownEngine，只订阅纯 C# 桥接事件，不调用任何 BeatClock 生命周期方法。 | ✅ F6 Rule 15 反向登记 C4 为 `OnPlayerDeath` 订阅方（对称 C1 SC-2）；见 `tde-integration.md` 交互表 F6→C4 行 |
+| **F6 TDE 集成层** | 订阅 F6 桥接的域事件 **`OnRunEnded(RunOutcome outcome)`**（CombatCore 可见纯 C# `event`，负载为纯 C# `enum` `RunOutcome{Death,Victory}`，不含 TDE 类型；取代原 `OnPlayerDeath`，ADR-D13）；据此同帧取消全部令牌（SC-3 run-end 回收，Death + Victory 均触发，见 Core Rule 12 / E16）。C4 禁止 `using` TopDownEngine，只订阅纯 C# 桥接事件，不调用任何 BeatClock 生命周期方法。 | ✅ F6 Rule 15 反向登记 C4 为 `OnRunEnded` 订阅方（对称 C1 SC-2）；见 `tde-integration.md` 交互表 F6→C4 行 |
 
 ### 下游（依赖 C4）
 
@@ -318,7 +318,7 @@ function GrantSelection(pendingQueue, meter, beatIndex, currentEvalBeat, subdivi
 | **game-concept 规则四（敌人强制落拍）** | C4 是规则四的架构强制点；本 GDD 的存在即为满足该顶层设计约束。 |
 | **F5 存档/持久化** | 无直接依赖——C4 为纯运行时调度器，不持久化任何状态（令牌生命周期不跨存档、不跨局）。死亡换局的 merit 结算由 FE5 承接（订阅局终信号 → 折算落盘，ADR-D12），非 C4 职责。 |
 
-> **上游变更登记（SC-3，2026-08-11）**：C4 现有上游含 **F6 死亡域事件 `OnPlayerDeath`**（见「上游」表 F6 行）。SG-3 复审所指「C4 上游仅 F2/ADR-D2、不订阅死亡事件」的旧表述已被本轮补丁消解——C4 现有对称 C1 SC-2 的死亡令牌回收合约。
+> **上游变更登记（SC-3，2026-08-11；ADR-D13 迁移，2026-08-12）**：C4 现有上游含 **F6 run-end 域事件 `OnRunEnded(RunOutcome outcome)`**（Death 与 Victory 均触发，ADR-D13 取代原 `OnPlayerDeath`；见「上游」表 F6 行）。SG-3 复审所指「C4 上游仅 F2/ADR-D2、不订阅死亡事件」的旧表述已被本轮补丁消解——C4 现有对称 C1 SC-2 的 run-end 令牌回收合约。
 
 **双向引用待办**：本 GDD 编写完成后须（1）在 F2 audio-beat-clock.md 追加 C4 为 `OnMeterChanged`/lookahead 消费者的反向引用；（2）FE1、FE4 GDD 编写时以 ADR-D2 契约与本节接口双向锁定。
 
@@ -453,10 +453,10 @@ C4 无任何玩家可见 UI。它是敌人 AI 与 F2 拍钟之间的后台调度
 - **AC-C4-29**（Integration/BLOCKING）：无令牌不得攻击——任何敌人在未持有 `Granted` 状态令牌时，其攻击 hitbox 不得激活。
   测试：集成测试直接尝试绕过 `CombatDirectorTokenAction` 触发敌人攻击能力（模拟 BT 误配置或直接调用底层攻击方法）→ 断言 hitbox 未激活 / 攻击方法在无 `Granted` 令牌时提前返回失败。此为回归测试，须纳入 CI 常驻套件，任何未来改动导致此测试失败即视为破坏支柱一的架构强制点，S1 级阻塞。
 
-### 死亡令牌回收（SC-3，对称 C1 SC-2）
+### run-end 令牌回收（SC-3，对称 C1 SC-2；Death + Victory，ADR-D13）
 
-- **AC-C4-31**（Logic/BLOCKING，E16/SC-3/Core Rule 12）：发布 F6 `OnPlayerDeath` 域事件后，C4 取消全部令牌且不触碰时钟生命周期。
-  测试：注入 mock `OnPlayerDeath` 域事件源 + Spy 令牌状态机；预置若干 `Pending` 与 `Granted` 令牌（含 `targetLandingBeat` 绝对拍值），发布 `OnPlayerDeath` 后断言：(a) 全部 `Pending`/`Granted` 令牌转 `Cancelled`/`None`；(b) pending queue 为空；(c) 所有拍槽占用清零；(d) 此期间 C4 未调用任何 BeatClock 生命周期方法（`beatclock_lifecycle_bypass` 静态扫描保持通过，AC-C4-27 联动）；(e) 域事件订阅编译期断言——事件签名仅引用 CombatCore 可见类型（**不含 TopDownEngine 命名空间**，与 AC-C4-26/27 边界约束同源）。与 C1 `AC-C1-22e`（复活/死亡清空 pending）、F6 `AC-F6-25`（死亡桥接广播，C4 为订阅方之一）配对，形成 SC-2/SC-3 完整闭环。**区别于 AC-C4-24**（E6 Pause 冻结续接、令牌保留）：本 AC 验证死亡 Stop 路径的**全清**语义，二者不可混淆。
+- **AC-C4-31**（Logic/BLOCKING，E16/SC-3/Core Rule 12）：发布 F6 `OnRunEnded(outcome)` 域事件后（任一 `RunOutcome`——`Death` 或 `Victory`），C4 取消全部令牌且不触碰时钟生命周期。
+  测试：注入 mock `OnRunEnded(RunOutcome outcome)` 域事件源 + Spy 令牌状态机；预置若干 `Pending` 与 `Granted` 令牌（含 `targetLandingBeat` 绝对拍值），分别发布 `OnRunEnded(RunOutcome.Death)` 与 `OnRunEnded(RunOutcome.Victory)` 两组用例，各自断言：(a) 全部 `Pending`/`Granted` 令牌转 `Cancelled`/`None`；(b) pending queue 为空；(c) 所有拍槽占用清零；(d) 此期间 C4 未调用任何 BeatClock 生命周期方法（`beatclock_lifecycle_bypass` 静态扫描保持通过，AC-C4-27 联动）；(e) 域事件订阅编译期断言——事件签名仅引用 CombatCore 可见类型（**不含 TopDownEngine 命名空间**，与 AC-C4-26/27 边界约束同源）。与 C1 `AC-C1-22e`（复活/死亡清空 pending）、F6 `AC-F6-25`（run-end 桥接广播，C4 为订阅方之一）配对，形成 SC-2/SC-3 完整闭环。**区别于 AC-C4-24**（E6 Pause 冻结续接、令牌保留）：本 AC 验证 run-end Stop 路径（Death 与 Victory 均适用）的**全清**语义，二者不可混淆。
 
 ## Open Questions
 

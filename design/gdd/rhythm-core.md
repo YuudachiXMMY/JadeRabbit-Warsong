@@ -172,7 +172,7 @@ C1 在 `BeatClock.IsStartConfirmed == true` 之前不对任何输入进行节奏
 | **后拍点窗口** | LateWindow 过期 | **等待输入**（丢弃缓冲） |
 | 任意状态 | 游戏暂停 | **静默**（清空缓冲） |
 | **静默** | 游戏恢复（F2 `OnBeatClockResumed`，BC-6） | **等待输入**（清空过期 pending + 重锚拍网格） |
-| 任意状态 | 玩家死亡（F6 `OnPlayerDeath`，SC-2；**MVP 活跃**——死亡=换新局，ADR-D12） | **静默**（清空缓冲） |
+| 任意状态 | run-end（F6 `OnRunEnded(outcome)`，SC-2；Death 与 Victory 均触发；ADR-D13 取代原 `OnPlayerDeath`；**MVP 活跃**——死亡/胜利=换新局，ADR-D12/D13） | **静默**（清空缓冲） |
 | **静默** | 玩家复活完成（F6 `RespawnComplete`，SC-2；**MVP 休眠**——TDE 原地复活不启用、`OnRespawnComplete` 不广播，见 ADR-D12 / E10；换新局重建新 C1 实例。本行仅 Post-MVP checkpoint 预留） | **等待输入**（清空过期评级状态 + 重锚拍网格） |
 
 ---
@@ -690,12 +690,12 @@ if GoodHalfWindowMs_effective > gridIntervalMs / 2 - 1:
 
 ### E10：玩家复活/重生时的幽灵评级（Respawn Ghost Judgment，SC-2）
 
-> **MVP 处置（ADR-D12：死亡=换新局）**：TDE 原地复活在 MVP **不启用**——`RespawnComplete` 经 Inspector 关闭、正常流程不触发；F6 即便收到亦走 fatal 守卫、**不广播 `OnRespawnComplete`**（见 `tde-integration.md` Rule 15 / AC-F6-11）。故 MVP 死亡恢复走**换新局**路径：死亡时 `OnPlayerDeath` 同帧清空（下述"死亡起"逻辑，**MVP 活跃路径**），随后新 `LoadSceneMode.Single` 加载 boot 路径重建**全新 C1 实例**——跨死亡边界的幽灵评级在新实例中天然不存在。下述"复活完成"重锚序列仅为 **Post-MVP checkpoint 复活**预留（届时 `OnRespawnComplete` 恢复广播）。
+> **MVP 处置（ADR-D12：死亡=换新局；ADR-D13：泛化为 run-end 边界）**：TDE 原地复活在 MVP **不启用**——`RespawnComplete` 经 Inspector 关闭、正常流程不触发；F6 即便收到亦走 fatal 守卫、**不广播 `OnRespawnComplete`**（见 `tde-integration.md` Rule 15 / AC-F6-11）。故 MVP 死亡/胜利恢复均走**换新局**路径：run-end 时（死亡或胜利）`OnRunEnded(outcome)`（`RunOutcome.Death` / `RunOutcome.Victory`；ADR-D13 取代原 `OnPlayerDeath`，不保留别名）同帧清空（下述"run-end 起"逻辑，**MVP 活跃路径**），随后新 `LoadSceneMode.Single` 加载 boot 路径重建**全新 C1 实例**——跨 run-end 边界的幽灵评级在新实例中天然不存在。胜利路径同源：胜利同样经 `BeatClock.Stop()` 归零 `global_beat_index`，故 C1 对 Death/Victory 两种 outcome 对称清空。下述"复活完成"重锚序列仅为 **Post-MVP checkpoint 复活**预留（届时 `OnRespawnComplete` 恢复广播）。
 
 **场景**：玩家死亡时 `_pendingInput` 缓冲区可能持有死前的陈旧输入（或 LateWindow 仍激活）。F6 死亡序列（EC-04，`tde-integration.md`）不经过「游戏暂停」路径，故 Rule 8 的暂停清空**不触发**；复活后 `Play()` 恢复，首个 `OnHalfBeatLookahead` 会用新拍网格评级死前陈旧输入 → 产生「幽灵评级」，错误推进连招。
 
 **处理规则（SC-2）**：
-- C1 订阅 F6 的 **`OnPlayerDeath`** 与 **`OnRespawnComplete`** 域事件（F6 `TDELifecycleAdapter` 桥接 TDE `PlayerDeath`/`RespawnComplete` 而来的 CombatCore 可见 C# event，负载不含 TDE 类型——C1 不直接订阅 TDE 事件，遵边界隔离；见 `tde-integration.md` Rule 15），复用 Rule 8 的清空逻辑：`_pendingInput = null`；`_lateWindowActive = false`；停止处理 `OnHalfBeatLookahead`（死亡起）。
+- C1 订阅 F6 的 **`OnRunEnded(outcome)`**（Death 与 Victory 均触发，ADR-D13，取代原 `OnPlayerDeath`，不保留别名）与 **`OnRespawnComplete`** 域事件（F6 `TDELifecycleAdapter` 桥接而来的 CombatCore 可见纯 C# event，负载不含 TDE 类型——C1 不直接订阅 TDE 事件，遵边界隔离；见 `tde-integration.md` Rule 15），复用 Rule 8 的清空逻辑：`_pendingInput = null`；`_lateWindowActive = false`；停止处理 `OnHalfBeatLookahead`（run-end 起，Death 与 Victory 对称触发——胜利同样 `BeatClock.Stop()` 归零 `global_beat_index`，与死亡同源）。
 - **复活完成时**：清空任何过期评级状态（残留 `_pendingInput`、未消费的 LateWindow），以「等待输入」状态重新激活；重锚拍网格（复用 BC-6 恢复逻辑，若复活伴随时钟恢复）。
 - 复活后首个 `OnHalfBeatLookahead` **不得**评级任何死亡前的输入——所有跨越死亡边界的 pending 输入一律丢弃，不产生 `RhythmJudgmentEvent`。
 - **幽灵评级定义**：死亡前缓存的输入在复活后仍被评级的现象——本系统明确禁止（与 E6 幽灵判定同源，触发路径不同：E6 由暂停触发，E10 由死亡/复活触发）。
@@ -725,7 +725,7 @@ if GoodHalfWindowMs_effective > gridIntervalMs / 2 - 1:
 |------|------|------|--------|
 | **F2 音频时钟** | `OnHalfBeatLookahead`（`BeatEventData.beat_dsp_time`）、`IsStartConfirmed`、`LatencyOffsetMs`、`OnMeterChanged`（`MeterChangeEventData`，边界生效事件，F2 Core Rule 14）、**`OnBeatClockPaused` / `OnBeatClockResumed`**（暂停/恢复事件，携恢复首拍 `beat_dsp_time`，BC-6；事件名对齐 F2 权威，**非** `OnBpmChanged`） | 事件订阅 + 属性查询 | **必需** — 无 F2 则 C1 无法运行（Off 模式除外） |
 | **F3 输入管线** | `AttackInputEvent`（`attackType`, `inputDspTime`, `chargeStartDspTime`） | 事件订阅（`OnAttackInput`） | **必需** — 无 F3 则 C1 无输入来源 |
-| **F6 生命周期适配** | `OnPlayerDeath`（**MVP 活跃**，死亡=换新局）/ `OnRespawnComplete`（**MVP 休眠**，Post-MVP 预留）（F6 桥接域事件，CombatCore 可见，负载不含 TDE 类型，SC-2；见 `tde-integration.md` Rule 15 / ADR-D12） | 事件订阅（纯 C# event） | **必需** — 死亡时 `OnPlayerDeath` 同帧清空过期 `_pendingInput` 与评级状态，防幽灵评级（E10；MVP 换新局另重建新实例兜底） |
+| **F6 生命周期适配** | `OnRunEnded(outcome)`（**MVP 活跃**，Death 与 Victory 均触发，ADR-D13，取代 `OnPlayerDeath`；死亡/胜利=换新局）/ `OnRespawnComplete`（**MVP 休眠**，Post-MVP 预留）（F6 桥接域事件，CombatCore 可见，负载不含 TDE 类型，SC-2；见 `tde-integration.md` Rule 15 / ADR-D12 / ADR-D13） | 事件订阅（纯 C# event） | **必需** — run-end 时（死亡/胜利）`OnRunEnded(outcome)` 同帧清空过期 `_pendingInput` 与评级状态，防幽灵评级（E10；MVP 换新局另重建新实例兜底） |
 | **FE7 游戏设置** | `QuantizationMode`（Off / HalfBeat / Beat） | 属性注入（运行时可切换） | **必需** — 决定评级模式 |
 | **ADR-D4 SO 数据层** | `RhythmConfigSO`（窗口默认值、ComboMax） | ScriptableObject 读取 | **必需** — 策划配置数据来源 |
 | **C3 心法构筑系统** | `IRhythmModifierProvider`（`GetPerfectWindowDeltaMs` / `GetGoodWindowDeltaMs` / `GetComboDelta`；见 C1-F7）+ `OnPerkStackChanged` 重算触发 | 属性注入（C1 查询抽象接口） | **可选** — 无 C3/无心法时 provider = null，各查询走默认值；C1 不硬依赖 C3（BC-2） |
@@ -746,7 +746,7 @@ if GoodHalfWindowMs_effective > gridIntervalMs / 2 - 1:
 
 - **F2 ↔ C1**：F2 的 `beat_dsp_time` 已在"玩家感知时域"（F2 Core Rule 7）。C1 须对 F3 时间戳加 `latency_offset_s` 后再比较（C1-F2）。若 F2 修改时域约定，C1 的 beat_offset_ms 公式失效。
 - **F2 ↔ C1（BC-6 暂停/恢复）**：F2 权威定义 `OnBeatClockPaused` / `OnBeatClockResumed`（携恢复首拍 `beat_dsp_time`）+ `IAudioPlayer.Pause()/Resume()`。C1 订阅两事件：恢复时重锚拍网格并清空过期 `_pendingInput`（Rule 8 + E6）。C1 使用规范化事件名 `OnBeatClockResumed`（**非** `OnBpmChanged`）。F2 GDD 须对称登记 C1 为 `OnBeatClockResumed` 订阅方。
-- **F6 ↔ C1（SC-2 死亡清空）**：C1 订阅 F6 桥接域事件 `OnPlayerDeath`（**MVP 活跃**；死亡=换新局，ADR-D12）与 `OnRespawnComplete`（**MVP 休眠**，Post-MVP checkpoint 预留；MVP 下 F6 不广播）（CombatCore 可见 C# event，F6 由 TDE `PlayerDeath`/`RespawnComplete` 桥接；C1 禁止直接 `using` TDE），死亡时 `OnPlayerDeath` 同帧清空过期 `_pendingInput` 与评级状态（E10），防幽灵评级（MVP 另由换新局重建新实例兜底）。F6 生命周期 GDD 已对称登记 C1（`tde-integration.md` Rule 15 + 双向依赖确认 + AC-F6-25）。此为**跨系统场景 G** 承接合约，F6 广播侧（AC-F6-25）+ C1 消费侧（AC-C1-22e）闭环。
+- **F6 ↔ C1（SC-2 run-end 清空）**：C1 订阅 F6 桥接域事件 `OnRunEnded(outcome)`（**MVP 活跃**；Death 与 Victory 均触发，ADR-D13，取代原 `OnPlayerDeath`，不保留别名；死亡/胜利=换新局，ADR-D12/D13）与 `OnRespawnComplete`（**MVP 休眠**，Post-MVP checkpoint 预留；MVP 下 F6 不广播）（CombatCore 可见纯 C# event，`RunOutcome` 为 CombatCore 可见纯 C# enum，无 TDE 依赖；F6 由 TDE `PlayerDeath`/胜利判定/`RespawnComplete` 桥接；C1 禁止直接 `using` TDE），run-end 时（死亡或胜利）`OnRunEnded(outcome)` 同帧清空过期 `_pendingInput` 与评级状态（E10），防幽灵评级（MVP 另由换新局重建新实例兜底）。F6 生命周期 GDD 已对称登记 C1（`tde-integration.md` Rule 15 + 双向依赖确认 + AC-F6-25）。此为**跨系统场景 G** 承接合约，F6 广播侧（AC-F6-25）+ C1 消费侧（AC-C1-22e）闭环。
 - **F3 ↔ C1**：F3 的 `chargeStartDspTime` 哨兵值为 -1.0（F3 Core Rule 8）。C1 以 `> -1.0` 检测。若 F3 修改哨兵值约定，C1-F1 失效。
 - **P1 ↔ C1**：P1（HUD）消费 `RhythmJudgmentEvent` 中的 `Rating` 和 `ComboCountAfter` 展示反馈。P1 须在 Miss 时显示连击数**停止增长**的视觉区分（非清零）。若 C1 修改 Miss ΔCombo 行为，P1 的 Miss 动效设计需同步更新。
 - **充能攻击 ↔ PL2**：充能攻击触发 `AttackInputEvent` 后，F3 会向 PL2（VFX 反馈系统）发送预确认信号（pre-confirmation）以触发充能特效。C1 的最终评级（Perfect/Good/Miss）叠加在 PL2 的预确认特效之上；充能特效不等待 C1 评级完成。若 C1 评级为 Miss，PL2 须弱化（非取消）已播放的预确认特效。此时序合约须在 F3 / PL2 GDD 中对称记录。
@@ -840,7 +840,7 @@ if GoodHalfWindowMs_effective > gridIntervalMs / 2 - 1:
 - **AC-C1-20**：`OnMeterChanged`（`data.newBpm == 0`）→ BPM 不更新，窗口不变，记录警告日志。
 - **AC-C1-21**：Off 模式连击 → 每次 +2，受 ComboMax 约束；每次事件 `CancelTier == Standard`（连招深度封顶断言，见 AC-C1-06）。
 - **AC-C1-21b（功勋隔离契约）**：Off 模式激活期间，C1 暴露的激活 `QuantizationMode == Off`，供下游功勋结算系统（C5/FE5）读取。**C1 层可验证**：C1 广播/暴露的模式状态在 Off 下恒为 `Off`（结算方据此应用 `meritMultiplierOff` 折算）。折算金额本身的验收属 C5/FE5 集成 AC（C1 不发放功勋）。
-- **AC-C1-22e（SC-2 死亡幽灵评级防护，MVP 活跃部分）**：**BPM=120**，玩家死亡瞬间 `_pendingInput` 持有一条死前陈旧输入（未评级）。触发 F6 `OnPlayerDeath` → **断言**：`_pendingInput == null`、`_lateWindowActive == false`、停止处理 `OnHalfBeatLookahead`。**MVP 换新局（ADR-D12）**：随后新 `LoadSceneMode.Single` 加载重建全新 C1 实例（`_pendingInput` 天然为空），首个 `OnHalfBeatLookahead` 不产生任何跨死亡边界的 `RhythmJudgmentEvent`；复活后玩家发出的**新**输入按新拍网格正常评级。**（Post-MVP checkpoint 断言，MVP 休眠）**：`OnRespawnComplete` 恢复广播后，C1 以「等待输入」重激活并重锚拍网格（`halfBeatMs==250ms`），不评级任何死前输入——该断言待 ADR-D12 被取代、原地复活重启用时验证。
+- **AC-C1-22e（SC-2 run-end 幽灵评级防护（Death + Victory），MVP 活跃部分）**：**BPM=120**，玩家死亡瞬间 `_pendingInput` 持有一条死前陈旧输入（未评级）。触发 F6 `OnRunEnded(RunOutcome.Death)` → **断言**：`_pendingInput == null`、`_lateWindowActive == false`、停止处理 `OnHalfBeatLookahead`。**MVP 换新局（ADR-D12）**：随后新 `LoadSceneMode.Single` 加载重建全新 C1 实例（`_pendingInput` 天然为空），首个 `OnHalfBeatLookahead` 不产生任何跨死亡边界的 `RhythmJudgmentEvent`；复活后玩家发出的**新**输入按新拍网格正常评级。**对称 Victory 子断言（ADR-D13）**：**BPM=120**，胜利瞬间 `_pendingInput` 持有一条胜利前陈旧输入（未评级）。触发 F6 `OnRunEnded(RunOutcome.Victory)` → **断言**：同样 `_pendingInput == null`、`_lateWindowActive == false`、停止处理 `OnHalfBeatLookahead`；随后新 `LoadSceneMode.Single` 加载重建全新 C1 实例，干净起局（不产生任何跨胜利边界的 `RhythmJudgmentEvent`）——胜利路径同源（胜利亦 `BeatClock.Stop()` 归零 `global_beat_index`），故与 Death 分支对称清空。**（Post-MVP checkpoint 断言，MVP 休眠）**：`OnRespawnComplete` 恢复广播后，C1 以「等待输入」重激活并重锚拍网格（`halfBeatMs==250ms`），不评级任何死前输入——该断言待 ADR-D12 被取代、原地复活重启用时验证。
 
 ### 评级后果合约
 

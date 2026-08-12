@@ -121,11 +121,14 @@ F6 的玩家幻想是**天衣无缝的动作应噬**——每一次出招、侧�
 
     此降级/恢复响应独立于 `TopDownEngineEvent(Pause/UnPause)`（玩家主动暂停走 UIActive 路径），语义为「无音频不可玩，全局冻结」。验收见 **AC-F6-24**。
 
-15. **死亡/复活域事件桥接（C1 反幽灵评级承接，SC-2）**
-    `TDELifecycleAdapter` 通过 `MMEventListener<TopDownEngineEvent>` 消费 TDE 的 `TopDownEngineEvent(PlayerDeath / RespawnComplete)`（见状态表）。但 **CombatCore 程序集**（C1 节奏核心所在）受 TDE 边界合约约束 **禁止 `using` TopDownEngine 命名空间**，无法直接订阅 TDE 事件类型。故 F6 承担桥接职责：在处理这两个 TDE 事件的**同一 Update 帧内**，将其重广播为 **CombatCore 可见的域事件** `OnPlayerDeath` / `OnRespawnComplete`（`TDELifecycleAdapter` 上的纯 C# `event`，负载**不含任何 TDE 类型**），供 C1 订阅（`rhythm-core.md` E10 / SC-2）：
-    - **`PlayerDeath`（局终，ADR-D12）**：F6 同帧 `BeatClock.Stop()` + `InputEventBus.DisableAllInput()`（状态表）→ 同帧广播 `OnPlayerDeath`。**C1** 订阅后清空 `_pendingInput`、置 `_lateWindowActive = false`、停止处理 `OnHalfBeatLookahead`（SC-2）。**C4**（combat-director）亦订阅 `OnPlayerDeath`，同帧取消全部 `Pending`/`Granted` 令牌（SC-3，对称 C1；见 `combat-director.md` Core Rule 12 / E16）——F6 为 C4 该合约的桥接源之一。MVP 死亡 = 换新局：`Stop()` 归零 `global_beat_index`（F2 Rule 10），局结算由 FE5 承接（订阅局终信号 → merit 折算 + 落盘），随后新 `LoadSceneMode.Single` 加载走 boot 路径重启时钟（见状态表「换新局」行 / ADR-D12）。
-    - **`RespawnComplete`（MVP 休眠 + 诊断守卫，ADR-D12）**：TDE 原地复活在 MVP **不启用**（经 Inspector 关闭，正常流程不触发）。`OnMMEvent(RespawnComplete)` 若被触发：F6 **不**调用 `BeatClock.Play()` 原地重启，改记 fatal 诊断 `[F6-FATAL] RespawnComplete fired but in-place respawn is disabled in MVP` 并返回。`OnRespawnComplete` 域事件桥接**定义保留**（不删，供 Post-MVP checkpoint 复用），但 MVP 路径不广播原地重启语义。死亡恢复由「换新局」boot 路径承接，C1/C4 的死亡域清空已足以保证新局干净起点（跨死亡边界防幽灵评级 / 令牌回收）。
-    - **边界隔离**：C1 只依赖 F6 的域事件抽象，不感知 TDE——等同 F6 桥接 `InputEventBus` 的既有模式（Rule 3/Rule 4）。此为**跨系统场景 G（死亡复活幽灵评级）**的 F6 承接侧合约，与 C1 `rhythm-core.md` 双向合约「F6 ↔ C1（SC-2 复活清空）」对称。验收见 **AC-F6-25**。
+15. **统一 run-end 边界域事件桥接（C1/C4 承接，SC-2/SC-3；ADR-D13）**
+    **run-end 边界统一（ADR-D13，取代原「仅死亡」边界）**：死亡与胜利/通关**同 class 终结一局**（game-concept.md:164）。F6 以**单一 run-end 出口**同帧停时钟、广播**单一域事件 `OnRunEnded(RunOutcome outcome)`**（`outcome ∈ {Death, Victory}`），下游 C1/C4/FE5 单点订阅，不再按 outcome 分叉两套逻辑。`RunOutcome` 为**纯 C# `enum`（CombatCore 可见，不含任何 TDE 类型）**。**ADR-D13 落地方式 (a)**：`OnRunEnded(Death)` **取代**原 `OnPlayerDeath`（后者已废弃，不保留别名）。
+    `TDELifecycleAdapter` 通过 `MMEventListener<TopDownEngineEvent>` 消费 TDE 的死亡事件（`TopDownEngineEvent(PlayerDeath)`）与复活事件（`RespawnComplete`，见状态表）。但 **CombatCore 程序集**（C1 节奏核心所在）受 TDE 边界合约约束 **禁止 `using` TopDownEngine 命名空间**，无法直接订阅 TDE 事件类型。故 F6 承担桥接职责：在**同一 Update 帧内**将 run-end 信号重广播为 CombatCore 可见的域事件 `OnRunEnded(outcome)`（`TDELifecycleAdapter` 上的纯 C# `event`，负载**不含任何 TDE 类型**），供 C1/C4 订阅（`rhythm-core.md` E10 / SC-2、`combat-director.md` Core Rule 12 / SC-3）：
+    - **单一 run-end 入口 + 一次性闭锁（ADR-D13 D13-5，TD 条件 C1）**：F6 暴露**单一 run-end 入口方法** `EndRun(RunOutcome outcome)`；D13-1 三步序列（`BeatClock.Stop()` → `InputEventBus.DisableAllInput()` → 广播 `OnRunEnded(outcome)`）全部在此方法内、同一 Update 帧执行。**两条触发路径**——死亡（TDE `PlayerDeath` 桥接）与胜利（见下）——**均汇入 `EndRun()`**，不各自直呼三步。方法内置**每局一次性闭锁** `_runEnded`：首次进入 latch 并执行三步；同局重复触发（无论来自哪个源）**早退 no-op**，保证「恰一次 `OnRunEnded` / 单次 `Stop()`」在多触发源下成立。闭锁随新局 `LoadSceneMode.Single` 重建实例天然复位。
+    - **`Death` 分支（`PlayerDeath` 桥接，局终，ADR-D12）**：F6 收 TDE `PlayerDeath` → `EndRun(RunOutcome.Death)` → 同帧 `Stop()` + `DisableAllInput()` + 广播 `OnRunEnded(Death)`。**C1** 订阅后清空 `_pendingInput`、置 `_lateWindowActive = false`、停止处理 `OnHalfBeatLookahead`（SC-2）。**C4**（combat-director）亦订阅，同帧取消全部 `Pending`/`Granted` 令牌（SC-3，对称 C1；见 `combat-director.md` Core Rule 12 / E16）。MVP 死亡 = 换新局：`Stop()` 归零 `global_beat_index`（F2 Rule 10），局结算由 FE5 承接（订阅 `OnRunEnded(outcome)` → merit 折算 + 落盘），随后新 `LoadSceneMode.Single` 加载走 boot 路径重启时钟（见状态表「换新局」行 / ADR-D12）。
+    - **`Victory` 分支（胜利/通关，ADR-D13 D13-2；detection defer FE4/FE2/FE5）**：胜利/通关的**判定与发起**属 FE4（Boss 击败）/ FE2（房间清场）/ FE5，**非** F6。桥接方式：若 TDE 原生以 `TopDownEngineEvent` 派发关卡完成 → F6 以既有 `MMEventListener<TopDownEngineEvent>` 桥接（成员名**须核对引擎参考**，ADR-D13 VR1 实现前硬门，见 `plugins/top-down-engine.md`）；若无原生事件 → 由 FE4/FE5 经 CombatCore 侧**显式调用** `EndRun(RunOutcome.Victory)`（不改 TDE 源码）。任一路径同帧 `Stop()` + `DisableAllInput()` + 广播 `OnRunEnded(Victory)`；下游对称——C1 清缓冲、C4 回收令牌（胜利亦走 `Stop()` 归零 `global_beat_index`，绝对拍令牌同源失锚，见 SC-3）。**double-`Play()` 风险闭合**：胜利 `Stop()` 后新 Single 场景 boot 干净起局（ADR-D13 D13-3）。F6 **不**裁定「何为胜利」的游戏语义（defer game-designer/FE5）。
+    - **`RespawnComplete`（MVP 休眠 + 诊断守卫，ADR-D12）**：TDE 原地复活在 MVP **不启用**（经 Inspector 关闭，正常流程不触发）。`OnMMEvent(RespawnComplete)` 若被触发：F6 **不**调用 `BeatClock.Play()` 原地重启，改记 fatal 诊断 `[F6-FATAL] RespawnComplete fired but in-place respawn is disabled in MVP` 并返回。`OnRespawnComplete` 域事件桥接**定义保留**（不删，供 Post-MVP checkpoint 复用），但 MVP 路径不广播原地重启语义。死亡恢复由「换新局」boot 路径承接，C1/C4 的 run-end 域清空已足以保证新局干净起点（跨 run-end 边界防幽灵评级 / 令牌回收）。
+    - **边界隔离**：C1/C4 只依赖 F6 的域事件抽象（`OnRunEnded(RunOutcome)`，纯 C# 负载），不感知 TDE——等同 F6 桥接 `InputEventBus` 的既有模式（Rule 3/Rule 4）。此为**跨系统场景 G（run-end 幽灵评级 / 令牌孤儿）**的 F6 承接侧合约，与 C1 `rhythm-core.md` 双向合约「F6 ↔ C1（SC-2 run-end 清空）」、C4 SC-3 对称。验收见 **AC-F6-25**。
 
 ---
 
@@ -139,13 +142,14 @@ F6 自身不维护内部状态机，但其事件响应决定了系统的全局�
 | **场景切换中** | SceneManager 加载 Single 场景（进行中） | AllDisabled | Stopped |
 | **Gameplay Active** | `OnSceneLoaded(Single)` 完成 | GameplayActive | Playing |
 | **已暂停** | `TopDownEngineEvent(Pause)` | UIActive | Paused |
-| **玩家死亡（局终）** | `TopDownEngineEvent(PlayerDeath)`（MVP `lives=1`，无同局复活） | AllDisabled | Stopped（局终；等待 FE5 结算 + 换新局） |
+| **玩家死亡（run-end / Death）** | `TopDownEngineEvent(PlayerDeath)`（MVP `lives=1`，无同局复活）→ `EndRun(Death)` | AllDisabled | Stopped（局终；等待 FE5 结算 + 换新局） |
+| **胜利/通关（run-end / Victory，ADR-D13）** | FE4 Boss 击败 / FE2 房间清场 / FE5 显式发起 → `EndRun(Victory)`（TDE 原生关卡完成事件桥接 **或** FE 显式调用；成员名待 VR1 核对） | AllDisabled | Stopped（局终；等待 FE5 结算 + 换新局；对称 Death） |
 | **换新局（Roguelike 局重启）** | 新 `LoadSceneMode.Single` 加载（boot 路径，ADR-D1/D10/D12） | GameplayActive | Playing（新局；`global_beat_index` 归零） |
 | **复活完成（MVP 不启用）** | `TopDownEngineEvent(RespawnComplete)` — TDE 原地复活在 MVP 经 Inspector 关闭；正常流程不触发。若触发：记 fatal 诊断 `[F6-FATAL] RespawnComplete fired but in-place respawn is disabled in MVP`，**不**原地重启时钟（见 ADR-D12） | 不变 | 不变 |
 | **音频降级冻结（SC-1）** | F2 `OnAudioUnavailable` | AllDisabled（`DisableAllInput()`） | Paused（F2 自身停拍，F6 同帧 `GameManager.Pause()`） |
 | **音频恢复（SC-1）** | F2 `OnAudioRestored` / `OnBeatClockResumed` | GameplayActive | Playing（`GameManager.UnPause()`，节拍先于输入） |
 
-阶段转换的**原子性保证**：每次 `TDELifecycleAdapter` 响应 TDE 事件时，BeatClock 调用与 InputEventBus 调用在**同一 Update 帧内**完成，消除半途不一致状态。响应 `PlayerDeath` 的帧内还**同帧重广播** CombatCore 域事件 `OnPlayerDeath` 供 C1（SC-2）与 C4（SC-3）承接（防幽灵评级 / 令牌孤儿，见 Rule 15）。**`RespawnComplete`（MVP 休眠，ADR-D12）**：MVP TDE 原地复活不启用；`RespawnComplete` 若触发走 fatal 诊断守卫、**不重广播 `OnRespawnComplete`**（该桥接定义保留供 Post-MVP checkpoint 复用；MVP 死亡恢复走换新局 boot 路径，见 Rule 15 / AC-F6-11）。
+阶段转换的**原子性保证**：每次 `TDELifecycleAdapter` 响应 run-end 信号时，经**单一入口 `EndRun(RunOutcome outcome)`**（ADR-D13 D13-5，含每局一次性闭锁 `_runEnded`），BeatClock 调用与 InputEventBus 调用在**同一 Update 帧内**完成，消除半途不一致状态。run-end 帧内还**同帧广播** CombatCore 域事件 `OnRunEnded(outcome)` 供 C1（SC-2）与 C4（SC-3）承接（防幽灵评级 / 令牌孤儿，见 Rule 15）。**Death（`PlayerDeath` 桥接）与 Victory（FE4/FE2/FE5 发起）两条触发路径均汇入 `EndRun()`，闭锁保证「恰一次 `OnRunEnded` / 单次 `Stop()`」。** **`RespawnComplete`（MVP 休眠，ADR-D12）**：MVP TDE 原地复活不启用；`RespawnComplete` 若触发走 fatal 诊断守卫、**不重广播 `OnRespawnComplete`**（该桥接定义保留供 Post-MVP checkpoint 复用；MVP 死亡恢复走换新局 boot 路径，见 Rule 15 / AC-F6-11）。
 
 ---
 
@@ -157,8 +161,9 @@ F6 自身不维护内部状态机，但其事件响应决定了系统的全局�
 | F2 **→** F6 (SC-1) | BeatClock | `OnAudioUnavailable`（设备断开降级信号）；`OnAudioRestored` / `OnBeatClockResumed`（恢复信号） | 事件订阅；F6 承接降级序列，同帧 `GameManager.Pause()` + `InputEventBus.DisableAllInput()`（恢复时对称 UnPause + `EnableGameplayInput()`） |
 | F6 **→** F2 | BeatClock | `Play(bgmRef, bpm, timeSig)` / `Stop()` / `Pause()` / `Resume()` | 直接方法调用（独家控制） |
 | F6 **→** F3 | InputEventBus | `EnableGameplayInput()` / `EnableUIInput()` / `DisableAllInput()` | 直接方法调用 |
-| F6 **→** C1 (SC-2) | 节奏量化攻击系统 | `OnPlayerDeath`（**MVP 活跃**，死亡=换新局）/ `OnRespawnComplete`（**MVP 休眠**——原地复活不启用、不广播，Post-MVP 预留，见 Rule 15 / ADR-D12）（CombatCore 可见域事件，桥接 TDE `PlayerDeath`/`RespawnComplete`，负载不含 TDE 类型；C1 据此死亡时清空过期 `_pendingInput`/评级状态防幽灵评级） | 事件订阅（纯 C# event） |
-| F6 **→** C4 (SC-3) | 战斗导演系统 | `OnPlayerDeath`（同一 CombatCore 可见域事件；C4 据此同帧取消全部 `Pending`/`Granted` 令牌，防绝对拍令牌跨 `Stop()` 失锚 → 幽灵攻击） | 事件订阅（纯 C# event，对称 C1 SC-2） |
+| F6 **→** C1 (SC-2) | 节奏量化攻击系统 | `OnRunEnded(RunOutcome outcome)`（**Death 与 Victory 均触发**，ADR-D13，取代原 `OnPlayerDeath`）/ `OnRespawnComplete`（**MVP 休眠**——原地复活不启用、不广播，Post-MVP 预留，见 Rule 15 / ADR-D12）（CombatCore 可见域事件，桥接/发起，负载不含 TDE 类型；C1 据此 run-end 时清空过期 `_pendingInput`/评级状态防幽灵评级） | 事件订阅（纯 C# event） |
+| F6 **→** C4 (SC-3) | 战斗导演系统 | `OnRunEnded(outcome)`（同一 CombatCore 可见域事件，Death 与 Victory 均触发；C4 据此同帧取消全部 `Pending`/`Granted` 令牌，防绝对拍令牌跨 `Stop()` 失锚 → 幽灵攻击） | 事件订阅（纯 C# event，对称 C1 SC-2） |
+| FE4/FE2/FE5 **→** F6 (ADR-D13 D13-2) | 胜利/通关发起方 | 胜利信号 → F6 `EndRun(RunOutcome.Victory)`（TDE 原生关卡完成事件桥接 **或** FE 侧显式调用；成员名待 VR1 核对） | `MMEventListener<TopDownEngineEvent>` 桥接 或 CombatCore 侧显式方法调用 |
 | F4 **→** F6 | LevelConfigSO | `Bpm`、`TimeSignature`、`BgmFilePath`（每场景注入） | Inspector 序列化字段 |
 | C2 **→** F6 | 连招图系统 | 调用 `AnimancerAttackPlayer.PlayAttack(attackNode, clip, onComplete)` 发起攻击；`StopAttack()` 取消；`UpdateBpm(newBpm)` 中途更新速度 | 访问 F6 在 Character Prefab 上配置的 `AnimancerAttackPlayer` 组件引用 |
 | FE2 **→** F6 | 房间系统 | `BeatClock.RequestBPMChange(newBpm)`（房间级 BPM 切换） | 通过 F2 的 `RequestBPMChange()` API（非重新调用 `Play()`） |
@@ -275,6 +280,8 @@ attackAnimSpeed = clamp(currentBPM / authoredBpm, SPEED_MIN, SPEED_MAX)
 
 **执行顺序**：两个监听者均在同一帧响应，执行顺序不保证（均为 `MMEventListener` 注册顺序依赖）。两者职责独立：一方停止输入与音乐，另一方停止攻击动画。须通过集成测试（AC-F6-16）验证不存在中间帧死亡动画被攻击层遮盖的情况。
 
+> **胜利/通关对称（ADR-D13）**：`Victory` 分支经 `EndRun(RunOutcome.Victory)` 终结一局，同样 `DisableAllInput()` + `BeatClock.Stop()`。但攻击动画停止此前依赖 `AnimancerAttackPlayer` 自身对 TDE `PlayerDeath` 的监听——**胜利路径不派发 `PlayerDeath`**，故攻击 Clip 不会经该监听自动停止。实现时须由 `EndRun()` 内联调用 `AnimancerAttackPlayer.StopAttack()`（或让 `AnimancerAttackPlayer` 亦订阅 run-end 域信号），保证胜利与死亡的攻击动画收尾对称。此为实现细节，随 D13-2 胜利桥接落地时确认（不改变本 EC 的 Death 竞争语义）。
+
 ---
 
 ### EC-05：复活时 BeatClock 重启与输入通道竞争（MVP 不启用 — TDE 原地复活关闭，ADR-D12）
@@ -326,7 +333,7 @@ attackAnimSpeed = clamp(currentBPM / authoredBpm, SPEED_MIN, SPEED_MAX)
 | 系统 | 系统 ID | 期望 F6 提供的内容 | F6 提供方式 |
 |------|---------|-----------------|------------|
 | CombatCore / 连招图系统 | C2 | `AnimancerAttackPlayer` 引用（`PlayAttack(node, clip, onComplete)` / `StopAttack()` / `UpdateBpm(newBpm)`）；F6-FORMULA-01 公式定义（`authoredBpm` 来自 `AttackNodeSO`） | F6 在 Prefab 上配置 `HybridAnimancerComponent` 和 `AnimancerAttackPlayer` 并通过序列化字段暴露引用；公式在本 GDD Formulas 节中定义 |
-| CombatCore / 战斗导演系统 | C4 | `OnPlayerDeath` 域事件（SC-3 死亡令牌回收，对称 C1 SC-2）；C4 订阅后同帧取消全部令牌 | F6 桥接 TDE `PlayerDeath` → CombatCore 可见纯 C# `OnPlayerDeath` 事件（负载不含 TDE 类型），供 C4 订阅（`combat-director.md` Core Rule 12 / E16 / AC-C4-31） |
+| CombatCore / 战斗导演系统 | C4 | `OnRunEnded(RunOutcome outcome)` 域事件（SC-3 run-end 令牌回收，Death + Victory，对称 C1 SC-2）；C4 订阅后同帧取消全部令牌 | F6 经单一入口 `EndRun(outcome)` 广播 CombatCore 可见纯 C# `OnRunEnded(outcome)` 事件（Death 桥接 TDE `PlayerDeath` / Victory 由 FE4/FE2/FE5 发起，负载不含 TDE 类型），供 C4 订阅（`combat-director.md` Core Rule 12 / E16 / AC-C4-31） |
 | Hitbox 判定系统 | C6 | TDE 原生碰撞检测基础设施（TDE 提供，F6 正确配置后自动生效） | F6 不直接提供；通过正确继承 TDE 后 TDE 内置 |
 | 房间系统 | FE2 | BPM 变更通道（`BeatClock.RequestBPMChange()`，非重新 `Play()`） | 通过 F2 的 `RequestBPMChange()` API；F6 文档化此约束，FE2 遵守 |
 | 相机系统 | PL1 | TDE `LevelManager` 场景管理（相机跟随依赖 TDE 关卡基础设施） | F6 正确集成 TDE 后自动提供 |
@@ -343,9 +350,9 @@ attackAnimSpeed = clamp(currentBPM / authoredBpm, SPEED_MIN, SPEED_MAX)
 >
 > **C2（连招图系统）GDD** 中须记录：C2 从 F6 获取 `AnimancerAttackPlayer` 引用；C2 调用 `PlayAttack(node, clip, onComplete)` / `StopAttack()` / `UpdateBpm(newBpm)` 控制攻击动画；C2 使用 F6-FORMULA-01 公式参数（`authoredBpm` 来自 `AttackNodeSO`）；死亡时动画清理由 `AnimancerAttackPlayer` 自行处理（F6 责任），C2 无需订阅 `PlayerDeath` 用于动画状态清零。
 >
-> **C1（节奏量化攻击系统）GDD** 中须记录（SC-2 反向登记）：F6 `TDELifecycleAdapter` 是 TDE `PlayerDeath`/`RespawnComplete` 的桥接方，同帧重广播 CombatCore 可见的域事件 `OnPlayerDeath` / `OnRespawnComplete`（纯 C# event，负载不含 TDE 类型）；**C1 订阅这两个域事件**（而非直接订阅 TDE 事件——CombatCore 禁止 `using` TopDownEngine），复活时清空过期 `_pendingInput` 与评级状态防幽灵评级（`rhythm-core.md` E10 / 双向合约「F6 ↔ C1（SC-2 复活清空）」）。见 Rule 15。
+> **C1（节奏量化攻击系统）GDD** 中须记录（SC-2 反向登记）：F6 `TDELifecycleAdapter` 经单一入口 `EndRun(RunOutcome outcome)` 同帧广播 CombatCore 可见的域事件 `OnRunEnded(outcome)`（**Death 与 Victory 均触发**，ADR-D13，取代原 `OnPlayerDeath`；纯 C# event，负载不含 TDE 类型）；`OnRespawnComplete`（MVP 休眠，桥接 TDE `RespawnComplete`）保留供 Post-MVP。**C1 订阅 `OnRunEnded`**（而非直接订阅 TDE 事件——CombatCore 禁止 `using` TopDownEngine），run-end（死亡/胜利）时清空过期 `_pendingInput` 与评级状态防幽灵评级（`rhythm-core.md` E10 / 双向合约「F6 ↔ C1（SC-2 run-end 清空）」）。见 Rule 15。
 >
-> **C4（战斗导演系统）GDD** 中须记录（SC-3 反向登记，对称 C1 SC-2）：F6 桥接的 `OnPlayerDeath` 域事件亦被 **C4** 订阅；C4 收到后在 F6 广播的同一 Update 帧内取消**全部** `Pending`/`Granted` 令牌（死亡走 `BeatClock.Stop()` 归零 `global_beat_index`，绝对拍令牌失锚必致幽灵攻击）。C4 同受 CombatCore 边界合约约束（禁止 `using` TopDownEngine，只订阅纯 C# 域事件），且不调用任何 BeatClock 生命周期方法。见 `combat-director.md` Core Rule 12 / E16 / AC-C4-31，及 Rule 15。
+> **C4（战斗导演系统）GDD** 中须记录（SC-3 反向登记，对称 C1 SC-2）：F6 广播的 `OnRunEnded(outcome)` 域事件（Death 与 Victory 均触发）亦被 **C4** 订阅；C4 收到后在 F6 广播的同一 Update 帧内取消**全部** `Pending`/`Granted` 令牌（死亡/胜利均走 `BeatClock.Stop()` 归零 `global_beat_index`，绝对拍令牌失锚必致幽灵攻击）。C4 同受 CombatCore 边界合约约束（禁止 `using` TopDownEngine，只订阅纯 C# 域事件），且不调用任何 BeatClock 生命周期方法。见 `combat-director.md` Core Rule 12 / E16 / AC-C4-31，及 Rule 15。
 >
 > **强制幂等性合约（来自 F6 EC-03 B3 项）**：C2 的 `onComplete` 连招图推进逻辑须**幂等**——在同帧收到两次相同 `onComplete` 时，连招图仅前进一步（推荐以 `_lastAdvanceFrame == Time.frameCount` 门控）。此合约因 `UpdateBpm()` + `OnEnd` 同帧竞争场景而强制要求，C2 GDD 接口合约节须显式接受。
 
@@ -467,11 +474,15 @@ BeatClock 处于 `Playing`（currentBPM=120）期间以 `LoadSceneMode.Additive`
 
 ---
 
-### AC-F6-10 — PlayerDeath 事件同帧停止 BeatClock 并禁用所有输入
+### AC-F6-10 — run-end 信号同帧停止 BeatClock 并禁用所有输入（Death + Victory，ADR-D13）
 
 **类型**: Logic | **测试方式**: PlayMode 自动化测试
 
-从 Gameplay Active 状态发布 `TopDownEngineEvent(PlayerDeath)` 后：`BeatClock.Stop()` 与 `InputEventBus.DisableAllInput()` 记录的 `Time.frameCount` 值相同（同一 Update 帧内，单主线程保证）；死亡后输入通道不响应攻击指令；BeatClock 状态 `Stopped`，InputEventBus 状态 `AllDisabled`。
+**Death 子用例**：从 Gameplay Active 状态发布 `TopDownEngineEvent(PlayerDeath)`（经 `EndRun(RunOutcome.Death)`）后：`BeatClock.Stop()` 与 `InputEventBus.DisableAllInput()` 记录的 `Time.frameCount` 值相同（同一 Update 帧内，单主线程保证），各调用恰好 1 次；run-end 后输入通道不响应攻击指令；BeatClock 状态 `Stopped`，InputEventBus 状态 `AllDisabled`；广播 `OnRunEnded(Death)` 恰 1 次。
+
+**Victory 子用例（ADR-D13）**：从 Gameplay Active 状态经 `EndRun(RunOutcome.Victory)`（模拟 FE4/FE2/FE5 胜利信号或 TDE 关卡完成事件桥接）后：断言与 Death 子用例对称——`Stop()` + `DisableAllInput()` 同帧各 1 次、`Stopped` + `AllDisabled`、广播 `OnRunEnded(Victory)` 恰 1 次。
+
+**多触发源闭锁子用例（D13-5）**：同一局内连续两次触发 run-end（如 TDE `PlayerDeath` 桥接 + FE4 显式 `EndRun(Victory)`，或同源二次到达）→ 断言 `BeatClock.Stop()` 新增调用 == 1（非 2）、`OnRunEnded` 广播恰 1 次（一次性闭锁 `_runEnded` 早退第二次）。
 
 ---
 
@@ -665,17 +676,19 @@ EditMode 测试中注入返回 `false` 的 mock `IFMODRuntimeChecker`：断言 `
 
 ---
 
-### AC-F6-25 — 死亡/复活桥接域事件同帧广播供 C1 承接（SC-2）
+### AC-F6-25 — run-end 域事件同帧广播供 C1/C4 承接（SC-2/SC-3，Death + Victory，ADR-D13）
 
-**类型**: Logic | **测试方式**: PlayMode 自动化测试（注入 mock `TopDownEngineEvent` 源 + Spy C1 域事件订阅者）
+**类型**: Logic | **测试方式**: PlayMode 自动化测试（注入 mock `TopDownEngineEvent` 源 / 显式 `EndRun()` 调用 + Spy C1/C4 域事件订阅者）
 
-覆盖 SC-2 桥接链路。从 Gameplay Active 状态注入 TDE `TopDownEngineEvent(PlayerDeath)`、随后 `TopDownEngineEvent(RespawnComplete)`：
+覆盖 SC-2/SC-3 桥接链路。从 Gameplay Active 状态经 `EndRun(outcome)` 触发 run-end（Death 与 Victory），随后注入 `TopDownEngineEvent(RespawnComplete)`：
 
-1. **PlayerDeath 桥接**：F6 收到后同帧广播 `OnPlayerDeath`（Spy 捕获恰好 1 次），且与 `BeatClock.Stop()` + `InputEventBus.DisableAllInput()` 记录的 `Time.frameCount` 相同（同一 Update 帧）。域事件负载类型**不含任何 TopDownEngine 命名空间类型**（编译期断言：事件签名仅引用 CombatCore 可见类型）。**C4 亦为该事件订阅方**（SC-3，令牌回收侧闭环见 C4 `AC-C4-31`）。
-2. **RespawnComplete 桥接（MVP 休眠，ADR-D12）**：`OnRespawnComplete` 域事件桥接定义保留供 Post-MVP，但 MVP 路径下注入 `RespawnComplete` **不**触发原地 `BeatClock.Play()` 重启（`Play()` 新增调用 == 0），改记 fatal 诊断（与 AC-F6-11 一致）。本 AC 在 MVP 仅断言桥接**签名可编译、事件不泄漏 TDE 类型**，不断言原地重启同帧行为。
-3. **C1 可订阅性**：Spy 订阅者仅通过 CombatCore 可见的 `TDELifecycleAdapter.OnPlayerDeath` / `OnRespawnComplete` C# event 注册成功，无需引用 TDE 类型——证明 C1/C4 的边界隔离订阅路径可落地。
+1. **Death 桥接**：F6 收 TDE `PlayerDeath` → `EndRun(RunOutcome.Death)` → 同帧广播 `OnRunEnded(Death)`（Spy 捕获恰好 1 次），且与 `BeatClock.Stop()` + `InputEventBus.DisableAllInput()` 记录的 `Time.frameCount` 相同（同一 Update 帧）。域事件负载类型（`RunOutcome`）**不含任何 TopDownEngine 命名空间类型**（编译期断言：事件签名仅引用 CombatCore 可见类型）。**C4 亦为该事件订阅方**（SC-3，令牌回收侧闭环见 C4 `AC-C4-31`）。
+2. **Victory 桥接（ADR-D13）**：经 `EndRun(RunOutcome.Victory)`（模拟 FE4/FE2/FE5 胜利发起或 TDE 关卡完成事件桥接）→ 同帧广播 `OnRunEnded(Victory)`（Spy 恰 1 次），断言与 Death 子用例对称（`Stop()` + `DisableAllInput()` 同帧、负载不泄漏 TDE 类型、C1/C4 均收到）。
+3. **多触发源闭锁（D13-5）**：同局连续两次 run-end 触发 → `OnRunEnded` 广播恰 1 次、`Stop()` 新增调用 == 1（一次性闭锁 `_runEnded` 早退第二次）。
+4. **RespawnComplete 桥接（MVP 休眠，ADR-D12）**：`OnRespawnComplete` 域事件桥接定义保留供 Post-MVP，但 MVP 路径下注入 `RespawnComplete` **不**触发原地 `BeatClock.Play()` 重启（`Play()` 新增调用 == 0），改记 fatal 诊断（与 AC-F6-11 一致）。本 AC 在 MVP 仅断言桥接**签名可编译、事件不泄漏 TDE 类型**，不断言原地重启同帧行为。
+5. **C1/C4 可订阅性**：Spy 订阅者仅通过 CombatCore 可见的 `TDELifecycleAdapter.OnRunEnded`（+ `OnRespawnComplete`）C# event 注册成功，无需引用 TDE 类型——证明 C1/C4 的边界隔离订阅路径可落地。
 
-**通过条件**：以上 3 项全部通过。桥接均通过 mock TDE 事件源触发。与 C1 `AC-C1-22e`（复活清空 pending）、C4 `AC-C4-31`（死亡令牌回收）配对，形成 SC-2/SC-3 的 F6 广播侧 + C1/C4 消费侧完整闭环。
+**通过条件**：以上 5 项全部通过。桥接均通过 mock TDE 事件源 / 显式 `EndRun()` 触发。与 C1 `AC-C1-22e`（run-end 清空 pending，Death + Victory）、C4 `AC-C4-31`（run-end 令牌回收）配对，形成 SC-2/SC-3 的 F6 广播侧 + C1/C4 消费侧完整闭环。
 
 ---
 
@@ -685,7 +698,7 @@ EditMode 测试中注入返回 `false` 的 mock `IFMODRuntimeChecker`：断言 `
 - AC-F6-20：仅在原型阶段执行，须 C2 + AnimancerAttackPlayer 联调完成后安排人工盲测
 - AC-F6-23：需 F5 提供 `ISaveService` 消费者 seam + `MockSaveService` 测试替身（见 `save-persistence.md` Rule 15），并与 lead programmer 确认单一显式 bootstrap driver 的落地组件；子用例 4 须在 release-config 构建路径执行（fail-fast guard 非 Debug-only）
 - AC-F6-24（SC-1）：需 F2 GDD 正式定义 `OnAudioUnavailable` 降级事件及恢复事件（`OnAudioRestored` / 复用 `OnBeatClockResumed`）；测试注入 mock F2 事件源 + Spy TDE 暂停 API（`GameManager.Pause/UnPause`）与 `InputEventBus`，无需真实音频设备断开
-- AC-F6-25（SC-2）：需与 lead programmer 确认 `TDELifecycleAdapter` 桥接域事件 `OnPlayerDeath`/`OnRespawnComplete` 的程序集可见性（CombatCore 可引用，不引入 TDE 类型泄漏）；测试注入 mock `TopDownEngineEvent` 源 + Spy C1 订阅者，无需真实 TDE 死亡流程。与 C1 `AC-C1-22e` 配对验证 SC-2 闭环
+- AC-F6-25（SC-2/SC-3，ADR-D13）：需与 lead programmer 确认 `TDELifecycleAdapter` 桥接域事件 `OnRunEnded(RunOutcome)`（+ `OnRespawnComplete`）与单一入口 `EndRun(RunOutcome)` 的程序集可见性（CombatCore 可引用，不引入 TDE 类型泄漏；`RunOutcome` 为 CombatCore 可见纯 C# enum）；测试注入 mock `TopDownEngineEvent` 源 / 显式 `EndRun()` 调用 + Spy C1/C4 订阅者，无需真实 TDE 死亡/胜利流程。**胜利桥接的 TDE 关卡完成事件成员名须先经 ADR-D13 VR1 核对**（实现前硬门）。与 C1 `AC-C1-22e`、C4 `AC-C4-31` 配对验证 SC-2/SC-3 闭环
 
 ---
 
