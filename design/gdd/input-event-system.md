@@ -315,7 +315,7 @@ TopDownEngine 4.x 通过 `InputSystemManagerEventsBased` 在角色死亡/重生�
 | 下游系统 | 消费的数据 | 接口 |
 |---------|-----------|------|
 | C1 节奏量化攻击系统 | `AttackInputEvent`（attackType, inputDspTime, **chargeStartDspTime**）；C1 须应用 latency_offset_s 修正（见 F3-F2 公式） | 订阅 `OnAttackInput` |
-| C2 连招图系统 | `AttackInputEvent`（attackType, inputDspTime，用于时序排序）+ `DashInputEvent`（direction, inputDspTime） | 订阅 `OnAttackInput` + `OnDashInput` |
+| C2 连招图系统（**间接，非 F3 直接下游**） | 不直接订阅 F3——攻击 `AttackType` 经 C1 `RhythmJudgmentEvent` 中转（见上行 C1→C2 链）；C2 连招图 `requiredInput` 仅匹配 `AttackType`，**不消费** `DashInputEvent`。参见 `combo-system.md` 上游依赖表（只列 C1/F4/ADR-D5） | 无直接订阅（经 C1 间接） |
 | F6 TDE 集成层 | `DashInputEvent`；`GetCurrentMoveInput()` 持续查询；`MoveChangedEvent`（direction, isStarted）；`EnableGameplayInput()` / `EnableUIInput()` / `DisableAllInput()`（`TDELifecycleAdapter` 为唯一外部调用者，见 E8）| 订阅 + 同步查询 + 状态控制 |
 | FE7 游戏设置系统 | `SaveBindingOverridesAsJson()` / `LoadBindingOverridesFromJson(json)` | 方法调用（FE7 主动调用 F3） |
 | UI 系统（P1/P2/P5 等） | UI Action 事件（Navigate, Submit, Cancel） | 订阅 UI Action Map 事件 |
