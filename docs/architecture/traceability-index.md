@@ -1,15 +1,15 @@
 # Traceability Index
 
-> **Last Updated**: 2026-08-11 (Rev.9 · ADR-D8 Accepted 复跑 — 四 Core DI 缝隙 Gap 转正)
-> **Source**: `/architecture-review full` (post-D8-Accept)
-> **TR Registry**: `docs/architecture/tr-registry.yaml` (146 entries, v2)
-> **Verdict this review**: CONCERNS（健康 — 0 阻塞项）— see `architecture-review-2026-08-11-postD8.md`
+> **Last Updated**: 2026-08-12 (Rev.10 · coverage 复跑 — ADR-D12/D13/D14 增量 + 6 条 run-end/BD-2 TR)
+> **Source**: `/architecture-review 验证 ADR 覆盖度` (coverage mode)
+> **TR Registry**: `docs/architecture/tr-registry.yaml` (152 entries, v3)
+> **Verdict this review**: CONCERNS（健康 — 0 阻塞项）— see `architecture-review-2026-08-12-coverage.md`
 >
-> **D8 Accept 收口（2026-08-11）**：全部 9 ADR 现为 `Accepted`（D1/D2/D3/D4/D5/D6/D7/D8/D10）——
-> 引用 Proposed ADR 导致的故事自动阻塞已全部清除。A2 接口所有权由 **ADR-D8** 声明并归属
-> （五 DI 缝隙接口 + 规范 pause/resume 源 + Mock 契约），step-1 缝隙 spike 以 `IRandomSource`
-> 为代表落地并经 CI（game-ci unity-test-runner, editmode）门控——**80% 单测硬门已解锁**。
-> 上轮各 Core 系统的单一残留 Gap（A2 接口所有权）本轮据此**转 Covered**（+4）。
+> **coverage 增量（2026-08-12）**：上轮 v8 后新增 **ADR-D12（死亡换局，Accepted）/ D13（胜利 run-end 统一，
+> Accepted，TD+game-designer 会签）/ D14（BD-2 取消窗瞬态，Proposed）**。ADR-D12+D13 闭合上轮两个审查缺口
+> **SG-2（死亡边界）+ W-F（胜利边界）**——死亡/胜利经单一 F6 `EndRun(RunOutcome)` 出口统一 run-end。
+> 追加 6 条 run-end/BD-2 TR（rhythm-019/director-019/tde-013/tde-014/combo-015/concept-015）。
+> **风险**：D14 仍 Proposed → C2 BD-2 故事受 Proposed 门控阻塞（C2 实装未开工，不阻塞 C1 冲刺）。
 
 ---
 
@@ -17,17 +17,17 @@
 
 | System | GDD | Total TRs | Covered | Partial | Gap | Notes |
 |--------|-----|-----------|---------|---------|-----|-------|
-| concept | game-concept.md | 14 | 5 | 4 | 5 | 剩余缺口待 FE3/C5 GDD |
+| concept | game-concept.md | 15 | 6 | 4 | 5 | +concept-015 run-ends-on-death → D12/D13 Covered |
 | beatclock | audio-beat-clock.md | 17 | 1 | 3 | 13 | GDD=规范；内部项非 ADR 缺口 |
 | input | input-event-system.md | 15 | 2 | 0 | 13 | GDD=规范 |
 | datalayer | so-data-layer.md | 12 | 11 | 1 | 0 | **D4 全覆盖** |
 | save | save-persistence.md | 13 | 2 | 0 | 11 | GDD=规范 |
-| tde | tde-integration.md | 12 | 8 | 0 | 4 | D10 补齐初始化时序 |
-| **rhythm (C1)** | rhythm-core.md | 18 | 16 | 2 | 0 | D3 主架构；IBeatClock/IInputEventBus 已归 ADR-D8(Accepted) — **Gap 已闭环** |
-| **combo (C2)** | combo-system.md | 14 | 12 | 2 | 0 | D3/D4/D5；IComboCounter 已归 ADR-D8(Accepted) — **Gap 已闭环** |
+| tde | tde-integration.md | 14 | 9 | 1 | 4 | +tde-013 run-end 边界(D12/D13 Covered) · +tde-014 胜利事件核对(D13 Partial) |
+| **rhythm (C1)** | rhythm-core.md | 19 | 17 | 2 | 0 | D3 主架构；+rhythm-019 SC-2 run-end 清空 → D12/D13 Covered |
+| **combo (C2)** | combo-system.md | 15 | 12 | 3 | 0 | D3/D4/D5；+combo-015 BD-2 适应窗口 → D14 Proposed(Partial) |
 | **perk (C3)** | perk-system.md | 13 | 12 | 1 | 0 | D4；IRandomSource/pause 源已归 ADR-D8(Accepted) — **Gap 已闭环** |
-| **director (C4)** | combat-director.md | 18 | 16 | 2 | 0 | D2/D6/D10；IDSPClock mock 已归 ADR-D8(Accepted) — **Gap 已闭环** |
-| **Total** | | **146** | **85** | **15** | **46** | |
+| **director (C4)** | combat-director.md | 19 | 17 | 2 | 0 | D2/D6/D10；+director-019 SC-3 令牌回收 → D12/D13 Covered |
+| **Total** | | **152** | **89** | **17** | **46** | |
 
 > Core 层"Covered"以跨切面 ADR（D2/D3/D4/D5/D6/D10）+ DI 缝隙 ADR-D8 承接为准；应用层状态机/调度器
 > 逻辑以 GDD 为规范文档，不单列 ADR 缺口。各 Core 系统上轮的单一残留 Gap（A2 接口所有权）
@@ -48,6 +48,9 @@
 | ADR-D7 (Save/Persistence) | Accepted | TR-save-005/008, TR-datalayer-009 |
 | ADR-D8 (DI/Test Seams) | Accepted | TR-rhythm-015, TR-combo(count seam/AC-C2-22), TR-perk(RNG/pause/AC-C3-14), TR-director(clock mock) — 五 DI 缝隙接口 + 规范 pause/resume 源；step-1 spike CI 门控 |
 | ADR-D10 (Bootstrap Sequencing) | Accepted | TR-save (Initialize), TR-beatclock-007 (LatencyOffset), TR-tde (boot order), TR-director-015 |
+| ADR-D12 (Death & Run-Lifecycle) | Accepted | TR-concept-015, TR-tde-013, TR-rhythm-019, TR-director-019 — 死亡换局边界(run-ends-on-death) |
+| ADR-D13 (Run-End Victory Unification) | Accepted (TD+GD 会签) | TR-tde-013/014, TR-rhythm-019, TR-director-019 — 统一 `OnRunEnded(RunOutcome)`,胜利路径对称 |
+| ADR-D14 (BD-2 Cancel-Window Transient) | **Proposed** | TR-combo-015 — 取消窗适应窗口触发点前移至 `OnMeterChangeAccepted`(C2 故事待 D14 Accept 解阻塞) |
 
 ---
 
@@ -55,9 +58,9 @@
 
 | Layer | Total TRs | Covered | Partial | Gap | Notes |
 |-------|-----------|---------|---------|-----|-------|
-| Foundation (F2-F6) | 69 | 24 | 4 | 41 | datalayer/tde 覆盖佳；beatclock/input/save GDD=规范 |
-| Core-concept | 14 | 5 | 4 | 5 | D3 覆盖 concept-006/007 |
-| **Core (C1-C4)** | 63 | 56 | 7 | 0 | 跨切面 ADR + ADR-D8 DI 缝隙承接；4 残留 Gap 已随 D8 Accept 转 Covered |
+| Foundation (F2-F6) | 71 | 25 | 5 | 41 | datalayer/tde 覆盖佳；+tde-013(D12/D13 Covered)/tde-014(D13 Partial) |
+| Core-concept | 15 | 6 | 4 | 5 | D3 覆盖 concept-006/007；+concept-015 run-ends-on-death(D12/D13) |
+| **Core (C1-C4)** | 66 | 58 | 8 | 0 | 跨切面 ADR + D8 DI 缝隙 + D12/D13 run-end；+rhythm-019/director-019 Covered、combo-015 Partial(D14 Proposed) |
 | Feature | 0 | 0 | 0 | 0 | 尚无 GDD |
 | Presentation | 0 | 0 | 0 | 0 | 尚无 GDD |
 
@@ -112,6 +115,7 @@ beatclock(13)/input(13)/save(11) 的 37 项 Gap 为**预期**——这些系统�
 | v6 | 2026-07-19 | 7 | 83 | 29 | 8 | 46 | 34.9% |
 | v7 | 2026-08-11 | 8 (D1-D7, D10) | 146 | 81 | 15 | 50 | 55.5% |
 | **v8 (post-D8)** | **2026-08-11** | **9 (全 Accepted)** | **146** | **85** | **15** | **46** | **58.2%** |
+| **v9 (coverage)** | **2026-08-12** | **12 (D1-D8,D10,D12,D13 Accepted; D14 Proposed)** | **152** | **89** | **17** | **46** | **~58.6%** |
 
 v8: 全部 9 ADR Accepted（D8 收口）；A1 唯一裁定消解、A2 接口所有权由 D8 归属并经 step-1 spike +
 CI 门控落地；4 条 Core DI 缝隙 Gap 转 Covered（+4）。残留 Gap 主要为 Foundation GDD=规范项（37）
