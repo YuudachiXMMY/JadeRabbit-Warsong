@@ -37,7 +37,7 @@
 #   Each entry: name, status, source, referenced_by[], attributes{}, added, revised
 
 version: 1
-last_updated: "2026-08-11"
+last_updated: "2026-08-12"
 
 # ─── ENTITIES ────────────────────────────────────────────────────────────────
 # Named game-world objects: enemies, NPCs, characters, factions, bosses.
@@ -344,3 +344,51 @@ constants:
 #     unit: slots
 #     added: 2026-03-26
 #     revised: ""
+
+
+# ─── FORBIDDEN PATTERNS ──────────────────────────────────────────────────────
+# Named anti-patterns that cross system boundaries: a coding/design rule that
+# one GDD or ADR forbids and other systems must not violate. Register when the
+# prohibition is asserted in one doc but must be honored by others (追溯锚点).
+#
+# Required fields: name, status, source, referenced_by, added
+# Attribute fields: rule (the prohibition), rationale
+
+forbidden_patterns:
+  - name: freeze_pauses_beatclock
+    status: active
+    source: design/gdd/audio-beat-clock.md   # F2 冻帧 Edge Case 声明（SG-1）
+    referenced_by:
+      - design/gdd/audio-beat-clock.md
+      - design/gdd/rhythm-core.md            # C1 E11 依赖冻帧不停 DSP 时钟
+      - design/gdd/combo-system.md           # C2 EC15 依赖冻帧不停时基
+    rule: "Perfect 冻帧（33–66ms）为纯表现层：任何系统（含 PL2）禁止以冻帧为由调用 BeatClock.Play/Stop/Pause/Resume、重锚 DSP 时钟、或置 Time.timeScale=0；F2 冻帧期间持续广播拍点，FMOD DSP 不受影响。"
+    rationale: "保证 C1(DSP 判定)与 C2(动画归一化取消窗)在冻帧后恒处同一音乐时基，消除 SG-1 时基竞态（cross-review 2026-08-11b）。"
+    added: 2026-08-12
+    revised: ""
+
+  - name: freeze_zeroes_player_attack_speed
+    status: active
+    source: design/gdd/combo-system.md        # C2 EC15 声明（SG-1）
+    referenced_by:
+      - design/gdd/combo-system.md
+      - design/gdd/rhythm-core.md             # C1 E11 对称
+      - design/gdd/tde-integration.md         # F6 是 AnimancerState.Speed 唯一 writer（F6-FORMULA-01）
+    rule: "冻帧禁止将玩家攻击层 AnimancerState.Speed 置 0（或图级暂停玩家攻击动画）；取消窗归一化时间照常随 BPM 锁定的攻击动画推进。AnimancerState.Speed 的唯一 owner/writer 为 F6 AnimancerAttackPlayer。"
+    rationale: "冻结玩家攻击动画会令 C2 动画时域取消窗滞后于 C1 DSP 判定 → 冻帧后接不上连招的失信体感（SG-1）。"
+    added: 2026-08-12
+    revised: ""
+
+  - name: f6_respawncomplete_inplace_restart_mvp
+    status: active
+    source: docs/architecture/adr-d12-death-run-lifecycle.md   # ADR-D12 裁定（SG-2）
+    referenced_by:
+      - docs/architecture/adr-d12-death-run-lifecycle.md
+      - docs/architecture/adr-d1-tde-integration.md
+      - design/gdd/tde-integration.md          # F6 Rule 15 / 状态表 / AC-F6-11
+      - design/gdd/rhythm-core.md              # C1 E10（MVP 休眠）
+      - design/gdd/combat-director.md          # C4 SC-3（不订阅 OnRespawnComplete）
+    rule: "MVP 禁用 TDE 原地复活：RespawnComplete → BeatClock.Play() 原地重启在 MVP 不启用（经 Inspector 关闭，非改 TDE 源码）；若触发走 [F6-FATAL] 诊断守卫、不原地重启、不广播 OnRespawnComplete。死亡=换新局（run-ends-on-death）。"
+    rationale: "原地复活会架空 FE5 局结算与 merit 落盘，与 game-concept 死亡=换新局/无同局复活互斥（SG-2，cross-review 2026-08-11b）。"
+    added: 2026-08-12
+    revised: ""

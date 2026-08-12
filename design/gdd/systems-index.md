@@ -1,10 +1,11 @@
 # Systems Index: 玉兔：破阵 (Jade Rabbit: Warsong)
 
-> **Status**: Systems Design — Cross-review FAIL (2026-08-11b)
+> **Status**: Systems Design — Cross-review CONCERNS (2026-08-12)
 > **Created**: 2026-07-13
-> **Last Updated**: 2026-08-11
+> **Last Updated**: 2026-08-12
 > **Source Concept**: design/gdd/game-concept.md
-> **Latest Cross-review**: `design/gdd/gdd-cross-review-2026-08-11b.md`（**FAIL** — 3 跨系统场景 BLOCKER：冻帧×时钟 / 死亡语义 / C4 令牌孤儿；F6/C4/C1 待修订）
+> **Latest Cross-review**: `design/gdd/gdd-cross-review-2026-08-12.md`（**CONCERNS** — c02bdced 补丁消解 3 BLOCKER 核心矛盾；无存活 BLOCKER。残留 coupled WARNING：C1 死亡模型传播/F6 措辞残留/胜利边界/systems-index 同步/registry 落地。C4 SG-3 已解回 Approved；C1/F6 保留待修订，死亡语义清理应在实现前完成）
+> **Prior Cross-review**: `design/gdd/gdd-cross-review-2026-08-11b.md`（FAIL — 3 跨系统场景 BLOCKER：冻帧×时钟 / 死亡语义 / C4 令牌孤儿）
 
 ---
 
@@ -26,10 +27,10 @@
 | F4 | ScriptableObject 数据层（推断） | Foundation | **MVP** | **Approved** | `design/gdd/so-data-layer.md` | — |
 | F5 | 存档/持久化系统 | Foundation | **MVP** | **Approved** | `design/gdd/save-persistence.md` | ADR-D7 (Accepted), ADR-D10 (Accepted) |
 | F6 | TopDownEngine & Animancer 集成层 | Foundation | **MVP** | **Needs Revision** | `design/gdd/tde-integration.md` | ADR-D1 (Accepted), ADR-D5 (Accepted), ADR-D10 (Accepted) |
-| C1 | 节奏量化攻击系统 | Core | **MVP** | **Needs Revision** | `design/gdd/rhythm-core.md` | F2, F3, ADR-D8 (Accepted) |
+| C1 | 节奏量化攻击系统 | Core | **MVP** | **Needs Revision** | `design/gdd/rhythm-core.md` | F2, F3, F6, ADR-D8 (Accepted) |
 | C2 | 连招图系统 | Core | **MVP** | **Approved** | `design/gdd/combo-system.md` | F4, C1, ADR-D8 (Accepted) |
 | C3 | 心法构筑系统 | Core | **MVP** | **Approved** | `design/gdd/perk-system.md` | F4, C1, ADR-D8 (Accepted) |
-| C4 | 战斗导演 | Core | **MVP** | **Needs Revision** | `design/gdd/combat-director.md` | F2, F4, ADR-D8 (Accepted) |
+| C4 | 战斗导演 | Core | **MVP** | **Approved** | `design/gdd/combat-director.md` | F2, F4, F6, ADR-D8 (Accepted) |
 | C5 | 武器系统（推断） | Core | **MVP** | Not Started | `design/gdd/weapon-system.md` | F4, C2 |
 | C6 | Hitbox/受击判定系统（推断） | Core | **MVP** | Not Started | `design/gdd/hitbox-system.md` | C2, F6 |
 | FE3 | 延迟校准系统 | Feature | **MVP** | Not Started | `design/gdd/latency-calibration.md` | F2, F5 |
@@ -92,7 +93,7 @@
 ### Core Layer（依赖 Foundation）
 
 1. **C1 节奏量化攻击系统** — 依赖：F2（拍点时序）+ F3（输入时间戳）+ F6（死亡/复活生命周期域事件 `OnPlayerDeath`，SC-2 清缓冲 / 幽灵评级守卫；Animancer 攻击动画播放，ADR-D5/ADR-D12）
-2. **C4 战斗导演** — 依赖：F2（拍槽分配 / 拍点时序）+ F4（EnemyInfoSO.attackWindupBeats，令牌落拍计算）
+2. **C4 战斗导演** — 依赖：F2（拍槽分配 / 拍点时序）+ F4（EnemyInfoSO.attackWindupBeats，令牌落拍计算）+ F6（死亡生命周期域事件 `OnPlayerDeath`，SC-3 死亡令牌回收 / 对称 C1 SC-2，ADR-D12）
 3. **C2 连招图系统** — 依赖：F4（AttackNodeSO/ComboGraphSO schema）+ C1（评级控制取消窗）+ F2（currentBpm 来源 / `OnMeterChangeAccepted` BPM 变更事件）+ F6（Animancer 攻击层动画管线，ADR-D5）
 4. **C3 心法构筑系统** — 依赖：F4（PerkSO schema）+ C1（心法修改节奏规则）+ F2（`OnBeatClockPaused`/`OnBeatClockResumed`，心法冻结栈计时/解冻，BC-6）
 5. **C5 武器系统** — 依赖：F4（WeaponSO schema）+ C2（连招图运行时容器）
@@ -199,9 +200,9 @@
 | 识别的系统总数 | 31 |
 | 设计文档已开始 | 10 |
 | 设计文档已审查 | 10 |
-| 设计文档已 Approved | 7 |
-| 设计文档 Needs Revision | 3 |
-| MVP 系统已设计 | 7 / 27 |
+| 设计文档已 Approved | 8 |
+| 设计文档 Needs Revision | 2 |
+| MVP 系统已设计 | 8 / 27 |
 | Vertical Slice 系统已设计 | 0 / 1 |
 | Alpha 系统已设计 | 0 / 1 |
 | Full Vision 系统已设计 | 0 / 1 |

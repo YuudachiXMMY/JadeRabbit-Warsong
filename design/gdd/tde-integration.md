@@ -145,7 +145,7 @@ F6 自身不维护内部状态机，但其事件响应决定了系统的全局�
 | **音频降级冻结（SC-1）** | F2 `OnAudioUnavailable` | AllDisabled（`DisableAllInput()`） | Paused（F2 自身停拍，F6 同帧 `GameManager.Pause()`） |
 | **音频恢复（SC-1）** | F2 `OnAudioRestored` / `OnBeatClockResumed` | GameplayActive | Playing（`GameManager.UnPause()`，节拍先于输入） |
 
-阶段转换的**原子性保证**：每次 `TDELifecycleAdapter` 响应 TDE 事件时，BeatClock 调用与 InputEventBus 调用在**同一 Update 帧内**完成，消除半途不一致状态。响应 `PlayerDeath` / `RespawnComplete` 的帧内还**同帧重广播** CombatCore 域事件 `OnPlayerDeath` / `OnRespawnComplete` 供 C1 承接（防复活幽灵评级，见 Rule 15 / SC-2）。
+阶段转换的**原子性保证**：每次 `TDELifecycleAdapter` 响应 TDE 事件时，BeatClock 调用与 InputEventBus 调用在**同一 Update 帧内**完成，消除半途不一致状态。响应 `PlayerDeath` 的帧内还**同帧重广播** CombatCore 域事件 `OnPlayerDeath` 供 C1（SC-2）与 C4（SC-3）承接（防幽灵评级 / 令牌孤儿，见 Rule 15）。**`RespawnComplete`（MVP 休眠，ADR-D12）**：MVP TDE 原地复活不启用；`RespawnComplete` 若触发走 fatal 诊断守卫、**不重广播 `OnRespawnComplete`**（该桥接定义保留供 Post-MVP checkpoint 复用；MVP 死亡恢复走换新局 boot 路径，见 Rule 15 / AC-F6-11）。
 
 ---
 
@@ -157,7 +157,7 @@ F6 自身不维护内部状态机，但其事件响应决定了系统的全局�
 | F2 **→** F6 (SC-1) | BeatClock | `OnAudioUnavailable`（设备断开降级信号）；`OnAudioRestored` / `OnBeatClockResumed`（恢复信号） | 事件订阅；F6 承接降级序列，同帧 `GameManager.Pause()` + `InputEventBus.DisableAllInput()`（恢复时对称 UnPause + `EnableGameplayInput()`） |
 | F6 **→** F2 | BeatClock | `Play(bgmRef, bpm, timeSig)` / `Stop()` / `Pause()` / `Resume()` | 直接方法调用（独家控制） |
 | F6 **→** F3 | InputEventBus | `EnableGameplayInput()` / `EnableUIInput()` / `DisableAllInput()` | 直接方法调用 |
-| F6 **→** C1 (SC-2) | 节奏量化攻击系统 | `OnPlayerDeath` / `OnRespawnComplete`（CombatCore 可见域事件，桥接 TDE `PlayerDeath`/`RespawnComplete`，负载不含 TDE 类型；C1 据此清空过期 `_pendingInput`/评级状态防幽灵评级） | 事件订阅（纯 C# event） |
+| F6 **→** C1 (SC-2) | 节奏量化攻击系统 | `OnPlayerDeath`（**MVP 活跃**，死亡=换新局）/ `OnRespawnComplete`（**MVP 休眠**——原地复活不启用、不广播，Post-MVP 预留，见 Rule 15 / ADR-D12）（CombatCore 可见域事件，桥接 TDE `PlayerDeath`/`RespawnComplete`，负载不含 TDE 类型；C1 据此死亡时清空过期 `_pendingInput`/评级状态防幽灵评级） | 事件订阅（纯 C# event） |
 | F6 **→** C4 (SC-3) | 战斗导演系统 | `OnPlayerDeath`（同一 CombatCore 可见域事件；C4 据此同帧取消全部 `Pending`/`Granted` 令牌，防绝对拍令牌跨 `Stop()` 失锚 → 幽灵攻击） | 事件订阅（纯 C# event，对称 C1 SC-2） |
 | F4 **→** F6 | LevelConfigSO | `Bpm`、`TimeSignature`、`BgmFilePath`（每场景注入） | Inspector 序列化字段 |
 | C2 **→** F6 | 连招图系统 | 调用 `AnimancerAttackPlayer.PlayAttack(attackNode, clip, onComplete)` 发起攻击；`StopAttack()` 取消；`UpdateBpm(newBpm)` 中途更新速度 | 访问 F6 在 Character Prefab 上配置的 `AnimancerAttackPlayer` 组件引用 |

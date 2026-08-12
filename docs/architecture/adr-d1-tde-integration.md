@@ -254,6 +254,12 @@ public sealed class TDELifecycleAdapter : MonoBehaviour,
 
     private bool _fmodVerified;
 
+    // F6 domain events — pure C# events ON this adapter (payload carries NO TDE types;
+    // CombatCore consumers subscribe here, never to TDE events directly). See
+    // tde-integration.md Rule 15 / AC-F6-25. OnRespawnComplete is MVP-dormant (ADR-D12).
+    public event System.Action OnPlayerDeath;
+    public event System.Action OnRespawnComplete;   // Post-MVP checkpoint only — NOT raised in MVP
+
     // A1 裁定 (2026-08-11): Start() ONLY does read-only readiness probing.
     // It does NOT subscribe — subscription lives in OnEnable/OnDisable (below).
     private void Start()
@@ -325,7 +331,7 @@ public sealed class TDELifecycleAdapter : MonoBehaviour,
                 // Run-ends-on-death (MVP). See ADR-D12.
                 _beatClock.Stop();                 // run-ending clock stop
                 _inputEventBus.DisableAllInput();
-                _lifecycleEvents.RaisePlayerDeath();  // broadcast OnPlayerDeath (CombatCore domain event)
+                OnPlayerDeath?.Invoke();           // broadcast OnPlayerDeath (pure C# event on this adapter; F6 AC-F6-25)
                 break;
             case TopDownEngineEventTypes.RespawnComplete:
                 // MVP: in-place respawn is DISABLED (death = new run, ADR-D12).
