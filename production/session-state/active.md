@@ -1,5 +1,33 @@
 # Session State — 2026-07-21
 
+---
+
+## 🔄 HANDOFF — 2026-08-11 · OQ-4/OQ-6 已闭环 · 待独立 /architecture-review
+
+**本 session 结论（`/architecture-decision 处理 OQ-4/OQ-6`）**：无新决策/新 ADR/新 GDD 修订待办——OQ-4 与 OQ-6 已由既有 Accepted ADR **全链路闭环**（决策 + 下游传播均已落地，在已合并 worktree `gdd-blockers-2026-08-10` 完成）。
+
+| 阻塞 | 决策载体 | 状态 |
+|---|---|---|
+| **OQ-4**（B2b 初始化时序 / D-4 `ISaveService` 同步 seam / D-5 `LatencyOffsetMs` 两阶段写者） | `docs/architecture/adr-d10-bootstrap-sequencing.md` | Accepted 2026-08-09 |
+| **OQ-6**（BeatClock 主线程 poll 模型，否决 `OnAudioFilterRead`/`ConcurrentQueue`） | `docs/architecture/adr-d6-audio-middleware.md` §Addendum | Accepted 2026-08-08 |
+
+**下游传播（已同轮落地，勿重复修）**：
+- F2 `audio-beat-clock.md`：Rule 7/10（两阶段写者+禁自 load，`:49/:57`）、Rule 12/14（normative 主线程，删 ConcurrentQueue 条件句，`:65/:74`）、依赖章"无 F5 直接依赖"（`:457`）、OQ-4/OQ-6 strikethrough 标已解决（`:755/:757`）。OQ-5 仍开放。
+- F5 `save-persistence.md`：Rule 14 `Initialize()` 同步阻塞、Rule 15 `ISaveService` seam（`:88/:90`）、`LoadLatencyCalibration()` 调用方迁至 F6。
+- F6 `tde-integration.md`：Rule 13 F5-init gate + boot-inject（`:105`）、**AC-F6-23**（5 子用例，headless via `MockSaveService`，`:599`）。
+- registry `architecture.yaml`：`LatencyOffsetMs` 两阶段 stance（`:87`）+ `fe3_forward_stance`（`:89`）+ `ISaveService` 接口（`:278`）+ forbidden pattern `f2_self_load_latency_from_f5`（`:446`）。
+- systems-index：F2/F5/F6 均标 `Revised/Amended (ADR-D10 同轮) — Pending Re-review`。
+
+**➡️ 下一步（用户已选：新 session 验证）**：在**全新 Claude Code session** 运行 `/architecture-review`（隔离原则：审查须独立于撰写上下文，禁止与 `/architecture-decision` 同 session）。审查焦点：
+1. ADR-D10 D-4/D-5 是否被 tr-registry 追踪，F2/F5/F6 三文档引用一致。
+2. ADR-D6 Addendum 主线程模型在 F2 Rule 12/14 完整体现、无残留 `ConcurrentQueue` 条件句。
+3. FE3 forward-stance（registry `:89`）纳入校验——未来 FE3 GDD 违反"运行期唯一写者/主线程注入"须报警。
+4. F2/F5/F6 三文档 `Pending Re-review` 是否具备升级 Approved 的一致性条件。
+
+**仍开放（未在本次范围）**：OQ-5（`OnBeatClockPaused`/`OnBeatClockResumed` 暂停/恢复事件，原 B2 遗留），卡 `IAudioPlayer.Pause()/Resume()` 接口缺失 + C1/C2 消费确认。
+
+---
+
 ## Current Focus
 
 - **Epic**: Pre-Production
@@ -430,3 +458,59 @@ Task: 对 C2 跑 /design-review；follow-up 修 C1 clamp 50→999 (OQ1)
 <!-- CONSISTENCY-CHECK: 2026-08-10 | GDDs checked: 9 | Registry entries: 9 (2 formulas, 7 constants) | Conflicts found: 2 (RESOLVED: rating_multiplier Perfect 1.5→1.0 in combo-system.md + registered — 对应 /review-all-gdds BC-1; TRACKED: combo_max 999 vs rhythm-core ComboMax 50 = BC-7, pending C1 revision) | Missing-registry candidates: 11 | Log: docs/consistency-failures.md -->
 <!-- CONSISTENCY-CHECK-FOLLOWUP: rhythm-core.md ComboMax 50→999 (C1 债务=BC-7, 已批准待修订); 建议登记 11 条跨系统事实 (final_damage 总公式, attackAnimSpeed 公式, beat_offset_ms, half_beat 30000/bpm, platformMinPerfectMs, 0.1ms 精度承诺, BPM=0→120 回退, CancelTier 映射, 拍号定义域, 500ms BGM 提前量, 5ms 重锚阈值) -->
 
+
+## Session Extract — /architecture-review 2026-08-11
+- Verdict: CONCERNS
+- Requirements: 146 total — 81 covered, 15 partial, 50 gaps (registry v1→v2, 首次纳入 Core C1-C4 共 63 TR)
+- New TR-IDs registered: 63 (TR-rhythm 18, TR-combo 14, TR-perk 13, TR-director 18)
+- GDD revision flags: combat-director.md (ADVISORY, E1 同帧保证; 本轮未改 systems-index)
+- Top ADR gaps: ADR-D8 DI/测试缝隙契约(A2, 最高价值); 修订 D1 命名+生命周期(A1/A3); 修订 D2 同帧保证(E1)
+- Blocking-for-impl: A1 D1/D10 订阅生命周期冲突; A2 接口所有权(阻塞80%单测); A4 BeatClock 事件schema无权威
+- Pre-gate: tests/ + CI + UX/a11y 全缺 → 需 /test-setup + /ux-design 后方可 gate-check
+- Report: docs/architecture/architecture-review-2026-08-11.md (PR #17, branch worktree-arch-review-2026-08-11)
+
+## Session Extract — /architecture-review 验证 A2 消解后 2026-08-11
+- Verdict: CONCERNS
+- A2 本体已消解：ADR-D8 声明并归属五 DI 接口(IBeatClock/IInputEventBus/IComboCounter/IRandomSource/IDSPClock)+规范 pause/resume 源+Mock 契约；registry(architecture.yaml:297/445/574)+systems-index 依赖已登记；F2 GDD:51-53 pause/resume schema 已锁定(A4 消费侧)
+- A2 未完全关闭(残留)：R1 🟠 ADR-D8 仍 Proposed→引用 Proposed ADR 故事自动阻塞→80% 单测硬门仍锁定，须 /test-setup(CombatCore EditMode asmdef + InternalsVisibleTo)+纯 C# NUnit spike → D8 Accept
+- 本 session 落地(PR #21, branch worktree-arch-review-a2-verify-2026-08-11)：R3 索引刷新(traceability-index + tr-registry:826 陈旧 A2 文本→已归 D8 Proposed，保留 Gap 计数不虚增)；R2 IDSPClock 命名同步(ADR-D6 6 处 + F2 GDD 6 处 GetCurrentTime/GetCurrentDSPTime→钦定 GetDspTime，消除编译级分歧)
+- 未改：历史评审快照 + D8 旧名分歧描述；URP.png(worktree LFS 占位)已排除
+- 相邻未决(非本轮)：A1 D1/D10 生命周期二选一(🔴 BLOCKING)；ADR-D3 §3 补 HeavyAttack；D8 Accept 需 /test-setup
+- 下一步：/test-setup → D8 Accept 解锁 C1-C4 单测硬门
+
+## Session Extract — /review-all-gdds full 复审 2026-08-11b
+- Verdict: **FAIL**（Phase 4 场景走查报 3 BLOCKER；Phase 2/3 均 CONCERNS）
+- GDDs reviewed: 9（F2/F3/F4/F5/F6 + C1/C2/C3/C4）+ game-concept + entities.yaml
+- Flagged for revision: tde-integration(F6), combat-director(C4), rhythm-core(C1) → systems-index 标 Needs Revision（Approved 10→7）
+- Blocking issues: SG-1 冻帧×BeatClock 未定义 / SG-2 死亡语义冲突(F6原地复活 vs Roguelike局结算) / SG-3 C4令牌孤儿(依附SG-2)
+- Warnings: W-1 音频恢复Resume归属 / W-2 F3↔C2依赖不对称 / W-3 索引Map缺C1→F6；DT-1 combo无sink触顶饱和 / DT-2 Beat档缺护栏对称 / DT-3 听觉双载 / DT-4 telegraph高BPM压缩；SG-4 Off折算采样 / SG-5 BPM跃升事件分叉
+- Recommended next: technical-director 牵头裁定死亡语义(SG-2,SG-3前置)+C4令牌回收+冻帧×时钟合约 → 一轮 ADR/GDD 补丁 → 重跑 /review-all-gdds
+- Report: design/gdd/gdd-cross-review-2026-08-11b.md（已 ff origin/main @490cce12）
+
+## Session Extract — /architecture-review post-D8-Accept 2026-08-11
+- Verdict: **CONCERNS（健康 — 0 阻塞项）**；上轮三大遗留阻塞全部清除
+- 9/9 ADR 现全 Accepted（D8 收口，step-1 spike + CI 门控）→ 引用 Proposed ADR 的故事自动阻塞解除
+- Traceability: 146 TR — 85 Covered (58.2%) / 15 Partial / 46 Gap（Δ +4 Covered vs 上轮 81）；4 条 Core DI 缝隙 Gap 转正
+- A1 (D1/D10 生命周期，上轮🔴BLOCKING) → 真实消解：D1 订阅唯一权威，D10 让步改 handler 早退 guard，两 ADR 代码逐字一致（非双重 Accept）
+- A2/A3/A4/A5 全 CLEARED；跨 ADR blocking conflicts = 0；依赖图 DAG 无环
+- 引擎: 9/9 有兼容段 / 0 deprecated / 0 陈旧版本 / 0 post-cutoff 冲突；GDD revision flags 无
+- 唯一 HIGH = H1（文档缺陷非阻塞）: ADR-D8 三处 InternalsVisibleTo("CombatCore.Tests.EditMode") 与实际跑绿代码 "EditModeTests" 不一致（:318/:379/:402），应修防 C1-C4 Mock 照抄重触 CS0122
+- 非阻塞 cleanup: H1 → D3 文本漂移(OnBeatClockPaused/HeavyAttack) → M1 FMOD Editor 编译确认 → E1 D2 同帧保证 → M2 plugins/fmod.md
+- Pre-gate 全 ✅（Assets/Tests/EditMode+PlayMode / tests.yml / a11y / interaction-patterns）→ /gate-check pre-production 前置具备
+- 写入(worktree arch-review-postD8-2026-08-11): architecture-review-2026-08-11-postD8.md(新) + traceability-index.md(Rev.9) + tr-registry.yaml(TR-rhythm-015 尾注转正)
+- 下一步: /gate-check pre-production 或 C1 rhythm-core 实现冲刺（DI 硬门已解锁）
+
+## Session Extract — /review-all-gdds 复审 2026-08-12
+- Verdict: **CONCERNS**(3 BLOCKER 核心消解, 无存活 BLOCKER); 复审 c02bdced 补丁
+- 编排: ultracode 44-agent(回归验证 SG-1/2/3→独立怀疑者证伪 + 五维扫掠 + 60 候选对抗式验证)
+- SG-1/SG-2/SG-3 全 PARTIALLY_RESOLVED: ADR-D12「死亡=换新局」干净裁定跨文档互斥模型; 冻帧时基(F2/C1/C2 对称)/C4 令牌回收(SC-3 对称 C1 SC-2)闭合。唯一 BLOCKER 框候选(C1 未迁移)被对抗面板 3 票否决→WARNING
+- 已做定向清理补丁(PR #29 draft, branch worktree-review-all-gdds-rerun-2026-08-12, commit dad6c485):
+  - W-A C1 rhythm-core: RespawnComplete 标 MVP 休眠并传播(状态表/E10/deps/双向合约)+AC-C1-22e 改测换新局 boot+I-5 perk[1,2]→[0.5,2]
+  - W-B F6 tde-integration: 原子性段+交互表对齐 Rule15(OnRespawnComplete MVP 不广播)
+  - W-C ADR-D1: 示例码 _lifecycleEvents.RaisePlayerDeath()→adapter 纯 C# event OnPlayerDeath?.Invoke()+事件声明
+  - W-D registry: 新增 forbidden_patterns 段(freeze_pauses_beatclock/freeze_zeroes_player_attack_speed/f6_respawncomplete_inplace_restart_mvp)
+  - W-E systems-index: 补 C4→F6 依赖(枚举表+依赖图)+头部 FAIL→CONCERNS+C4 回 Approved(Approved 7→8, Needs Revision 3→2, C1/F6 保留)
+- 残留 WARNING(不阻塞架构, 未纳入补丁需 owner 决策): W-F 胜利换局边界时钟 Stop 归属(→FE5, ADR-D12:138 已自认)/W-1 音频 Resume 归属/W-2 F3↔C2 依赖/SG-4 Off 采样时刻/SG-5 BPM 边界取消窗/DT-1~4; SG-1 画面定格可见机制(→PL2)
+- Report: design/gdd/gdd-cross-review-2026-08-12.md (在 PR #29, 尚未 merge 到 main)
+- 下一步: review/merge PR #29 → C1/F6 死亡语义清理已随补丁完成 → /gate-check pre-production 或 C1 rhythm-core 实现冲刺
+- W-F 已起草承接: ADR-D13 Run-End Boundary(Proposed, commit 558b33ea, 加入 PR #29) — 统一 run-end 边界(死亡+胜利经同一 F6 出口 Stop()+OnRunEnded(outcome)), 闭合胜利 double-Play/令牌孤儿; 结算经济学/胜利判定 defer FE5+game-designer; 待 technical-director+game-designer 批准后 C1/C4/F6 小修订
