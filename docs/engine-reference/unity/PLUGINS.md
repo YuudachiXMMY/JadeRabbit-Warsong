@@ -51,6 +51,18 @@ These are NOT part of the core engine but are commonly used for specific game ty
 
 ---
 
+### ✅ FMOD for Unity (Audio Middleware)
+- **Purpose:** 音频中间件 — DSP 时钟真值、事件驱动 BGM/SFX、样本级调度（节奏系统 F2 BeatClock 物理底层）
+- **When to use:** 节奏/音乐驱动玩法、样本级音频时序、跨平台自适应音频
+- **Knowledge Gap:** MEDIUM — `getDSPClock()` 挂 master channel group（非 `FMOD.System`）；Unity 6.3 原生插件校验管线变更
+- **Status:** Production-Ready（Studio 2.02.35，M0 Spike 已验证编译 + 原生库加载）
+- **Package:** 直接导入 `Assets/Plugins/FMOD`（**非** Package Manager，手动锁版本）
+- **Detailed Docs:** [plugins/fmod.md](plugins/fmod.md)
+- **ADR:** D6（选定 FMOD Studio 2.x，Accepted 2026-07-14）
+- **Official:** https://fmod.com/docs/2.02/unity
+
+---
+
 ## Other Production-Ready Packages (Brief Overview)
 
 ### 🟡 Input System (Already Covered)
