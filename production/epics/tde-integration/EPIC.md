@@ -4,7 +4,7 @@
 > **GDD**: design/gdd/tde-integration.md
 > **Architecture Module**: F6 TDELifecycleAdapter
 > **Status**: Ready
-> **Stories**: Not yet created — run `/create-stories tde-integration`
+> **Stories**: 12 stories (11 Ready, 1 Blocked) — see `## Stories` below
 
 ## Overview
 
@@ -34,6 +34,27 @@
 
 > ⚠️ **实装前硬门禁**：TR-tde-014——TDE 胜利/通关事件成员名必须先对照 `docs/engine-reference/unity/plugins/top-down-engine.md` 核对（严禁从训练数据推断，参 ADR-D1 `.Respawn`→`.RespawnComplete` 先例）；若无原生事件，胜利由 FE4/FE2/FE5 经 `EndRun(RunOutcome.Victory)` 显式触发。**涉及胜利桥接的 story 将标 Blocked 直至事件名核对完成**（已登记于 entities.yaml pre_implementation_checks）。
 
+## Stories
+
+| # | Story | Type | Status | ADR |
+|---|-------|------|--------|-----|
+| 001 | JadeRabbitInputManager — Action Map 代理 + AbilityInputAuthorization 保留 | Integration | Ready | ADR-D1 |
+| 002 | TDELifecycleAdapter 骨架 + boot 序列 | Integration | Ready | ADR-D1 / D10 |
+| 003 | FMOD 就绪门禁 + 异步模式验证 | Logic | Ready | ADR-D10 / D1 |
+| 004 | F5 ISaveService 门禁 + LatencyOffsetMs boot-inject | Integration | Ready | ADR-D10 / D1 |
+| 005 | Pause/UnPause 同帧协调 | Logic | Ready | ADR-D1 |
+| 006 | 音频降级 SC-1 handoff | Logic | Ready | ADR-D10 / D1 |
+| 007 | run-end 统一边界 EndRun + Death 路径 + RespawnComplete 守卫 | Logic | Ready | ADR-D12 / D13 |
+| 008 | TDE 原生胜利/关卡完成事件桥接 | Integration | **Blocked** | ADR-D13 / D12 |
+| 009 | Character Prefab 装配 + Root Motion 策略 | Logic | Ready | ADR-D5 / D1 |
+| 010 | Animancer 攻击层接线 + UpdateBpm 速度联动 | Integration | Ready | ADR-D5 |
+| 011 | 攻击速度缩放公式 | Logic | Ready | ADR-D5 |
+| 012 | Option A 体感盲测 | Visual/Feel | Ready | ADR-D5 |
+
+> **Story 008 BLOCKED**：TR-tde-014 硬门——TDE 胜利/关卡完成事件成员名须先对照 `docs/engine-reference/unity/plugins/top-down-engine.md` 验证后方可实装（ADR-D13 VR1）。死亡路径与显式 `EndRun(RunOutcome.Victory)` 已在 Story 007 覆盖，不受此门阻塞。
+>
+> **实现顺序（依赖）**：001 与 011 无前置可先行；002 是核心地基（003/004/005/006/007 依赖之）；007 → 008；009 → 010（010 亦依赖 011）；012 依赖 009+010+011。
+
 ## Definition of Done
 
 This epic is complete when:
@@ -45,4 +66,4 @@ This epic is complete when:
 
 ## Next Step
 
-Run `/create-stories tde-integration` to break this epic into implementable stories.
+Stories 已创建。运行 `/story-readiness production/epics/tde-integration/story-011-attack-speed-formula.md`（或 story-001 / story-002）开始实现——按 `## Stories` 的依赖顺序推进。
