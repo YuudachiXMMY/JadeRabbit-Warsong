@@ -4,11 +4,27 @@
 > **GDD**: design/gdd/input-event-system.md
 > **Architecture Module**: F3 InputEventBus
 > **Status**: Ready
-> **Stories**: Not yet created — run `/create-stories input-event-system`
+> **Stories**: 8 stories — see Stories table below
 
 ## Overview
 
 本 epic 实现输入管线基础设施：将玩家原始硬件输入（键鼠/手柄/触屏）转化为携带精确 DSP 时间戳的语义输入事件，经 C# 事件总线 `IInputEventBus` 广播给下游。攻击输入时间戳在 `InputAction.performed` 回调中通过「同帧双读」策略同步捕获——`IDSPClock.GetDspTime()`（DSP 时钟域，与 F2 共用同一 `IDSPClock` 接口，ADR-D6 已选定 FMOD）与 `ctx.time`（游戏时间域，调试用）。ChargedAttack 额外在 `Hold.started` 捕获 `chargeStartDspTime`。F3 不知晓量化模式/BPM/拍号，只负责精确捕获与传递；控制方案切换对下游透明，键位重绑定经 Input System 原生支持、绑定数据由 F5 持久化。
+
+## Stories
+
+| # | Story | Type | Status | ADR |
+|---|-------|------|--------|-----|
+| 001 | InputEventBus 单例骨架、接口与事件负载结构 | Integration | Ready | ADR-D8 |
+| 002 | Action Map 三态状态机 | Integration | Ready | ADR-D1 |
+| 003 | 同帧双读时间戳与 Attack1/Attack2 广播 | Logic | Ready | ADR-D1 |
+| 004 | ChargedAttack Hold 状态机（E3/E3a/E3b） | Logic | Ready | ADR-D1 |
+| 005 | Dash 与 Move 输入广播 | Logic | Ready | ADR-D1 |
+| 006 | 运行时重绑定 JSON 往返与冲突双广播 | Logic | Ready | ADR-D1 |
+| 007 | 多设备并发广播 | Integration | Ready | ADR-D1 |
+| 008 | 零 GC 分配与订阅者生命周期安全 | Integration | Ready | ADR-D8 |
+
+**依赖顺序**：001 → 002 → 003 → {004, 005, 006, 007, 008}。001 为根（无依赖），003 解锁其余 5 个。
+**类型统计**：4 Logic / 4 Integration / 0 Visual/Feel / 0 UI / 0 Config/Data。
 
 ## Governing ADRs
 
