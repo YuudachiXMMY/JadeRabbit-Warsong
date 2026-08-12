@@ -10,7 +10,7 @@
 | **Author** | technical-director（`/create-architecture` 主笔） |
 | **Review Mode** | lean（LP-FEASIBILITY 跳过——非 PHASE-GATE） |
 | **GDDs Covered** | F1 game-concept, F2 audio-beat-clock, F3 input-event-system, F4 so-data-layer, F5 save-persistence, F6 tde-integration, C1 rhythm-core, C2 combo-system, C3 perk-system, C4 combat-director（10 份 Approved/Needs-Revision GDD） |
-| **ADRs Referenced** | ADR-D1..D8, D10, D12, D13（Accepted）; ADR-D14（Proposed） |
+| **ADRs Referenced** | ADR-D1..D8, D10, D12, D13（Accepted）; ADR-D14（Proposed）。**D9/D11 号段从未创建（编号跳空，非悬空依赖）** |
 | **Traceability Source** | `docs/architecture/traceability-index.md` (Rev.10) · `docs/architecture/tr-registry.yaml` (152 TR, v3) |
 | **Technical Director Sign-Off** | 2026-08-12 — APPROVED WITH CONDITIONS（见 §9） |
 | **Lead Programmer Feasibility** | SKIPPED — Lean 模式（非阻塞；Production 前若升 full 模式补跑 LP-FEASIBILITY） |
@@ -44,7 +44,8 @@
 | **`[SerializeField]` 仅限字段** | 6.3 编译期强制（属性上用报 CS0592） | F4 全部 SO、所有注入字段 | 编码标准硬约束；DI 缝隙用 `[SerializeField] private` 字段注入（ADR-D8） |
 | **Addressables 抛异常** | 6.2+ 加载失败抛异常而非返回 null | F4（`AssetReferenceT<T>` 加载）、C2 动画加载 | 加载点一律 try/catch（ADR-D4） |
 | **Animancer 第三方包** | Animancer 8.4.0 对 Unity 6.3 兼容性 | F6/ADR-D5 攻击层 | 已 PlayMode 验证（2026-07-18） |
-| **Netcode 2.x / 物理 solver / HTTP2** | 均有默认行为变更 | 本项目单机，暂不涉及 | 不适用 |
+| **Physics（Rigidbody）** | `autoSyncTransforms` 弃用 → 须显式 `Physics.SyncTransforms()`；`defaultSolverIterations` 默认值提升 | F6 TDE Rigidbody 移动、C6 Hitbox 判定 | hitbox 激活前确认 transform 已同步；复核 solver 迭代数（单机仍用物理，**非**「不适用」） |
+| **Netcode 2.x / HTTP2** | 均有默认行为变更 | 本项目单机，暂不涉及 | 不适用 |
 
 ### LOW RISK 域（训练数据内，大体可靠）
 
