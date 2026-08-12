@@ -37,6 +37,7 @@
 **W-F　胜利/通关换局边界未定义（与死亡边界对称的缺口）**
 涉及系统：C4 × F2 × F6 × FE5 × game-concept。
 game-concept:164 明确「死亡/**通关**结算」都终结一局，MVP 含 1 Boss + 通关结算，故胜利是 MVP 路径。补丁只闭合了**死亡**边界；**胜利路径的时钟 `Stop()` 归属未指派** → 若胜利不 `Stop()`，`global_beat_index` 不归零、下一局 boot `Play()` 产生 **double-Play()**，且残留绝对拍令牌孤儿（与 SG-3 同类）。ADR-D12:138「Open Follow-up」已自认此缺口并划归 **FE5（Not Started）**，建议 FE5 定义统一 `RunEnded(Death | Victory)` 抽象并在 F6/FE5 修订中指派胜利路径时钟 `Stop()` 归属。**失败模式：破碎状态转换（潜在，MVP 胜利路径）。**
+> **承接**：已起草 **`ADR-D13`（Run-End Boundary，Proposed）** 裁定与死亡对称的时钟/事件机制（统一 `OnRunEnded(outcome)` 边界，C1 SC-2 / C4 SC-3 改订之），结算经济学与胜利判定语义 defer 给 game-designer / FE5。待 technical-director + game-designer 批准后，C1/C4/F6 走一轮小修订。
 
 **SG-5（遗留）　BPM `accept→boundary` 区间取消窗无 BD-2 保护**
 C2 在 `OnMeterChangeAccepted` 即 `UpdateBpm()` 变速（取消窗 ms 骤缩），但 `max` 宽容与 C1 判定重锚均在 `OnMeterChanged` 边界才生效，产生瞬态「Perfect 却接不上连招」窗口；C1-F5b 用 raw `predictedEffectiveDspTimeRaw`(:429) 定义适应窗口结束，非零 `latency_offset` 下边界最多 ±200ms 错位。上一轮 Warning，补丁未触碰。
