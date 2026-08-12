@@ -4,7 +4,7 @@
 > **GDD**: design/gdd/save-persistence.md
 > **Architecture Module**: F5 SaveService
 > **Status**: Ready
-> **Stories**: Not yet created — run `/create-stories save-persistence`
+> **Stories**: 8 stories — see Stories table below
 
 ## Overview
 
@@ -29,6 +29,21 @@
 
 > ⚠️ 11 项 Gap 均为「GDD 即规范」预期内部项——存档服务应用逻辑以 GDD 为规范文档。架构评审（2026-08-12）已确认非真实缺口，不阻塞 story 创建。
 
+## Stories
+
+| # | Story | Type | Status | ADR |
+|---|-------|------|--------|-----|
+| 001 | DTO 契约与存储抽象（5 DTO + IFileStorage/ES3Storage/MockFileStorage） | Integration | Ready | ADR-D7 |
+| 002 | SaveService 单例骨架与状态机 | Logic | Ready | ADR-D7 (+D10) |
+| 003 | 全局数据初始化与往返（Initialize + GlobalData + ISaveService seam） | Integration | Ready | ADR-D10 (+D7) |
+| 004 | 槽位进度往返、多槽位独立与 SlotMeta 同步 | Integration | Ready | ADR-D7 |
+| 005 | 激活槽位管理与槽位删除 | Logic | Ready | N/A (GDD Rule 9/10) |
+| 006 | 两级错误模型与 OnSaveError 事件契约 | Logic | Ready | ADR-D7 |
+| 007 | 存档版本迁移（低版本迁移 + 高版本阻断） | Logic | Ready | ADR-D7 |
+| 008 | 主线程约束保护（非主线程调用缓存 + flush） | Integration | Ready | N/A (GDD Rule 13) |
+
+依赖链：001 → 002 →（003 → 004 →｛005, 006 → 007｝）＋（008 依赖 002）。按序实现，每个 story 的 `Depends on:` 字段标明前置。
+
 ## Definition of Done
 
 This epic is complete when:
@@ -39,4 +54,4 @@ This epic is complete when:
 
 ## Next Step
 
-Run `/create-stories save-persistence` to break this epic into implementable stories.
+Stories 已创建（8 个）。运行 `/story-readiness production/epics/save-persistence/story-001-dto-contracts-and-storage-abstraction.md` 开始实现第一个 story，或 `/sprint-plan` 规划冲刺。
