@@ -123,13 +123,17 @@ TDE TopDownEngineEvent(UnPause) ──→  TDELifecycleAdapter
 
 > **M0 Spike Verified (2026-07-16)**: TDE 4.5 uses `TopDownEngineEvent` with `TopDownEngineEventTypes.Pause` / `.UnPause` enum values (GameManager.cs:516-520). NOT string-based `MMGameEvent`. `TDELifecycleAdapter` implements only `MMEventListener<TopDownEngineEvent>`.
 
-### Death / Respawn
+### Run-End (Death / Victory) / Respawn
+
+统一 run-end 边界见 **ADR-D13（Run-End Boundary — Victory/Death Unification, Accepted 2026-08-12）**：死亡与胜利/通关经同一 F6 出口 `EndRun(RunOutcome outcome)` 停时钟、广播单一域事件 `OnRunEnded(outcome)`（取代原 `OnPlayerDeath`，落地方式 (a)）。
 
 ```
-TDE TopDownEngineEvent(PlayerDeath) ──→  TDELifecycleAdapter
-    └→ BeatClock.Stop()                ← F2: → Stopped  (run-ending clock stop)
+TDE TopDownEngineEvent(PlayerDeath) ──→  TDELifecycleAdapter.EndRun(Death)
+Victory signal (FE4/FE2/FE5, ADR-D13) ─→  TDELifecycleAdapter.EndRun(Victory)
+    └→ [single entry + once-per-run latch _runEnded — ADR-D13 D13-5]
+       BeatClock.Stop()                ← F2: → Stopped  (run-ending clock stop, zeroes global_beat_index)
        InputEventBus.DisableAllInput() ← F3: → AllDisabled
-       (broadcast OnPlayerDeath — domain event for CombatCore consumers)
+       (broadcast OnRunEnded(outcome) — pure C# domain event for CombatCore consumers; RunOutcome ∈ {Death, Victory})
 
 TDE TopDownEngineEvent(RespawnComplete) ──→  TDELifecycleAdapter
     └→ [MVP: in-place respawn DISABLED — dormant diagnostic guard]
@@ -137,7 +141,7 @@ TDE TopDownEngineEvent(RespawnComplete) ──→  TDELifecycleAdapter
                    is disabled in MVP"  →  return (NO in-place BeatClock.Play)
 ```
 
-> **死亡 = 换新局（MVP）**：MVP 采用 run-ends-on-death 语义——`PlayerDeath`（lives=1，无同局复活）停止时钟并禁输入后，由 FE5/C5 承接结算，「下一局」经全新 `LoadSceneMode.Single` 走既有 boot 路径干净起局。TDE 原生 `RespawnComplete → BeatClock.Play()` 的**原地重启路径在 MVP 休眠**（经 TDE Inspector 关闭原地复活；误触发仅记 fatal 诊断、不原地重启时钟）。死亡 = 换新局的完整语义见 **ADR-D12（Death & Run-Lifecycle Semantics）**。
+> **死亡/胜利 = 换新局（MVP，run-end 边界）**：MVP 采用 run-ends 语义——`PlayerDeath`（lives=1，无同局复活）**或**胜利/通关（獬豸 Boss 击败 / 房间清场，ADR-D13）经 `EndRun(outcome)` 停止时钟并禁输入后，由 FE5 承接结算（按 `outcome` 分支 merit 折算/落盘），「下一局」经全新 `LoadSceneMode.Single` 走既有 boot 路径干净起局。TDE 原生 `RespawnComplete → BeatClock.Play()` 的**原地重启路径在 MVP 休眠**（经 TDE Inspector 关闭原地复活；误触发仅记 fatal 诊断、不原地重启时钟）。死亡语义见 **ADR-D12**；胜利统一边界见 **ADR-D13**。
 
 ### Architecture Diagram
 
@@ -164,9 +168,10 @@ TDE TopDownEngineEvent(RespawnComplete) ──→  TDELifecycleAdapter
           ├── TopDownEngineEvent     ► BeatClock.Resume()
           │   (UnPause)                InputEventBus.EnableGameplayInput()
           │
-          ├── TopDownEngineEvent     ► BeatClock.Stop() (run-ending)
-          │   (PlayerDeath)            InputEventBus.DisableAllInput()
-          │                            broadcast OnPlayerDeath
+          ├── PlayerDeath / Victory  ► EndRun(outcome) [latch _runEnded]
+          │   (ADR-D13 run-end)        BeatClock.Stop() (run-ending)
+          │                            InputEventBus.DisableAllInput()
+          │                            broadcast OnRunEnded(outcome)
           │
           └── TopDownEngineEvent     ► [MVP dormant] log Fatal + return
               (RespawnComplete)        (in-place respawn disabled — see ADR-D12)
@@ -257,7 +262,10 @@ public sealed class TDELifecycleAdapter : MonoBehaviour,
     // F6 domain events — pure C# events ON this adapter (payload carries NO TDE types;
     // CombatCore consumers subscribe here, never to TDE events directly). See
     // tde-integration.md Rule 15 / AC-F6-25. OnRespawnComplete is MVP-dormant (ADR-D12).
-    public event System.Action OnPlayerDeath;
+    // ADR-D13 (a): unified run-end boundary — OnRunEnded(RunOutcome) REPLACES OnPlayerDeath
+    // (no alias). RunOutcome is a pure C# enum (CombatCore-visible, NO TDE types).
+    public enum RunOutcome { Death, Victory }        // MVP set; FE5 may extend (ADR-D13)
+    public event System.Action<RunOutcome> OnRunEnded;   // Death (PlayerDeath bridge) or Victory (FE4/FE2/FE5)
     public event System.Action OnRespawnComplete;   // Post-MVP checkpoint only — NOT raised in MVP
 
     // A1 裁定 (2026-08-11): Start() ONLY does read-only readiness probing.
@@ -328,11 +336,12 @@ public sealed class TDELifecycleAdapter : MonoBehaviour,
                 _inputEventBus.EnableGameplayInput();
                 break;
             case TopDownEngineEventTypes.PlayerDeath:
-                // Run-ends-on-death (MVP). See ADR-D12.
-                _beatClock.Stop();                 // run-ending clock stop
-                _inputEventBus.DisableAllInput();
-                OnPlayerDeath?.Invoke();           // broadcast OnPlayerDeath (pure C# event on this adapter; F6 AC-F6-25)
+                // Run-ends on death (MVP). Unified run-end boundary — ADR-D12 / ADR-D13.
+                EndRun(RunOutcome.Death);          // single run-end entry (latch-guarded)
                 break;
+            // Victory path (ADR-D13 D13-2): FE4/FE2/FE5 fire EndRun(RunOutcome.Victory)
+            // — either via a TDE level-complete TopDownEngineEvent bridged here (member
+            //   name pending VR1 verify), or an explicit CombatCore-side EndRun() call.
             case TopDownEngineEventTypes.RespawnComplete:
                 // MVP: in-place respawn is DISABLED (death = new run, ADR-D12).
                 // TDE in-place respawn should be turned off in the Inspector; if this
@@ -342,6 +351,21 @@ public sealed class TDELifecycleAdapter : MonoBehaviour,
                     "[F6-FATAL] RespawnComplete fired but in-place respawn is disabled in MVP");
                 return;  // dormant diagnostic guard — no in-place BeatClock.Play()
         }
+    }
+
+    // ADR-D13 D13-5: single run-end entry + once-per-run idempotency latch.
+    // Both the Death (PlayerDeath bridge) and Victory (FE4/FE2/FE5) paths funnel
+    // here — the latch guarantees exactly one Stop()/OnRunEnded per run under
+    // multiple trigger sources. _runEnded resets naturally on the next
+    // LoadSceneMode.Single reload (fresh adapter instance).
+    private bool _runEnded;
+    public void EndRun(RunOutcome outcome)
+    {
+        if (_runEnded) return;             // latch — second trigger this run is a no-op
+        _runEnded = true;
+        _beatClock.Stop();                 // run-ending clock stop (zeroes global_beat_index)
+        _inputEventBus.DisableAllInput();
+        OnRunEnded?.Invoke(outcome);       // pure C# event; RunOutcome ∈ {Death, Victory}
     }
 }
 ```

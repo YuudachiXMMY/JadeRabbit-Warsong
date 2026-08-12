@@ -392,3 +392,29 @@ forbidden_patterns:
     rationale: "原地复活会架空 FE5 局结算与 merit 落盘，与 game-concept 死亡=换新局/无同局复活互斥（SG-2，cross-review 2026-08-11b）。"
     added: 2026-08-12
     revised: ""
+
+  - name: run_end_bypass_single_entry
+    status: active
+    source: docs/architecture/adr-d13-run-end-victory-boundary.md   # ADR-D13 裁定（W-F）
+    referenced_by:
+      - docs/architecture/adr-d13-run-end-victory-boundary.md
+      - docs/architecture/adr-d1-tde-integration.md          # OnRunEnded/EndRun 事件声明源
+      - design/gdd/tde-integration.md                        # F6 Rule 15 / EndRun / 状态表 / AC-F6-10/25
+      - design/gdd/rhythm-core.md                            # C1 SC-2（OnRunEnded 消费）
+      - design/gdd/combat-director.md                        # C4 SC-3（OnRunEnded 消费）
+    rule: "统一 run-end 边界（ADR-D13，落地方式 a）：死亡与胜利/通关均须经 F6 TDELifecycleAdapter 单一入口 EndRun(RunOutcome) 停时钟，广播单一域事件 OnRunEnded(outcome)（取代原 OnPlayerDeath，不保留别名）。禁止：① 胜利路径跳过 BeatClock.Stop()（→ global_beat_index 不归零 + 下一局 double-Play() + C4 绝对拍令牌孤儿）；② 死亡/胜利各自复制一套清理逻辑而不复用单一边界；③ 绕过 EndRun 的一次性闭锁 _runEnded 直呼三步（多触发源下重复广播/二次 Stop）。RunOutcome 为 CombatCore 可见纯 C# enum，负载不含任何 TDE 类型。"
+    rationale: "胜利与死亡同 class 终结一局（game-concept.md:164）；无对称边界会留下与 SG-2/SG-3 同源的 double-Play() 与令牌孤儿状态转换风险（W-F，cross-review 2026-08-12）。单一入口 + 闭锁保证'恰一次 OnRunEnded/单次 Stop'（TD 会签条件 C1）。"
+    added: 2026-08-12
+    revised: ""
+
+pre_implementation_checks:
+  - name: vr1_tde_level_complete_event
+    status: open
+    owner: technical-director
+    source: docs/architecture/adr-d13-run-end-victory-boundary.md   # ADR-D13 Verification Required 1 / TD 会签条件 C3
+    blocks:
+      - design/gdd/tde-integration.md   # F6 D13-2 胜利桥接实现
+      - meta-progression (FE5)          # 胜利结算触发
+    check: "核对 TDE 4.5 是否原生以 TopDownEngineEvent 派发关卡完成/胜利（候选 LevelManager/GoalManager 触发或 TopDownEngineEventTypes 成员名），回填 docs/engine-reference/unity/plugins/top-down-engine.md。参照 ADR-D1 .Respawn→.RespawnComplete 教训，成员名不得凭训练数据臆断。若无原生事件 → 胜利信号由 FE4/FE2/FE5 显式调用 F6 EndRun(Victory)。"
+    note: "实现前硬门；不阻塞 ADR-D13 Accept，阻塞 D13-2 胜利桥接与 FE5 胜利结算实现。"
+    added: 2026-08-12
