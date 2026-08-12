@@ -32,7 +32,7 @@
 
 | 域 | 后截断关键变更 | 涉及系统 | 缓解 |
 |----|--------------|---------|------|
-| **音频原生插件（FMOD）** | Unity 6.3 原生插件校验管线变更；FMOD 二进制须针对 6000.3 头文件编译；FMOD 非 UPM 包需手动锁版本；`getDSPClock()` 挂 master channel group 而非 `FMOD.System` | F2, ADR-D6 | M0 Spike 已验证 API 表面；`docs/engine-reference/unity/plugins/fmod.md` 待补编译确认 |
+| **音频原生插件（FMOD）** | Unity 6.3 原生插件校验管线变更；FMOD 二进制须针对 6000.3 头文件编译；FMOD 非 UPM 包需手动锁版本；`getDSPClock()` 挂 master channel group 而非 `FMOD.System` | F2, ADR-D6 | M0 Spike 已验证 API 表面 + 编译期二进制确认（C# 编译 ✅ / macOS 原生库加载 ✅ / banks 待构建 ⚠️）；见 `docs/engine-reference/unity/plugins/fmod.md`（2026-08-12） |
 | **URP RenderGraph** | 6.3 完全移除 URP Compatibility Mode；`RecordRenderGraph()` 取代 `Execute()` | PL2 VFX（MVP 后期） | 自定义 render pass 一律走 RenderGraph API；MVP 不写自定义 pass 则风险延后 |
 | **Input System（默认）** | Legacy `Input` 类弃用；必须用 Input System package 的 `InputAction.performed` callback 时间戳 | F3, C1 | 已在 technical-preferences 强制；`InputSystemManagerEventsBased.BindButton` override（ADR-D1） |
 | **Entities/DOTS 重构** | ISystem/IJobEntity 全面替代 ComponentSystem | 本项目**不使用 DOTS**（MonoBehaviour 架构） | 不适用；若未来引入需专项 ADR |
@@ -431,7 +431,7 @@ public interface IFileStorage { /* Save<T>, Load<T>, KeyExists, FileExists, Dele
 | QQ-04 | `RunOutcome` 取值集合 + 结算经济学 | Low | defer FE5 GDD + game-designer |
 | QQ-05 | 胜利换局边界时钟 Stop 归属（W-F） | Low | ADR-D13:138 已自认；→ FE5 |
 | QQ-06 | C1 死亡语义文本清理（F6 措辞残留 W-A/W-B） | Low | C1/F6 GDD 小修订 |
-| QQ-07 | FMOD 6000.3 二进制编译确认 + `plugins/fmod.md` | Medium | M0 后续；HIGH 引擎风险残留项 |
+| ~~QQ-07~~ | ~~FMOD 6000.3 二进制编译确认 + `plugins/fmod.md`~~ | ~~Medium~~ | **已闭合 (2026-08-12)** — C# 编译 ✅ / macOS arm64 原生库加载 ✅ / `plugins/fmod.md` 已补；残留仅 FMOD Studio banks 待首次 Build（接入音频内容前） |
 
 ---
 
