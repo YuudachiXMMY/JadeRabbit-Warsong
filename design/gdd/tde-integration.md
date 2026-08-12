@@ -117,7 +117,7 @@ F6 的玩家幻想是**天衣无缝的动作应噬**——每一次出招、侧�
 
     此举消除「F2 停拍但 TDE 仍可移动、F3 仍 GameplayActive、攻击照发」的半暂停半运行战场，贯彻「无音频不惩罚玩家」意图。
 
-    **恢复对称路径**：若 F2 在设备重连时广播 `OnAudioRestored`（恢复事件的最终命名以 F2 GDD 定义为准；BC-6 已定义的 `OnBeatClockResumed` 可复用于时钟重启信号），`TDELifecycleAdapter` 同帧对称执行 **`GameManager.UnPause()`** + **`InputEventBus.EnableGameplayInput()`**，恢复 TDE 运行与输入通道。恢复顺序遵 EC-05 约束：节拍参照（BeatClock）先于输入通道开放，避免玩家在时钟未就绪时触发攻击导致判定窗口计算错误。
+    **恢复对称路径**：若 F2 在设备重连时广播 `OnAudioRestored`（恢复事件的最终命名以 F2 GDD 定义为准；BC-6 已定义的 `OnBeatClockResumed` 可复用于时钟重启信号），`TDELifecycleAdapter` 同帧对称执行 **① `BeatClock.Resume()`（从暂停位置续播，节拍参照先恢复）→ ② `GameManager.UnPause()` → ③ `InputEventBus.EnableGameplayInput()`**，恢复时钟、TDE 运行与输入通道。**`BeatClock.Resume()` 由本适配器独家调用（Rule 4，BeatClock 生命周期唯一调用者），F2 仅广播 `OnAudioRestored` 信号、自身不 Resume**（W-1 裁定，与 `audio-beat-clock.md` Core Rule 9/降级 Edge Case 对称）。恢复顺序遵 EC-05 约束：节拍参照（BeatClock）先于输入通道开放，避免玩家在时钟未就绪时触发攻击导致判定窗口计算错误。
 
     此降级/恢复响应独立于 `TopDownEngineEvent(Pause/UnPause)`（玩家主动暂停走 UIActive 路径），语义为「无音频不可玩，全局冻结」。验收见 **AC-F6-24**。
 
@@ -147,7 +147,7 @@ F6 自身不维护内部状态机，但其事件响应决定了系统的全局�
 | **换新局（Roguelike 局重启）** | 新 `LoadSceneMode.Single` 加载（boot 路径，ADR-D1/D10/D12） | GameplayActive | Playing（新局；`global_beat_index` 归零） |
 | **复活完成（MVP 不启用）** | `TopDownEngineEvent(RespawnComplete)` — TDE 原地复活在 MVP 经 Inspector 关闭；正常流程不触发。若触发：记 fatal 诊断 `[F6-FATAL] RespawnComplete fired but in-place respawn is disabled in MVP`，**不**原地重启时钟（见 ADR-D12） | 不变 | 不变 |
 | **音频降级冻结（SC-1）** | F2 `OnAudioUnavailable` | AllDisabled（`DisableAllInput()`） | Paused（F2 自身停拍，F6 同帧 `GameManager.Pause()`） |
-| **音频恢复（SC-1）** | F2 `OnAudioRestored` / `OnBeatClockResumed` | GameplayActive | Playing（`GameManager.UnPause()`，节拍先于输入） |
+| **音频恢复（SC-1）** | F2 `OnAudioRestored` / `OnBeatClockResumed` | GameplayActive | Playing（`BeatClock.Resume()` → `GameManager.UnPause()`，节拍先于输入；Resume owner=F6，W-1） |
 
 阶段转换的**原子性保证**：每次 `TDELifecycleAdapter` 响应 run-end 信号时，经**单一入口 `EndRun(RunOutcome outcome)`**（ADR-D13 D13-5，含每局一次性闭锁 `_runEnded`），BeatClock 调用与 InputEventBus 调用在**同一 Update 帧内**完成，消除半途不一致状态。run-end 帧内还**同帧广播** CombatCore 域事件 `OnRunEnded(outcome)` 供 C1（SC-2）与 C4（SC-3）承接（防幽灵评级 / 令牌孤儿，见 Rule 15）。**Death（`PlayerDeath` 桥接）与 Victory（FE4/FE2/FE5 发起）两条触发路径均汇入 `EndRun()`，闭锁保证「恰一次 `OnRunEnded` / 单次 `Stop()`」。** **`RespawnComplete`（MVP 休眠，ADR-D12）**：MVP TDE 原地复活不启用；`RespawnComplete` 若触发走 fatal 诊断守卫、**不重广播 `OnRespawnComplete`**（该桥接定义保留供 Post-MVP checkpoint 复用；MVP 死亡恢复走换新局 boot 路径，见 Rule 15 / AC-F6-11）。
 
@@ -670,7 +670,7 @@ EditMode 测试中注入返回 `false` 的 mock `IFMODRuntimeChecker`：断言 `
 
 1. **同帧原子性**：`GameManager.Pause()`（或等效 TDE 暂停触发，经 Spy 捕获）与 `InputEventBus.DisableAllInput()` 记录的 `Time.frameCount` 值相同（同一 Update 帧内，单主线程保证）；两者各调用恰好 1 次。
 2. **战场全冻结**：事件后 TDE 移动被冻结（模拟移动输入，角色 `Transform.position` 无变化）；输入通道对攻击指令无响应（`InputEventBus` 状态 `AllDisabled`）——不存在「TDE 仍可移动 / F3 仍 GameplayActive」的半运行状态。
-3. **恢复对称路径**：随后发布 F2 `OnAudioRestored`（或 `OnBeatClockResumed`）后，`GameManager.UnPause()` 与 `InputEventBus.EnableGameplayInput()` 各调用恰好 1 次；`UnPause()`/节拍恢复的调用顺序序号 < `EnableGameplayInput()`（节拍参照先于输入开放，遵 EC-05）；最终状态回到 GameplayActive。
+3. **恢复对称路径**：随后发布 F2 `OnAudioRestored`（或 `OnBeatClockResumed`）后，`BeatClock.Resume()`、`GameManager.UnPause()` 与 `InputEventBus.EnableGameplayInput()` 各调用恰好 1 次；**`BeatClock.Resume()` 调用来源为 `TDELifecycleAdapter`（W-1：Resume owner=F6，F2 事件源 Spy 断言 F2 自身未调用任何 BeatClock 生命周期方法）**；调用顺序序号 `Resume()` < `EnableGameplayInput()`（节拍参照先于输入开放，遵 EC-05）；最终状态回到 GameplayActive。
 
 **通过条件**：以上 3 项全部通过。降级与恢复均通过 mock F2 事件源触发，无需真实音频设备断开。
 

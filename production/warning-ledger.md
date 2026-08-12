@@ -28,9 +28,9 @@
 
 | 编号 | 缺口 | 建议 owner | 决策方向 | 状态 |
 |---|---|---|---|---|
-| **W-1** | 音频降级 Resume 归属自相矛盾：F2 自调 `Pause()/Resume()`(`audio-beat-clock.md:58,444`) 与 F6「BeatClock 唯一调用者」(`tde-integration.md:51` Rule 4) 冲突；`OnAudioRestored` 后谁 Resume 且保证「节拍先于输入」无归属 | F6 / audio-director + technical-director | 钦定单一 Resume owner（报告建议 F6），F2 仅广播 `OnAudioRestored`；可能升小 ADR | 🟡 Owner 决策 |
+| **W-1** | 音频降级 Resume 归属自相矛盾：F2 自调 `Pause()/Resume()`(`audio-beat-clock.md:58,444`) 与 F6「BeatClock 唯一调用者」(`tde-integration.md:51` Rule 4) 冲突；`OnAudioRestored` 后谁 Resume 且保证「节拍先于输入」无归属 | F6 / audio-director + technical-director | 钦定单一 Resume owner=F6，F2 仅广播 `OnAudioRestored`、自身不 Resume；恢复顺序 ①`BeatClock.Resume()`→②`GameManager.UnPause()`→③`EnableGameplayInput()`；判定**无需新 ADR**（Rule 4/ADR-D1 既有边界措辞对齐）| 🟢 **Resolved**（本轮直接落 GDD，见文末 commit）|
 | **W-2** | F3↔C2 依赖方向不对称：F3 下游表(`input-event-system.md:318`)把 C2 列为直接下游（订 `OnAttackInput`+`OnDashInput`），但 C2 上游表(`combo-system.md:86`)只列 C1/F4/ADR-D5，攻击 `AttackType` 实经 C1 `RhythmJudgmentEvent` 中转，C2 亦不消费 `DashInputEvent` | F3 owner | 修 F3 下游表 C2 行为「经 C1 间接、不消费 Dash」——纯文档修正 | 🟢 **Resolved**（本轮，见文末 commit） |
-| **SG-5** | BPM `accept→boundary` 区间取消窗无 BD-2 保护：C2 在 `OnMeterChangeAccepted` 即变速（取消窗骤缩），但 max 宽容与 C1 重锚在 `OnMeterChanged` 边界才生效 → 瞬态「Perfect 却接不上连招」窗口，非零 latency 下边界最多 ±200ms 错位 | C2 / systems-designer | 评估 accept→boundary 区间是否沿用旧取消窗宽容，或引入过渡保护 | 🟡 Owner 决策 |
+| **SG-5** | BPM `accept→boundary` 区间取消窗无 BD-2 保护：C2 在 `OnMeterChangeAccepted` 即变速（取消窗骤缩），但 max 宽容与 C1 重锚在 `OnMeterChanged` 边界才生效 → 瞬态「Perfect 却接不上连招」窗口，非零 latency 下边界最多 ±200ms 错位 | C2 / systems-designer | 采纳方向 B「保护提前」：C2 BD-2 保护触发点 `OnMeterChanged → OnMeterChangeAccepted`，保护窗=[accept, boundary+2拍]（尾端对齐 C1）；C1/C4 不动。**ADR-D14 Proposed**（引擎专家校验无 BLOCKING）；C2 GDD 局部修订待 ADR Accepted 后落地 | 🔵 已承接（ADR-D14，见文末 commit）|
 
 ## C 组｜游戏设计整体性 DT-1~4（挂里程碑）
 
@@ -65,3 +65,6 @@
 - **2026-08-12** — 建账（本文件）；清 W-2（F3 下游表 C2 行改为「经 C1 间接、不消费 Dash」），见 commit 3b31cc23。
 - **2026-08-12** — 清 D 组零成本项 I-2 / I-6 / C4 头部（第 1 步收尾）：combat-director :3/:5 头部同步 Approved+2026-08-12、:299/:323 双向引用待办(1) 标 ✅（F2 已反向引用 C4）；combo-system :39/:86 订阅点统一为「事件 `OnRhythmJudgment`（载荷 `RhythmJudgmentEvent`）」对齐 rhythm-core §W-04。见本分支 commit。
 - **2026-08-12** — B 组决策稿**已起草待审批**（第 2 步进行中，尚未落 GDD）：**W-1** technical-director 稿——裁定 Resume owner=F6，F2 仅广播 `OnAudioRestored`，两步时序契约 ①`BeatClock.Resume()`→②`EnableGameplayInput()`；判定**无需新 ADR**（Rule 4/ADR-D1/D10 既有边界的措辞对齐，可挂 ADR-D1 Addendum）；开放依赖 OQ-5。**SG-5** systems-designer 稿——裁定采用 (B) 过渡保护「保护提前」：F7 的 `max(before,after)` 触发点从 `OnMeterChanged` 提前到 `OnMeterChangeAccepted`，复用既有机制；建议起小 ADR（拟 ADR-D14，跨系统事件契约需 TD 会签）。**二稿均待 owner 审批后再落 GDD 修订**。
+- **2026-08-12** — B 组 owner 审批「①两项都批准、W-1 直接落 GDD + SG-5 起 ADR-D14 草案」（第 2 步收尾）：
+  - **W-1 → 🟢 Resolved**（直接落 GDD，无新 ADR）：`audio-beat-clock.md` Core Rule 9(:58)/降级 Edge Case(:444) 去除「F2 自调 Resume()」自相矛盾，钦定 F6 为 `BeatClock.Resume()` 唯一调用者、F2 仅广播 `OnAudioRestored`；`tde-integration.md` Rule 14(:120) 恢复路径显式列 `BeatClock.Resume()` 为步骤①（节拍先于输入）、状态表(:150) 与 AC-F6-24 恢复对称子用例(:673) 同步补 `Resume()` 归属断言。
+  - **SG-5 → 🔵 已承接**：起草 **ADR-D14（Proposed）** `docs/architecture/adr-d14-cancel-window-transient-protection.md`——采纳方向 B，C2 BD-2 保护触发点 `OnMeterChanged→OnMeterChangeAccepted`、保护窗=[accept, boundary+2拍]（尾端对齐 C1，C1/C4 不动）。unity-specialist 引擎校验**无 BLOCKING**（`Post-Cutoff APIs=None` 确认，C# event 订阅点重定向为惯用做法），4 条 minor notes（DSP 时钟域同源/Animancer 运行时查询/多订阅者顺序无依赖/EditMode teardown）已并入 ADR Risks。lean 模式跳过 TD-ADR 门。**C2 GDD 局部修订（规则12/F7/EC9/AC-C2-40）待 ADR-D14 Accepted 后落地**。见本分支 commit。
