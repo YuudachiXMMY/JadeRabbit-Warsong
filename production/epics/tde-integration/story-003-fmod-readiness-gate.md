@@ -4,14 +4,14 @@
 > **Status**: Ready
 > **Layer**: Foundation
 > **Type**: Logic
-> **Estimate**: [fill before sprint planning]
+> **Estimate**: M
 > **Manifest Version**: 2026-08-12
 > **Last Updated**: [set by /dev-story when implementation begins]
 
 ## Context
 
 **GDD**: `design/gdd/tde-integration.md`
-**Requirement**: `TR-tde-004`（FMOD 就绪门禁），`TR-tde-005`（异步模式验证）
+**Requirement**: `TR-input-015`（FMOD 异步初始化 boot 门禁 — 覆盖就绪门禁与异步模式验证）
 *(Requirement text lives in `docs/architecture/tr-registry.yaml` — read fresh at review time)*
 
 **ADR Governing Implementation**: ADR-D10: Bootstrap 顺序（primary）；ADR-D1: TDE 集成
