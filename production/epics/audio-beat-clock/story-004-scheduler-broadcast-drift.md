@@ -4,7 +4,7 @@
 > **Status**: Ready
 > **Layer**: Foundation
 > **Type**: Logic
-> **Estimate**: [fill before sprint planning]
+> **Estimate**: L
 > **Manifest Version**: 2026-08-12
 > **Last Updated**: [set by /dev-story when implementation begins]
 

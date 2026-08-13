@@ -4,14 +4,14 @@
 > **Status**: Ready
 > **Layer**: Foundation
 > **Type**: Logic
-> **Estimate**: [fill before sprint planning]
+> **Estimate**: M
 > **Manifest Version**: 2026-08-12
 > **Last Updated**: [set by /dev-story when implementation begins]
 
 ## Context
 
 **GDD**: `design/gdd/tde-integration.md`
-**Requirement**: `TR-tde-009`（音频运行期降级 SC-1 交接）
+**Requirement**: `TR-beatclock-009`（音频运行期降级 SC-1 交接）
 *(Requirement text lives in `docs/architecture/tr-registry.yaml` — read fresh at review time)*
 
 **ADR Governing Implementation**: ADR-D10: Bootstrap 顺序（primary）；ADR-D1: TDE 集成
