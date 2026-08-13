@@ -25,7 +25,7 @@
 # STATUS VALUES: active | deprecated | superseded-by: TR-[system]-NNN
 
 version: 3
-last_updated: "2026-08-12"
+last_updated: "2026-08-13"
 
 requirements:
 
@@ -726,6 +726,14 @@ requirements:
     gdd: design/gdd/tde-integration.md
     requirement: "F6 victory/level-complete event bridging: TDE TopDownEventTypes member name for level-complete/victory MUST be verified against docs/engine-reference/unity/plugins/top-down-engine.md before F6/FE5 implementation (never inferred from training data; cf ADR-D1 .Respawn->.RespawnComplete). If no native TDE event, victory is fired explicitly by FE4/FE2/FE5 via EndRun(RunOutcome.Victory). PARTIAL: ADR-D13 VR1 pre-implementation hard gate; registered in entities.yaml pre_implementation_checks; member name unverified."
     created: 2026-08-12
+    revised: ""
+    status: active
+
+  - id: TR-tde-015
+    system: tde
+    gdd: design/gdd/tde-integration.md
+    requirement: "F5 boot gate + latency inject: BeatClock.Play() blocked until ISaveService ready; LatencyOffsetMs read from PlayerInfoSO and one-shot injected into BeatClock before Play() at boot (AC-F6-23; ADR-D10 D-4/D-5; consumes TR-save-010 init seam + TR-beatclock-007 offset)"
+    created: 2026-08-13
     revised: ""
     status: active
 

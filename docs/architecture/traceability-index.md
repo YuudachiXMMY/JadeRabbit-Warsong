@@ -1,6 +1,6 @@
 # Traceability Index
 
-> **Last Updated**: 2026-08-12 (Rev.10 · coverage 复跑 — ADR-D12/D13/D14 增量 + 6 条 run-end/BD-2 TR)
+> **Last Updated**: 2026-08-13 (Rev.11 · 定向修复 — TR-tde-011 语义冲突缺口：新增 TR-tde-015 承接 F6 story-004 F5 boot gate+延迟注入，story-004 引用 011→015)
 > **Source**: `/architecture-review 验证 ADR 覆盖度` (coverage mode)
 > **TR Registry**: `docs/architecture/tr-registry.yaml` (152 entries, v3)
 > **Verdict this review**: CONCERNS（健康 — 0 阻塞项）— see `architecture-review-2026-08-12-coverage.md`
@@ -22,12 +22,12 @@
 | input | input-event-system.md | 15 | 2 | 0 | 13 | GDD=规范 |
 | datalayer | so-data-layer.md | 12 | 11 | 1 | 0 | **D4 全覆盖** |
 | save | save-persistence.md | 13 | 2 | 0 | 11 | GDD=规范 |
-| tde | tde-integration.md | 14 | 9 | 1 | 4 | +tde-013 run-end 边界(D12/D13 Covered) · +tde-014 胜利事件核对(D13 Partial) |
+| tde | tde-integration.md | 15 | 10 | 1 | 4 | +tde-013 run-end 边界(D12/D13 Covered) · +tde-014 胜利事件核对(D13 Partial) · +tde-015 F5 boot gate+延迟注入(D10 Covered → story-004) |
 | **rhythm (C1)** | rhythm-core.md | 19 | 17 | 2 | 0 | D3 主架构；+rhythm-019 SC-2 run-end 清空 → D12/D13 Covered |
 | **combo (C2)** | combo-system.md | 15 | 12 | 3 | 0 | D3/D4/D5；+combo-015 BD-2 适应窗口 → D14 Proposed(Partial) |
 | **perk (C3)** | perk-system.md | 13 | 12 | 1 | 0 | D4；IRandomSource/pause 源已归 ADR-D8(Accepted) — **Gap 已闭环** |
 | **director (C4)** | combat-director.md | 19 | 17 | 2 | 0 | D2/D6/D10；+director-019 SC-3 令牌回收 → D12/D13 Covered |
-| **Total** | | **152** | **89** | **17** | **46** | |
+| **Total** | | **153** | **90** | **17** | **46** | |
 
 > Core 层"Covered"以跨切面 ADR（D2/D3/D4/D5/D6/D10）+ DI 缝隙 ADR-D8 承接为准；应用层状态机/调度器
 > 逻辑以 GDD 为规范文档，不单列 ADR 缺口。各 Core 系统上轮的单一残留 Gap（A2 接口所有权）
@@ -47,7 +47,7 @@
 | ADR-D6 (Audio Middleware) | Accepted | TR-concept-005, TR-beatclock-002/010, TR-director-008/009 |
 | ADR-D7 (Save/Persistence) | Accepted | TR-save-005/008, TR-datalayer-009 |
 | ADR-D8 (DI/Test Seams) | Accepted | TR-rhythm-015, TR-combo(count seam/AC-C2-22), TR-perk(RNG/pause/AC-C3-14), TR-director(clock mock) — 五 DI 缝隙接口 + 规范 pause/resume 源；step-1 spike CI 门控 |
-| ADR-D10 (Bootstrap Sequencing) | Accepted | TR-save (Initialize), TR-beatclock-007 (LatencyOffset), TR-tde (boot order), TR-director-015 |
+| ADR-D10 (Bootstrap Sequencing) | Accepted | TR-save (Initialize), TR-beatclock-007 (LatencyOffset), TR-tde (boot order), TR-tde-015 (F5 gate+latency inject → story-004), TR-director-015 |
 | ADR-D12 (Death & Run-Lifecycle) | Accepted | TR-concept-015, TR-tde-013, TR-rhythm-019, TR-director-019 — 死亡换局边界(run-ends-on-death) |
 | ADR-D13 (Run-End Victory Unification) | Accepted (TD+GD 会签) | TR-tde-013/014, TR-rhythm-019, TR-director-019 — 统一 `OnRunEnded(RunOutcome)`,胜利路径对称 |
 | ADR-D14 (BD-2 Cancel-Window Transient) | **Proposed** | TR-combo-015 — 取消窗适应窗口触发点前移至 `OnMeterChangeAccepted`(C2 故事待 D14 Accept 解阻塞) |
@@ -58,7 +58,7 @@
 
 | Layer | Total TRs | Covered | Partial | Gap | Notes |
 |-------|-----------|---------|---------|-----|-------|
-| Foundation (F2-F6) | 71 | 25 | 5 | 41 | datalayer/tde 覆盖佳；+tde-013(D12/D13 Covered)/tde-014(D13 Partial) |
+| Foundation (F2-F6) | 72 | 26 | 5 | 41 | datalayer/tde 覆盖佳；+tde-013(D12/D13 Covered)/tde-014(D13 Partial)/tde-015(D10 Covered) |
 | Core-concept | 15 | 6 | 4 | 5 | D3 覆盖 concept-006/007；+concept-015 run-ends-on-death(D12/D13) |
 | **Core (C1-C4)** | 66 | 58 | 8 | 0 | 跨切面 ADR + D8 DI 缝隙 + D12/D13 run-end；+rhythm-019/director-019 Covered、combo-015 Partial(D14 Proposed) |
 | Feature | 0 | 0 | 0 | 0 | 尚无 GDD |
