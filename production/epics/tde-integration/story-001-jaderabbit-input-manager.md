@@ -33,6 +33,7 @@
 
 - [ ] AC-F6-01：`JadeRabbitInputManager` 不直接操作 Action Map（无 `InputActionMap.Enable()/Disable()` 调用）
 - [ ] AC-F6-02：`JadeRabbitInputManager` 保留 TDE `AbilityInputAuthorization` 管线（Ability 持续期攻击输入被拦截，结束后恢复）
+- [ ] AC-F6-26：`JadeRabbitInputManager` 反射断言无 `Update()`/`FixedUpdate()` 声明（事件驱动、非轮询）；注入 `IInputEventBus` mock 后单次输入触发恰好 1 次代理调用，且调用记录中无 `InputActionMap.Enable()/Disable()` 直调
 
 ---
 
@@ -72,6 +73,12 @@
   - Then：Ability 持续期间攻击 `OnAttackInput` 未触发（输入被 TDE 管线拦截）；Ability 结束后攻击输入经 F3 正常发布；TDE Ability 状态机流程无破坏
   - Edge cases：Ability 期间连续多次攻击输入均被拦截，无泄漏
 
+**AC-3（AC-F6-26，Integration — EditMode 静态 + PlayMode 运行时）**
+  - Given：`JadeRabbitInputManager` 类型 + 注入 `IInputEventBus` mock
+  - When：EditMode 反射枚举方法签名检查 `Update`/`FixedUpdate`；PlayMode 触发单次攻击输入
+  - Then：反射断言无 `Update()`/`FixedUpdate()`；mock 代理调用次数==1；无 `InputActionMap.Enable/Disable` 直调记录
+  - Edge cases：连续多次快速输入 → 代理调用次数与触发次数一一对应
+
 ---
 
 ## Test Evidence
@@ -80,6 +87,8 @@
 **Required evidence**:
 - `Assets/Tests/EditMode/F6/JadeRabbitInputManager_test.cs`（AC-01 静态 IL / Roslyn 分析）— 必须存在且通过
 - `Assets/Tests/PlayMode/F6/JadeRabbitInputManager_test.cs`（AC-01 运行时代理路径 + AC-02 Ability 拦截）— 必须存在且通过 OR playtest 文档
+- `Assets/Tests/EditMode/F6/JadeRabbitInputManager_test.cs`（新增覆盖 AC-F6-26 反射断言）— 必须存在且通过
+- `Assets/Tests/PlayMode/F6/JadeRabbitInputManager_test.cs`（新增覆盖 AC-F6-26 单次代理调用计数）— 必须存在且通过
 
 **Status**: [ ] Not yet created
 

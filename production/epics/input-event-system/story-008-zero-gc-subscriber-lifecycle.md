@@ -33,6 +33,7 @@
 
 - [ ] AC-F3-11：连续触发 N 次输入事件广播（Attack/Dash/Move），`ProfilerRecorder("GC Allocated In Frame")` 测得广播路径堆分配为 0B（稳态帧，排除首帧 JIT/初始化分配）
 - [ ] AC-F3-12：订阅者在 `Destroy` 后不再收到事件；订阅者未退订即被销毁时，广播不抛 `MissingReferenceException`/`NullReferenceException`（对称退订生效或空引用防御）；无委托链泄漏（订阅者可被 GC 回收）
+- [ ] AC-F3-25：广播列表中存在未退订即被 `Destroy` 的订阅者且其调用抛出异常时，广播循环不中断，后续订阅者全部收到事件（漏收==0）；`event Action<TInputEvent>` 与 `readonly struct` 负载精确泛型匹配，`Invoke` 路径无隐式装箱
 
 ---
 
@@ -71,6 +72,11 @@
   - When: (1) `Destroy` 订阅者（已对称退订）后触发广播；(2) 另一订阅者未退订即 `Destroy` 后触发广播
   - Then: (1) 已销毁订阅者不再收到事件；(2) 广播不抛 `MissingReferenceException`/`NullReferenceException`；委托链无泄漏（订阅者可被 GC 回收）
   - Edge cases: 未退订销毁不得使后续订阅者漏收事件（异常不得中断广播循环）
+- **AC-3 (AC-F3-25)**: 广播鲁棒性 + 精确泛型无装箱
+  - Given: PlayMode，3 个订阅者（`OnAttackInput` 方法组订阅），中间一个未退订即 `Destroy`
+  - When: 触发攻击输入广播
+  - Then: 中间者异常不中断循环；另 2 者各收 1 次；IL/反射确认 `Invoke` 无装箱
+  - Edge cases: 多个订阅者同时处于未退订销毁状态，广播仍遍历完整列表，健康订阅者无遗漏
 
 ---
 
@@ -79,6 +85,7 @@
 **Story Type**: Integration
 **Required evidence**:
 - `Assets/Tests/PlayMode/input/zero_gc_lifecycle_test.cs` — 覆盖 AC-F3-11/12 的 PlayMode 测试（`ProfilerRecorder` 零分配断言 + 生命周期安全），必须存在且通过
+- `Assets/Tests/PlayMode/input/zero_gc_lifecycle_test.cs`（新增覆盖 AC-F3-25 广播异常隔离 + 精确泛型无装箱）— 必须存在且通过
 
 **Status**: [ ] Not yet created
 

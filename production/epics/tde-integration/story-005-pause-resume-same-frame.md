@@ -33,6 +33,7 @@
 
 - [ ] AC-F6-08：收到 TDE Pause 事件 → 同帧内 `BeatClock.Pause()` 恰 1 次 + `InputEventBus` 切至暂停态（输入门控）
 - [ ] AC-F6-09：收到 TDE UnPause 事件 → 同帧内 `BeatClock.Resume()` 恰 1 次 + `InputEventBus` 恢复 Gameplay 态
+- [ ] AC-F6-29：Pause 回调内 `BeatClock.Pause()` 与 `InputEventBus` 状态切换记录同一 `Time.frameCount`（原子性）；连续两次 Pause `BeatClock.Pause()` 累计==1（幂等）；`Pause→UnPause→Pause` 后 BeatClock 与 InputEventBus 状态一致
 
 ---
 
@@ -71,6 +72,12 @@
   - Then：同帧 `BeatClock.Resume()` == 1，BeatClock=Playing，InputEventBus=GameplayActive
   - Edge cases：未暂停态收到 UnPause → 无副作用（不误 Resume）；Pause→UnPause→Pause 序列状态一致
 
+**AC-3（AC-F6-29，Logic — PlayMode）**
+  - Given：BeatClock=Playing，InputEventBus=GameplayActive
+  - When：(1) 发 Pause 记录两者帧号；(2) 再发一次 Pause；(3) 发 UnPause 再发 Pause
+  - Then：(1) 帧号相同；(2) `Pause()` 累计==1；(3) 结束后 BeatClock=Paused 且 InputEventBus=Paused
+  - Edge cases：Pause 到达时 InputEventBus 已处于非 GameplayActive（如 UIActive）不产生二次冲突
+
 ---
 
 ## Test Evidence
@@ -78,6 +85,7 @@
 **Story Type**: Logic
 **Required evidence**:
 - `Assets/Tests/PlayMode/F6/PauseResumeSameFrame_test.cs`（AC-08/09，BeatClock + InputEventBus Spy 同帧断言）— 必须存在且通过
+- `Assets/Tests/PlayMode/F6/PauseResumeSameFrame_test.cs`（新增覆盖 AC-F6-29 原子性/幂等/一致性）— 必须存在且通过
 
 **Status**: [ ] Not yet created
 

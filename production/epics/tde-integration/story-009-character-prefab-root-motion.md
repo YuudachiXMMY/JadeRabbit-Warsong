@@ -33,6 +33,7 @@
 
 - [ ] AC-F6-14：角色 Prefab 正确装配 TDE `Character` + `HybridAnimancerComponent` + `JadeRabbitInputManager`，无组件冲突（进 Play 无 error/warning）
 - [ ] AC-F6-22：Root Motion 位移权威归 TDE 移动系统——攻击动画播放期间角色位移仅由 TDE 控制，Animancer 攻击层不产生额外位移
+- [ ] AC-F6-32：`HybridAnimancerComponent` 攻击层 `applyRootMotion` 对 Transform 位移写入关闭（位移权威归 TDE `CharacterMovement`）；Animancer 攻击层与 TDE 移动/生命层 Avatar Mask 重叠骨骼数==0
 
 ---
 
@@ -71,6 +72,12 @@
   - Then：角色世界坐标位移 == 0（或仅 TDE 授权的位移）；攻击 clip 的 Root Motion 未写入 Transform
   - Edge cases：攻击期间同时有移动输入 → 位移量 == TDE 移动系统计算值，无 Animancer 叠加
 
+**AC-3（AC-F6-32，Logic — EditMode + PlayMode）**
+  - Given：装配完成的角色 Prefab（攻击层 + TDE Animator 层）
+  - When：EditMode 读两层 Avatar Mask；PlayMode 攻击动画期间采样 Transform 位移
+  - Then：Mask 骨骼重叠==0；攻击层 Root Motion 不写入 Transform（位移仅来自 TDE）
+  - Edge cases：攻击层 Mask 意外覆盖根骨骼（Hips）须显式断言排除
+
 ---
 
 ## Test Evidence
@@ -78,6 +85,7 @@
 **Story Type**: Logic
 **Required evidence**:
 - `Assets/Tests/PlayMode/F6/CharacterPrefabAssembly_test.cs`（AC-14 组件装配校验 + AC-22 Root Motion 位移归属）— 必须存在且通过
+- `Assets/Tests/PlayMode/F6/CharacterPrefabAssembly_test.cs`（新增覆盖 AC-F6-32 位移写入隔离 + Mask 重叠检测）— 必须存在且通过
 
 **Status**: [ ] Not yet created
 

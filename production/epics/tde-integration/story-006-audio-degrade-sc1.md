@@ -32,6 +32,8 @@
 *From GDD `design/gdd/tde-integration.md`, scoped to this story:*
 
 - [ ] AC-F6-24：运行期 FMOD 不可用 → `OnAudioUnavailable` 触发，BeatClock 切内部时基继续判定（不 Stop）；FMOD 恢复 → `OnAudioRestored` 触发，音频相位重对齐
+- [ ] AC-F6-30：重复 `OnAudioUnavailable` 不叠加降级（降级标志单一，内部时基切换每丢失周期至多 1 次）；非降级态收 `OnAudioRestored` 无副作用；全程 `BeatClock.Stop()` 调用累计==0
+- [ ] AC-F6-31：降级期 `BeatClock` 保持 `Playing`、节拍序号持续单调递增；`OnAudioRestored` 重对齐后节拍相位与 DSP 相位偏差 ≤ 判定窗口容差，多周期测量无残留永久偏移
 
 ---
 
@@ -64,6 +66,18 @@
   - Then：`OnAudioUnavailable` 触发；BeatClock 未 `Stop()`（Stop 调用 == 0），切内部时基仍 Playing，节拍判定继续
   - Edge cases：丢失→恢复→再丢失序列，每次交接幂等；恢复后 `OnAudioRestored` 触发且相位重对齐（无累积漂移）
 
+**AC-2（AC-F6-30，Logic — PlayMode）**
+  - Given：BeatClock=Playing，run 进行中
+  - When：(1) 连续两次 `OnAudioUnavailable`；(2) 未降级态直接 `OnAudioRestored`
+  - Then：(1) 降级切换只 1 次、标志单一；(2) 无状态变更；全程 `Stop()`==0
+  - Edge cases：Unavailable→Restored→Unavailable 每次独立正确交接，无残留污染
+
+**AC-3（AC-F6-31，Logic — PlayMode）**
+  - Given：BeatClock=Playing，节拍序号归零基准
+  - When：(1) `OnAudioUnavailable` 后采样序号 N 周期；(2) `OnAudioRestored` 后采样相位偏差 3+ 周期
+  - Then：(1) 序号单调递增无中断；(2) 偏差 ≤ 容差且不随周期增长
+  - Edge cases：降级跨多个节拍周期后恢复偏差仍收敛
+
 ---
 
 ## Test Evidence
@@ -71,6 +85,7 @@
 **Story Type**: Logic
 **Required evidence**:
 - `Assets/Tests/PlayMode/F6/AudioDegradeSC1_test.cs`（AC-24，FMOD 设备丢失/恢复 mock）— 必须存在且通过
+- `Assets/Tests/PlayMode/F6/AudioDegradeSC1_test.cs`（新增覆盖 AC-F6-30 幂等 + AC-F6-31 连续性/相位收敛）— 必须存在且通过
 
 **Status**: [ ] Not yet created
 

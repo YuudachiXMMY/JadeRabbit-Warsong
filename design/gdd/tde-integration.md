@@ -414,6 +414,14 @@ F6 无玩家可见 UI。所有生命周期状态变化通过 TDE 事件通知上
 
 ---
 
+### AC-F6-26 — JadeRabbitInputManager 输入代理路径无轮询、无越权直调、单次输入恰 1 次代理
+
+**类型**: Integration | **测试方式**: EditMode（反射/静态分析）+ PlayMode（Mock 代理路径）
+
+反射检查 `JadeRabbitInputManager`（含基类覆写链）不声明 `Update()`/`FixedUpdate()`（事件驱动非轮询，Manifest Guardrail）；PlayMode 注入 `IInputEventBus` mock，单次攻击输入后 mock 收到恰 1 次代理调用（转发计数==1），且无 `InputActionMap.Enable()/Disable()` 直调记录（与 AC-F6-01 静态 IL 断言互补）。
+
+---
+
 ### AC-F6-03 — TDELifecycleAdapter 是 BeatClock 生命周期唯一调用者
 
 **类型**: Logic | **测试方式**: EditMode 自动化测试（静态）+ PlayMode 自动化测试（运行时 Spy）
@@ -474,6 +482,14 @@ BeatClock 处于 `Playing`（currentBPM=120）期间以 `LoadSceneMode.Additive`
 
 ---
 
+### AC-F6-29 — Pause/Resume 原子性与幂等性形式化断言
+
+**类型**: Logic | **测试方式**: PlayMode
+
+① Pause 分支内 `BeatClock.Pause()` 与 `InputEventBus` 切换记录同一 `Time.frameCount`（同一回调栈内，补 AC-F6-08 同帧性）；② 已 `Paused` 时再收 Pause，`BeatClock.Pause()` 累计==1（幂等）；③ `Pause→UnPause→Pause` 后 BeatClock 与 InputEventBus 状态一致（无撕裂）。
+
+---
+
 ### AC-F6-10 — run-end 信号同帧停止 BeatClock 并禁用所有输入（Death + Victory，ADR-D13）
 
 **类型**: Logic | **测试方式**: PlayMode 自动化测试
@@ -526,6 +542,14 @@ BeatClock 处于 `Playing`（currentBPM=120）期间以 `LoadSceneMode.Additive`
 | 任意 | **0**（或负值） | **抛出 `InvalidOperationException`，方法中止** | `[F6-FATAL] authoredBpm <= 0 in AttackNodeSO — PlayAttack aborted` |
 
 限幅 Warning 须包含原始值和截断值；非限幅用例断言无 Warning 输出；`authoredBpm <= 0` 用例断言无 `AnimancerState.Speed` 写入且异常被记录。
+
+---
+
+### AC-F6-33 — `F6Constants.CalculateAttackAnimSpeed` 纯函数性断言
+
+**类型**: Logic | **测试方式**: EditMode（含反射/静态分析）
+
+补 AC-F6-13（数值表）/AC-F6-18（集成校准），聚焦函数性质：① 相同 `(currentBPM,authoredBpm)` 多次调用返回逐位一致；② 反射/Roslyn 断言方法体不引用 `Time.*`/单例/静态可变字段；③ 钳制区间内固定 `authoredBpm` 时 `currentBPM` 递增 → 速度单调非减。
 
 ---
 
@@ -618,6 +642,14 @@ BPM=120 → 200 骤跳时攻击动画中途加速的场景，以盲测问卷评�
 
 ---
 
+### AC-F6-34 — Option A 盲测证据留存规范
+
+**类型**: Visual/Feel | **测试方式**: 人工盲测证据审阅（与 AC-F6-20 同批次）
+
+补 AC-F6-20 主观阈值之外的证据可追溯性：① ≥3 档 BPM（如 90/120/160）随机序、每档连续攻击 10+ 次全程录屏；② 录屏经审阅逐档确认起手/命中帧贴拍（无脱拍/黏滞），逐档独立结论；③ 每档评语 + 录屏/关键帧截图 + audio-director 或 creative-director 签核（含姓名/日期）存入 `production/qa/evidence/story-012-feel-evidence.md`。
+
+---
+
 ### AC-F6-21 — FMOD RuntimeManager 验证通过 IFMODRuntimeChecker 接口注入（可测试性）
 
 **类型**: Logic | **测试方式**: EditMode 自动化测试
@@ -646,6 +678,14 @@ EditMode 测试中注入返回 `false` 的 mock `IFMODRuntimeChecker`：断言 `
 
 ---
 
+### AC-F6-32 — 攻击层 Root Motion 位移写入隔离 + Avatar Mask 不重叠
+
+**类型**: Logic | **测试方式**: EditMode Prefab 检查 + PlayMode
+
+① `HybridAnimancerComponent` 攻击层 `applyRootMotion` 对 Transform 位移写入为关闭（位移权威归 TDE `CharacterMovement`，与 AC-F6-14 `Animator.applyRootMotion==false` 互补，聚焦 Animancer 攻击层自身开关）；② 攻击层 Avatar Mask 与 TDE 移动/生命层 Mask 重叠骨骼数==0。
+
+---
+
 ### AC-F6-23 — F5 初始化 gate + LatencyOffsetMs boot-inject（headless via MockSaveService）
 
 **类型**: Integration | **测试方式**: PlayMode 自动化测试（注入 `MockSaveService : ISaveService`，无真实文件 I/O）
@@ -662,6 +702,22 @@ EditMode 测试中注入返回 `false` 的 mock `IFMODRuntimeChecker`：断言 `
 
 ---
 
+### AC-F6-27 — boot 门禁与注入的调用序号顺序断言
+
+**类型**: Integration | **测试方式**: PlayMode（调用序号 Spy + `MockSaveService` + mock FMOD 门禁）
+
+用全局单调递增调用序号 Spy 断言：① `ISaveService` 就绪求值序号 < FMOD 就绪门禁（AC-F6-21）序号；② `LatencyOffsetMs` 注入序号 < `BeatClock.Play()` 序号；③ `InputEventBus.EnableGameplayInput()` 序号 > `Play()` 序号。任一逆序判违规。
+
+---
+
+### AC-F6-28 — LatencyOffsetMs boot 一次性注入 + PlayerInfoSO 缺失降级
+
+**类型**: Integration | **测试方式**: PlayMode（`MockSaveService`，无真实文件 I/O）
+
+① `MockSaveService` 返回有效值时，boot 生命周期内注入 `BeatClock` 累计==1；② `IsInitialized==true` 但 `PlayerInfoSO==null` 时 `BeatClock.LatencyOffsetMs` 取默认 `0f` + 恰 1 条 Warning（非 Fatal）+ `Play()` 仍放行（调用==1），与 AC-F6-23「服务未初始化 fail-fast」明确区分。
+
+---
+
 ### AC-F6-24 — 音频设备断开时 F6 同帧暂停 TDE 并禁用所有输入（SC-1）
 
 **类型**: Logic | **测试方式**: PlayMode 自动化测试（注入 mock F2 事件源 + Spy TDE 暂停/InputEventBus）
@@ -673,6 +729,22 @@ EditMode 测试中注入返回 `false` 的 mock `IFMODRuntimeChecker`：断言 `
 3. **恢复对称路径**：随后发布 F2 `OnAudioRestored`（或 `OnBeatClockResumed`）后，`BeatClock.Resume()`、`GameManager.UnPause()` 与 `InputEventBus.EnableGameplayInput()` 各调用恰好 1 次；**`BeatClock.Resume()` 调用来源为 `TDELifecycleAdapter`（W-1：Resume owner=F6，F2 事件源 Spy 断言 F2 自身未调用任何 BeatClock 生命周期方法）**；调用顺序序号 `Resume()` < `EnableGameplayInput()`（节拍参照先于输入开放，遵 EC-05）；最终状态回到 GameplayActive。
 
 **通过条件**：以上 3 项全部通过。降级与恢复均通过 mock F2 事件源触发，无需真实音频设备断开。
+
+---
+
+### AC-F6-30 — 音频降级/恢复交接幂等性
+
+**类型**: Logic | **测试方式**: PlayMode（mock F2 事件源）
+
+① 连续两次 `OnAudioUnavailable`（未恢复）降级标志单一、内部时基切换每丢失周期至多 1 次；② 非降级态收 `OnAudioRestored` 无副作用；③ 全程 `BeatClock.Stop()` 累计==0（降级≠结束）。
+
+---
+
+### AC-F6-31 — 降级期节拍判定连续性 + 恢复后相位收敛
+
+**类型**: Logic | **测试方式**: PlayMode（mock F2 + 可控内部时基）
+
+① `OnAudioUnavailable` 后 BeatClock 保持 `Playing`、节拍序号持续单调递增无中断；② `OnAudioRestored` 重对齐后节拍相位与 DSP 相位偏差 ≤ 判定窗口容差（复用 F3 帧率容差基准），多周期（≥3）测量无残留永久偏移。
 
 ---
 
