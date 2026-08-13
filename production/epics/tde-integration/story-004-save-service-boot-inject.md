@@ -11,7 +11,7 @@
 ## Context
 
 **GDD**: `design/gdd/tde-integration.md`
-**Requirement**: `TR-tde-011`（F5 存档就绪门禁 + 延迟校准注入）
+**Requirement**: `TR-tde-015`（F5 存档就绪门禁 + 延迟校准注入）
 *(Requirement text lives in `docs/architecture/tr-registry.yaml` — read fresh at review time)*
 
 **ADR Governing Implementation**: ADR-D10: Bootstrap 顺序（primary）；ADR-D1: TDE 集成
