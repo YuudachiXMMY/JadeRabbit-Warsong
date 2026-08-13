@@ -1,19 +1,19 @@
-# Story 008: [BLOCKED] TDE 原生胜利/关卡完成事件桥接
+# Story 008: TDE 原生胜利/关卡完成事件桥接
 
 > **Epic**: F6 TopDownEngine & Animancer 集成层
-> **Status**: Blocked
+> **Status**: Ready
 > **Layer**: Foundation
 > **Type**: Integration
 > **Estimate**: M
 > **Manifest Version**: 2026-08-12
-> **Last Updated**: [set by /dev-story when implementation begins]
+> **Last Updated**: 2026-08-13（TR-tde-014 硬门解除：成员名已核对源码并回填引擎参考）
 
-> **⚠ BLOCKED — TR-tde-014 HARD GATE**: TDE 原生胜利/关卡完成事件的成员名尚未对照 `docs/engine-reference/unity/plugins/top-down-engine.md` 验证。实现前必须先完成成员名验证（ADR-D13 VR1 硬门），严禁从训练数据推断 TDE 事件枚举/成员名。验证通过后将本 story 改为 `Ready`。
+> **✅ 硬门已解除（2026-08-13）— TR-tde-014 / ADR-D13 VR1**：TDE 事件成员名已对照源码（`GameManager.cs:27-47`）核对并回填 `docs/engine-reference/unity/plugins/top-down-engine.md`。核对结论：`TopDownEngineEventTypes` 含 `LevelComplete`/`LevelEnd`/`GameOver`，但 **TDE 无自动派发的原生胜利事件**（`GameOver` 是死亡侧，`LevelEnd` 是场景切换，`LevelComplete` 存在但 core 不 fire；本装机无 `GoalManager`）。故 D13-2 走 **fallback 分支**：胜利信号由 FE4/FE2/FE5 显式调用 F6 `EndRun(RunOutcome.Victory)`；如复用 TDE 通道则游戏代码 `Trigger(TopDownEngineEventTypes.LevelComplete, null)` + F6 `MMEventListener<TopDownEngineEvent>` 桥接。entities.yaml `vr1_tde_level_complete_event` 已 `resolved`。
 
 ## Context
 
 **GDD**: `design/gdd/tde-integration.md`
-**Requirement**: `TR-tde-014`（TDE 胜利事件桥接，PARTIAL — ADR-D13 VR1 硬门，成员名未验证）
+**Requirement**: `TR-tde-014`（TDE 胜利事件桥接，ADR-D13 VR1 硬门已解 2026-08-13 — 成员名经源码核对并回填引擎参考）
 *(Requirement text lives in `docs/architecture/tr-registry.yaml` — read fresh at review time)*
 
 **ADR Governing Implementation**: ADR-D13: run-end 胜利边界（primary）；ADR-D12: 死亡/换新局生命周期
@@ -33,7 +33,7 @@
 
 *From GDD `design/gdd/tde-integration.md` + ADR-D13 VR1，scoped to this story:*
 
-- [ ] **前置**：TDE 胜利/关卡完成事件成员名经 `top-down-engine.md` 验证并记录（解除 BLOCKED 的必要条件）
+- [x] **前置**：TDE 胜利/关卡完成事件成员名经 `top-down-engine.md` 验证并记录（解除 BLOCKED 的必要条件）— ✅ 2026-08-13 完成，见引擎参考「TopDownEngineEvent — 生命周期 / run-end 事件」段
 - [ ] TDE 原生胜利事件 → `EndRun(RunOutcome.Victory)`，同帧 `BeatClock.Stop()` == 1 + `InputEventBus.DisableAllInput()` == 1 + `OnRunEnded(Victory)` 广播恰 1 次
 - [ ] 胜利与死亡同 run 竞争时，`_runEnded` 闩锁保证仅首个 outcome 生效（无 double-Stop/double 广播）
 
@@ -82,11 +82,11 @@
 **Required evidence**:
 - `Assets/Tests/PlayMode/F6/VictoryBridge_test.cs`（胜利桥接 + 竞争闩锁）— 解 BLOCKED 后必须存在且通过
 
-**Status**: [ ] Blocked — 待 TR-tde-014 成员名验证解门后创建
+**Status**: [ ] Not Started — 硬门已解（2026-08-13），可创建；待 `/dev-story` 实现胜利桥接 + 竞争闩锁测试
 
 ---
 
 ## Dependencies
 
-- Depends on: Story 007（`EndRun(Victory)` 出口）；**硬门**：TR-tde-014 TDE 胜利事件成员名验证（`top-down-engine.md`）
+- Depends on: Story 007（`EndRun(Victory)` 出口）；~~**硬门**：TR-tde-014 TDE 胜利事件成员名验证（`top-down-engine.md`）~~ ✅ 已解 2026-08-13
 - Unlocks: None（run-end 边界闭合的最后一块）

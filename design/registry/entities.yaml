@@ -409,7 +409,7 @@ forbidden_patterns:
 
 pre_implementation_checks:
   - name: vr1_tde_level_complete_event
-    status: open
+    status: resolved
     owner: technical-director
     source: docs/architecture/adr-d13-run-end-victory-boundary.md   # ADR-D13 Verification Required 1 / TD 会签条件 C3
     blocks:
@@ -418,3 +418,5 @@ pre_implementation_checks:
     check: "核对 TDE 4.5 是否原生以 TopDownEngineEvent 派发关卡完成/胜利（候选 LevelManager/GoalManager 触发或 TopDownEngineEventTypes 成员名），回填 docs/engine-reference/unity/plugins/top-down-engine.md。参照 ADR-D1 .Respawn→.RespawnComplete 教训，成员名不得凭训练数据臆断。若无原生事件 → 胜利信号由 FE4/FE2/FE5 显式调用 F6 EndRun(Victory)。"
     note: "实现前硬门；不阻塞 ADR-D13 Accept，阻塞 D13-2 胜利桥接与 FE5 胜利结算实现。"
     added: 2026-08-12
+    resolved: 2026-08-13
+    resolution: "已核对 TDE 4.5 源码（GameManager.cs:27-47 TopDownEngineEventTypes 枚举 + LevelManager.cs:340/437 触发点），回填 docs/engine-reference/unity/plugins/top-down-engine.md。结论：TopDownEngineEventTypes 含 LevelComplete(:31，TDE core 不自动触发，留给游戏代码 fire)/LevelEnd(:32，LevelManager.GotoLevel 自动触发，非胜利判定)/GameOver(:40，死亡侧 all-lives-lost)；本装机无 GoalManager 类。TDE 无自动派发的原生胜利事件 → 胜利信号由 FE4/FE2/FE5 显式调用 F6 EndRun(RunOutcome.Victory)（ADR-D13 D13-2 fallback）。story-008-victory-event-bridge 解 BLOCKED。"
