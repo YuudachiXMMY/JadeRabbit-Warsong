@@ -11,7 +11,7 @@
 ## Context
 
 **GDD**: `design/gdd/save-persistence.md`
-**Requirement**: `TR-save-002`
+**Requirement**: `TR-save-002`, `TR-save-014`
 *(Requirement text lives in `docs/architecture/tr-registry.yaml` — read fresh at review time)*
 
 **ADR Governing Implementation**: ADR-D10: Bootstrap 顺序（primary）；ADR-D7: 存档/持久化中间件（secondary）

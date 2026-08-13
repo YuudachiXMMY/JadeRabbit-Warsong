@@ -24,7 +24,7 @@
 #
 # STATUS VALUES: active | deprecated | superseded-by: TR-[system]-NNN
 
-version: 3
+version: 4
 last_updated: "2026-08-13"
 
 requirements:
@@ -615,6 +615,14 @@ requirements:
     revised: ""
     status: active
 
+  - id: TR-save-014
+    system: save
+    gdd: design/gdd/save-persistence.md
+    requirement: "Synchronous Initialize() boot-gate readiness contract (D-4): Initialize() is main-thread synchronous/blocking, returns void, no coroutine/Task/timeout; IsInitialized flips true synchronously on completion (state==Idle) within the Awake->Start window; ISaveService.IsInitialized is the F6 boot-gate precondition consumed before BeatClock.Play() (ADR-D10 D-4; AC-F5-01; save-persistence.md Rule 14; consumed by TR-tde-015)"
+    created: 2026-08-13
+    revised: ""
+    status: active
+
   # ── tde (design/gdd/tde-integration.md) ─────────────────────────────────────
 
   - id: TR-tde-001
@@ -732,9 +740,9 @@ requirements:
   - id: TR-tde-015
     system: tde
     gdd: design/gdd/tde-integration.md
-    requirement: "F5 boot gate + latency inject: BeatClock.Play() blocked until ISaveService ready; LatencyOffsetMs read from PlayerInfoSO and one-shot injected into BeatClock before Play() at boot (AC-F6-23; ADR-D10 D-4/D-5; consumes TR-save-010 init seam + TR-beatclock-007 offset)"
+    requirement: "F5 boot gate + latency inject: BeatClock.Play() blocked until ISaveService ready; LatencyOffsetMs read from PlayerInfoSO and one-shot injected into BeatClock before Play() at boot (AC-F6-23; ADR-D10 D-4/D-5; consumes TR-save-014 F5 boot-gate readiness contract + TR-beatclock-007 offset)"
     created: 2026-08-13
-    revised: ""
+    revised: "2026-08-13"
     status: active
 
   # ── rhythm / C1 (design/gdd/rhythm-core.md) ───────────────────────────────
