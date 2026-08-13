@@ -147,12 +147,14 @@ void TryEvaluateLate(AttackInputEvent e):
     EmitAndClear(offset)
 
 void EmitAndClear(float offset):
-    var rating = Evaluate(Mathf.Abs(offset))
+    var rating      = Evaluate(Mathf.Abs(offset))
+    var cancelTier  = ToCancelTier(rating)      // Perfect→Advanced, Good→Standard, Miss→Closed（rhythm-core Rule 10）
+    int comboBefore = CurrentCombo
+    UpdateCombo(rating)                          // 先更新，事件的 ComboCountAfter 取判定后连击数（C1-F4）
     emit new RhythmJudgmentEvent(
-        _pendingInput.Value.attackType, rating, offset,
-        _currentBeatDspTime, Mode, CurrentCombo)
+        rating, _pendingInput.Value.attackType, cancelTier,
+        comboBefore, CurrentCombo, offset)
     AnimancerAttackPlayer.Play(_pendingInput.Value.attackType, _currentBeatDspTime)
-    UpdateCombo(rating)
     _pendingInput = null
     _lateWindowActive = false
 
@@ -175,18 +177,21 @@ RhythmRating Evaluate(float absOffset):
 
 ```csharp
 // 输出事件（readonly struct — 零 GC）
+// ⚠ 字段定义以 rhythm-core.md「C1-F6：RhythmJudgmentEvent 规范性字段定义」为唯一规范源；本处逐字镜像该 6 字段。
 public readonly struct RhythmJudgmentEvent
 {
-    public readonly AttackType      AttackType;
-    public readonly RhythmRating    Rating;        // Perfect | Good | Miss
-    public readonly float           OffsetMs;      // 有符号，毫秒；负 = 提前，正 = 滞后
-    public readonly double          BeatDspTime;   // 参考半拍 DSP 时间（来自 F2）
-    public readonly QuantizationMode Mode;
-    public readonly int             ComboCountBefore; // 此次判定前的 combo 计数
+    public readonly RhythmRating    Rating;            // Perfect | Good | Miss
+    public readonly AttackType      AttackType;        // LightAttack | HeavyAttack | ChargedAttack（透传自 F3）
+    public readonly CancelTier      CancelTier;        // Advanced | Standard | Closed（C1 按评级填充，见 rhythm-core Rule 10）
+    public readonly int             ComboCountBefore;  // 此次判定前的 combo 计数
+    public readonly int             ComboCountAfter;   // 此次判定后的 combo 计数（= clamp(Before + ΔCombo, 0, ComboMax)，见 C1-F4）
+    public readonly float           OffsetMs;          // 有符号，毫秒；负 = 提前，正 = 滞后；Off 模式固定 = 0
 }
 
-public enum RhythmRating   { Perfect, Good, Miss }
-public enum QuantizationMode { Off, HalfBeat, Beat }
+public enum RhythmRating     { Perfect, Good, Miss }
+public enum QuantizationMode { Off, HalfBeat, Beat }             // RhythmJudger.Mode 内部状态用；非事件字段
+public enum AttackType       { LightAttack, HeavyAttack, ChargedAttack } // 权威定义在 F3 input-event-system.md；此处镜像
+public enum CancelTier       { Advanced, Standard, Closed }     // Perfect→Advanced, Good→Standard, Miss→Closed（rhythm-core Rule 10）
 
 // RhythmJudger 公开接口
 public class RhythmJudger : MonoBehaviour
