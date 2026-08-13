@@ -1,8 +1,8 @@
 # Traceability Index
 
-> **Last Updated**: 2026-08-13 (Rev.11 · 定向修复 — TR-tde-011 语义冲突缺口：新增 TR-tde-015 承接 F6 story-004 F5 boot gate+延迟注入，story-004 引用 011→015)
-> **Source**: `/architecture-review 验证 ADR 覆盖度` (coverage mode)
-> **TR Registry**: `docs/architecture/tr-registry.yaml` (152 entries, v3)
+> **Last Updated**: 2026-08-13 (Rev.12 · 定向修复 — F5 boot-gate TR 缺口：新增 TR-save-014 承接 D-4 同步 Initialize()/IsInitialized boot 就绪契约，story-003 引用 +014；TR-tde-015 consumes 由 save-010 测试 seam 改指 save-014 运行期契约)
+> **Source**: `/architecture-review 补建 story-004 TR 缺口` (coverage mode)
+> **TR Registry**: `docs/architecture/tr-registry.yaml` (153 entries, v4)
 > **Verdict this review**: CONCERNS（健康 — 0 阻塞项）— see `architecture-review-2026-08-12-coverage.md`
 >
 > **coverage 增量（2026-08-12）**：上轮 v8 后新增 **ADR-D12（死亡换局，Accepted）/ D13（胜利 run-end 统一，
