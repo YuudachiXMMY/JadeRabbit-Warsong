@@ -108,7 +108,7 @@
 
 > **CombatCore 程序集边界（强制）**：C1-C6 编入独立 `CombatCore` 程序集，只读订阅 F6 域事件，
 > **绝不** 直接调用 TDE 内部类或 `BeatClock` 生命周期方法。跨程序集测试可见性由
-> `[assembly: InternalsVisibleTo("CombatCore.Tests.EditMode")]` 声明（ADR-D8）。
+> `[assembly: InternalsVisibleTo("EditModeTests")]` 声明（ADR-D8）。
 
 ---
 
@@ -284,7 +284,7 @@ public interface IDSPClock { double GetDspTime(); }
 1. `IComboCounter.CurrentCombo` 由 C1 `RhythmJudger` **唯一写者**；C2 只读，**绝不回写**。
 2. `IBeatClock` 是**只读消费面**——生命周期 `Play/Pause/Resume/Stop` 在独立 `IBeatClockLifecycle`，唯一控制者 F6；CombatCore **禁止**调用。
 3. Pause/Resume 事件唯一发布者 = F2；订阅方禁止定义并行暂停事件。
-4. 测试缝隙 setter（`SetBeatClockForTesting(IBeatClock)` 等）仅在 `#if UNITY_EDITOR || DEVELOPMENT_BUILD` 暴露；跨程序集可见性靠 `[assembly: InternalsVisibleTo("CombatCore.Tests.EditMode")]`（声明于 CombatCore Runtime asmdef）。
+4. 测试缝隙 setter（`SetBeatClockForTesting(IBeatClock)` 等）仅在 `#if UNITY_EDITOR || DEVELOPMENT_BUILD` 暴露；跨程序集可见性靠 `[assembly: InternalsVisibleTo("EditModeTests")]`（声明于 CombatCore Runtime asmdef）。
 5. 两事件时间戳须同源 `AudioSettings.dspTime` 域，**禁混 `Time.time`**（ADR-D14 实装陷阱）。
 
 **模块须向调用方保证**：`IBeatClock` 事件仅主线程分发；`ISaveService.Initialize()` 同步返回后 `IsInitialized==true`；`AnimancerState.Speed` 仅影响后续帧不回溯已播放 `NormalizedTime`。
@@ -412,7 +412,7 @@ public interface IFileStorage { /* Save<T>, Load<T>, KeyExists, FileExists, Dele
 **判定：APPROVED WITH CONDITIONS**
 
 **Conditions（非阻塞，实现前处理）：**
-- **H1（文档漂移，LOW）**：ADR-D8 三处 `InternalsVisibleTo` 目标程序集名历史上曾写 `"CombatCore.Tests.EditMode"` 与实际跑绿代码 `"EditModeTests"` 需统一（D8:318/379/402），防 C1-C4 Mock 照抄重触 CS0122。本文 §5.1 采用 D8 权威名 `"CombatCore.Tests.EditMode"`。
+- **H1（文档漂移，LOW）— ✅ 已消解 2026-08-13**：ADR-D8 三处 `InternalsVisibleTo` 目标程序集名历史上曾写 `"CombatCore.Tests.EditMode"`，与实际跑绿代码 `"EditModeTests"`（`Assets/Scripts/Core/AssemblyInfo.cs:10` + `Assets/Tests/EditMode/EditModeTests.asmdef`）不一致。已统一：D8:318/321/379/402 + 本文 §5.1（:111/:287）全部改为权威名 `"EditModeTests"`，与编译真值对齐，杜绝 C1-C4 Mock 照抄重触 CS0122。
 - **D3 文本漂移（LOW）**：D3 未同步 `OnBeatClockPaused` 规范名 + `AttackType.HeavyAttack`（D8 Migration §2 已登记）。
 - **ADR-D14 仍 Proposed**：C2 BD-2 实装受 Proposed 门控阻塞（不阻塞 C1 冲刺）。
 - **D13-2 胜利事件名待引擎核对**（不阻塞 D13 机制域 Accept）。
