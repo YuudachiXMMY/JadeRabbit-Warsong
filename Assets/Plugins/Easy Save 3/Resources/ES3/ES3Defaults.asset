@@ -41,6 +41,7 @@ MonoBehaviour:
     - DOTween.Modules
     - DOTweenPro.Scripts
     - FMODUnity
+    - FMODUnityHaptics
     - FMODUnityResonance
     - Kybernetik.Animancer
     - Kybernetik.Animancer.FSM
