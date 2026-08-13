@@ -10,7 +10,7 @@
 | **Author** | technical-director（`/create-architecture` 主笔） |
 | **Review Mode** | lean（LP-FEASIBILITY 跳过——非 PHASE-GATE） |
 | **GDDs Covered** | F1 game-concept, F2 audio-beat-clock, F3 input-event-system, F4 so-data-layer, F5 save-persistence, F6 tde-integration, C1 rhythm-core, C2 combo-system, C3 perk-system, C4 combat-director（10 份 Approved/Needs-Revision GDD） |
-| **ADRs Referenced** | ADR-D1..D8, D10, D12, D13（Accepted）; ADR-D14（Proposed）。**D9/D11 号段从未创建（编号跳空，非悬空依赖）** |
+| **ADRs Referenced** | ADR-D1..D8, D10, D12, D13, D14（Accepted，D14 于 2026-08-13 TD+game-designer 会签转正）。**D9/D11 号段从未创建（编号跳空，非悬空依赖）** |
 | **Traceability Source** | `docs/architecture/traceability-index.md` (Rev.10) · `docs/architecture/tr-registry.yaml` (152 TR, v3) |
 | **Technical Director Sign-Off** | 2026-08-12 — APPROVED WITH CONDITIONS（见 §9） |
 | **Lead Programmer Feasibility** | SKIPPED — Lean 模式（非阻塞；Production 前若升 full 模式补跑 LP-FEASIBILITY） |
@@ -133,7 +133,7 @@
 | 模块 | Owns | Exposes | Consumes | Engine APIs |
 |------|------|---------|----------|-------------|
 | **C1 RhythmJudger** (ADR-D3/D8/D12/D13) | 判定评级逻辑、单槽输入缓冲、`CurrentCombo`（唯一写者/广播）、SC-2（run-end 清 `_pendingInput`/`_lateWindowActive`） | `event Action<RhythmJudgmentEvent> OnRhythmJudgment`、`QuantizationMode Mode`、`IComboCounter`（`CurrentCombo`/`ComboMax=999`）、`int CurrentCombo{get;private set;}` | `IBeatClock`、`IInputEventBus`、`IAnimancerAttackPlayer`、`RhythmConfigSO`；`OnRunEnded` | 无 post-cutoff（纯 C# + Mono）；`RhythmJudgmentEvent` readonly struct（`AttackType/Rating/OffsetMs/BeatDspTime/Mode/ComboCountBefore`）；`enum RhythmRating{Perfect,Good,Miss}`、`QuantizationMode{Off,HalfBeat,Beat}` |
-| **C2 连招图** (ADR-D4/D5/D14) | 连招图运行时容器、取消窗保护（`max(cancelWindowMs(bpm_before),cancelWindowMs(bpm_after))`）、`AttackNodeSO.animationClip` Addressables 加载/释放生命周期 | 连招推进 API | `AttackNodeSO/ComboGraphSO`、`IComboCounter`（C1 只读绝不回写）、`IBeatClock.OnMeterChangeAccepted`（保护窗起点，ADR-D14 Proposed）+`OnMeterChanged`（尾端）、Animancer 攻击层 | ⚠️ Addressables 加载（MED，try/catch） |
+| **C2 连招图** (ADR-D4/D5/D14) | 连招图运行时容器、取消窗保护（`max(cancelWindowMs(bpm_before),cancelWindowMs(bpm_after))`）、`AttackNodeSO.animationClip` Addressables 加载/释放生命周期 | 连招推进 API | `AttackNodeSO/ComboGraphSO`、`IComboCounter`（C1 只读绝不回写）、`IBeatClock.OnMeterChangeAccepted`（保护窗起点，ADR-D14 Accepted）+`OnMeterChanged`（尾端）、Animancer 攻击层 | ⚠️ Addressables 加载（MED，try/catch） |
 | **C3 心法构筑** (ADR-D4/D8) | PerkSO 克隆规则（`Instantiate()`/`Destroy()`）、心法冻结栈计时 | 心法运行时效果 | `PerkSO`、`IRandomSource`（`Next/NextDouble/Reseed/Seed`）、`IBeatClock.OnBeatClockPaused/Resumed`（软依赖，BC-6） | 无 post-cutoff |
 | **C4 战斗导演** (ADR-D2/D6/D12/D13) | 拍槽分配、令牌落拍计算、SlotCapacity、SC-3（run-end 令牌回收，Death+Victory 对称） | 攻击令牌授予（`OnTokenGranted()`） | `IBeatClock`、`EnemyInfoSO.attackWindupBeats`、`IDSPClock`、`OnRunEnded` | 无 post-cutoff |
 | **C5 武器 / C6 Hitbox** | 武器容器 / hitbox 激活时机（Not Started） | — | `WeaponSO`+C2 / C2 攻击帧+F6 碰撞 | TDE 碰撞检测（待 GDD） |
@@ -207,7 +207,7 @@
   所有 Core/Presentation/Polish **订阅**，保证「节拍驱动视效」视觉一致。
 - **Pause/Resume 规范源唯一性（ADR-D8）**：F2 是唯一发布者；**禁止**其他系统定义并行 `OnGamePaused/OnGameResumed`。硬依赖 C1，软依赖 C3、F6。
 - **run-end 域事件（ADR-D12/D13）**：F6 `EndRun(RunOutcome)` 单一出口广播 `OnRunEnded(RunOutcome)`，负载为纯 C# `enum RunOutcome{Death,Victory,...}`（**不含任何 TDE 类型**，机制域已钉死，取值集合待 FE5 扩展）。
-- **BPM 变更（ADR-D14 Proposed）**：C2 取消窗保护起点从 `OnMeterChanged` 前移到 `OnMeterChangeAccepted`；C1 判定网格重锚仍绑 `OnMeterChanged`（C1-F5b 硬约束不可动）。
+- **BPM 变更（ADR-D14 Accepted）**：C2 取消窗保护起点从 `OnMeterChanged` 前移到 `OnMeterChangeAccepted`；C1 判定网格重锚仍绑 `OnMeterChanged`（C1-F5b 硬约束不可动）。
 
 ### 4.3 存档/加载路径
 
@@ -337,7 +337,7 @@ public interface IFileStorage { /* Save<T>, Load<T>, KeyExists, FileExists, Dele
 | ADR-D10 Bootstrap Sequencing | ✅ | ✅ | ✅ | ✅ | 无 | ✅ |
 | ADR-D12 Death & Run-Lifecycle | ✅ | ✅ | ✅ | ✅ | 无 | ✅ |
 | ADR-D13 Run-End Victory | ✅ | ✅ | ✅（TDE 胜利事件名未核对） | ✅ | 无 | ⚠️ D13-2 待引擎核对 |
-| ADR-D14 BD-2 Cancel-Window | ✅ | ✅ | ✅ | ✅ | 无 | ⚠️ **Proposed** — 阻塞 C2 BD-2 故事 |
+| ADR-D14 BD-2 Cancel-Window | ✅ | ✅ | ✅ | ✅ | 无 | ✅ **Accepted**（2026-08-13 TD+GD 会签）— C2 BD-2 解阻塞 |
 
 > **无跨 ADR blocking conflict**。上轮 A1-A5 冲突全部消解（A1 D1 唯一裁定；A2 D8 归属；A3 命名；A4 事件 schema；A5 authoredBpm 边界统一 [60,240]）。残留 LOW 文档漂移见 §9。合计 CPU ≈0.73ms/帧 ≪ 16.6ms 预算，无预算冲突。
 
@@ -347,9 +347,9 @@ public interface IFileStorage { /* Save<T>, Load<T>, KeyExists, FileExists, Dele
 |-------|:---:|:---:|:---:|:---:|------|
 | Foundation (F2-F6) | 71 | 25 | 5 | 41 | Gap 多为 GDD=规范内部项（beatclock/input/save 37 项预期） |
 | Core-concept | 15 | 6 | 4 | 5 | 5 真实缺口 → 未来 GDD |
-| **Core (C1-C4)** | 66 | 58 | 8 | **0** | ✅ 跨切面 ADR + D8 DI 缝隙 + D12/D13 全覆盖 |
+| **Core (C1-C4)** | 66 | 59 | 7 | **0** | ✅ 跨切面 ADR + D8 DI 缝隙 + D12/D13 全覆盖 + D14 Accepted(combo-015 Covered) |
 | Feature/Presentation | 0 | — | — | — | 尚无 GDD |
-| **Total** | **152** | **89** | **17** | **46** | CONCERNS（健康，0 阻塞） |
+| **Total** | **152** | **90** | **16** | **46** | CONCERNS（健康，0 阻塞） |
 
 **关键结论**：**Core 四系统 Gap = 0**——MVP 核心循环的架构承接完整，DI 硬门已由 ADR-D8（Accepted, step-1 spike + CI 门控）解锁。46 项 Gap 中，37 为 Foundation「GDD 即规范」预期项，仅 9 项（concept 5 + tde 4）为真实的未来 GDD 缺口。
 
@@ -361,8 +361,8 @@ public interface IFileStorage { /* Save<T>, Load<T>, KeyExists, FileExists, Dele
 
 ### 必须在相关系统实现前处理
 
-**阻塞 C2 连招实装（非 C1 关键路径）：**
-- **ADR-D14 转 Accepted** → 覆盖 TR-combo-015；当前 Proposed 门控阻塞 C2 BD-2「BPM 变更瞬态取消窗」故事。C2 未开工，不阻塞 C1 冲刺。
+**~~阻塞 C2 连招实装~~ ✅ 已解阻塞（2026-08-13）：**
+- ~~**ADR-D14 转 Accepted**~~ → **已 Accepted（2026-08-13，TD+game-designer 会签）**，覆盖 TR-combo-015；C2 BD-2「BPM 变更瞬态取消窗」故事解阻塞。落地后续（Migration Plan step 2-3，非本次范围）：`combo-system.md` 规则12/F7/AC-C2-40 触发点改写 + `rhythm-core.md` BD-2 互引补非对称注记。
 
 **阻塞 D13-2 胜利桥接实装：**
 - **核对 TDE 胜利/通关事件成员名** → 补入 ADR-D13 或引擎参考（`docs/engine-reference/unity/plugins/`）；机制域已 Accepted，仅实装桥接待核对。
@@ -414,7 +414,7 @@ public interface IFileStorage { /* Save<T>, Load<T>, KeyExists, FileExists, Dele
 **Conditions（非阻塞，实现前处理）：**
 - **H1（文档漂移，LOW）— ✅ 已消解 2026-08-13**：ADR-D8 三处 `InternalsVisibleTo` 目标程序集名历史上曾写 `"CombatCore.Tests.EditMode"`，与实际跑绿代码 `"EditModeTests"`（`Assets/Scripts/Core/AssemblyInfo.cs:10` + `Assets/Tests/EditMode/EditModeTests.asmdef`）不一致。已统一：D8:318/321/379/402 + 本文 §5.1（:111/:287）全部改为权威名 `"EditModeTests"`，与编译真值对齐，杜绝 C1-C4 Mock 照抄重触 CS0122。
 - **D3 文本漂移（LOW）**：D3 未同步 `OnBeatClockPaused` 规范名 + `AttackType.HeavyAttack`（D8 Migration §2 已登记）。
-- **ADR-D14 仍 Proposed**：C2 BD-2 实装受 Proposed 门控阻塞（不阻塞 C1 冲刺）。
+- **ADR-D14 — ✅ 已 Accepted 2026-08-13**（TD+game-designer 会签）：C2 BD-2 实装 Proposed 门控解除。落地 GDD 文本（combo-system 规则12/F7/AC-C2-40 + rhythm-core 互引）为下游步骤。
 - **D13-2 胜利事件名待引擎核对**（不阻塞 D13 机制域 Accept）。
 
 **Lead Programmer Feasibility：SKIPPED — Lean 模式**（非 PHASE-GATE）。若 Production 前升 full 模式，补跑 gate LP-FEASIBILITY。
@@ -425,7 +425,7 @@ public interface IFileStorage { /* Save<T>, Load<T>, KeyExists, FileExists, Dele
 
 | ID | 摘要 | 优先级 | 解决路径 |
 |----|------|:---:|---------|
-| QQ-01 | ADR-D14（BD-2 取消窗瞬态）转 Accepted | Medium | `/architecture-decision` 复核 → Accept 后解阻塞 C2 BD-2 故事 |
+| ~~QQ-01~~ | ~~ADR-D14（BD-2 取消窗瞬态）转 Accepted~~ | ~~Medium~~ | **已闭合 (2026-08-13)** — TD+game-designer 双签 ACCEPT，C2 BD-2 故事解阻塞；GDD 文本落地为下游步骤 |
 | QQ-02 | TDE 胜利/通关事件成员名核对（D13-2 桥接） | Medium | 查 `docs/engine-reference/unity/plugins/` 或安装源码 → 落 ADR-D13 |
 | QQ-03 | `PlayerInfoSO.unlockedPerkIds`（C3-OQ1） | Medium | F4 schema 补字段，无需新 ADR |
 | QQ-04 | `RunOutcome` 取值集合 + 结算经济学 | Low | defer FE5 GDD + game-designer |
