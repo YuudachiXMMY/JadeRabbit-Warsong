@@ -315,10 +315,10 @@ public class RhythmJudger : MonoBehaviour, IComboCounter {
 
 ```csharp
 // CombatCore Runtime 程序集内任一 .cs（或 AssemblyInfo.cs）顶部：
-[assembly: InternalsVisibleTo("CombatCore.Tests.EditMode")]
+[assembly: InternalsVisibleTo("EditModeTests")]
 ```
 
-具体 Runtime/测试 asmdef 名称与配对关系由 `/test-setup`（Migration Plan §6）钦定并写死；若测试拆成多个 asmdef（C1/C2/C3/C4 各自），须为每个测试程序集各加一条 `InternalsVisibleTo`，或统一到单一 `CombatCore.Tests.EditMode` 程序集内用 namespace 隔离。
+具体 Runtime/测试 asmdef 名称与配对关系由 `/test-setup`（Migration Plan §6）钦定并写死；若测试拆成多个 asmdef（C1/C2/C3/C4 各自），须为每个测试程序集各加一条 `InternalsVisibleTo`，或统一到单一 `EditModeTests` 程序集内用 namespace 隔离。
 
 - **优先纯 C# 类构造注入**：纯逻辑（RNG 抽取、DSP 调度、评级判定）应尽量下沉到**无 MonoBehaviour 依赖的纯 C# 类**（`public` 构造函数直接注入 mock），跑 EditMode NUnit——比 setter 注入更干净、覆盖率更高，且**不受上述 `InternalsVisibleTo` 约束**（`public` 类/构造无可见性问题）。setter 注入只用于必须留在 MonoBehaviour 上的残余字段（如 `RhythmJudger` 自身）。
 - **零 GC 广播约束（兑现 readonly struct payload 承诺）**：拍点事件广播必须用 `OnBeatExact?.Invoke(data)`，**禁止** `GetInvocationList()`（每次调用堆分配 `Delegate[]`，逐拍高频路径直接破坏零 GC）；订阅方应在 `OnEnable`/`Awake` 一次性订阅，**禁止**用捕获局部变量的 lambda 做逐帧动态订阅/取消（闭包分配 + 重复订阅泄漏）。
@@ -376,7 +376,7 @@ public class RhythmJudger : MonoBehaviour, IComboCounter {
 | Mock 实现误 using FMOD/TDE 破坏边界 | LOW | LOW | Mock 放测试 asmdef，不引用 Runtime 中间件 asmdef；CI asmdef 依赖检查 |
 | C4 未来需订阅 pause 却被本 ADR"锁死"为非订阅方 | LOW | LOW | §6 已注明 C4 可订阅同一事件、无需新增源；非硬约束 |
 | 测试 setter 泄漏到发布构建 | LOW | MEDIUM | `#if UNITY_EDITOR \|\| DEVELOPMENT_BUILD` 包裹；Verification Required #1 覆盖 |
-| `internal` setter 跨 asmdef 对测试程序集不可见（CS0122） | MEDIUM | HIGH | Runtime 程序集声明 `[assembly: InternalsVisibleTo("CombatCore.Tests.EditMode")]`；`/test-setup` 钦定具体 asmdef 名（见 Implementation Guidelines + Migration Plan §6）；优先用不受此约束的纯 C# 构造注入 |
+| `internal` setter 跨 asmdef 对测试程序集不可见（CS0122） | MEDIUM | HIGH | Runtime 程序集声明 `[assembly: InternalsVisibleTo("EditModeTests")]`；`/test-setup` 钦定具体 asmdef 名（见 Implementation Guidelines + Migration Plan §6）；优先用不受此约束的纯 C# 构造注入 |
 | Inspector 拖入不实现目标接口的组件 → `as` 静默返回 null → 运行时首次调用才 NRE（报错点分离） | LOW | MEDIUM | `#if UNITY_EDITOR` 内 `OnValidate()` 编辑期校验接口类型（见 Implementation Guidelines） |
 
 ## Performance Implications
@@ -399,7 +399,7 @@ Greenfield（`Assets/Scripts/Core/` 尚不存在）——无代码迁移。交�
 3. **ADR-D6 / F2 命名同步**：`FMODDSPClockImpl`/`audio-beat-clock.md` 把 `GetCurrentTime()`/`GetCurrentDSPTime()` 改 `GetDspTime()`（附说明）。
 4. **注册表**：登记 5 接口所有权 + IDSPClock 方法名 API 决策 + `beatclock_consumer_seam_readonly` 立场（见下）。
 5. **systems-index.md**：C1-C4 依赖列追加 ADR-D8。
-6. `/test-setup` 建立 CombatCore EditMode 测试 asmdef + Mocks 目录（本 ADR 解锁的后续动作）。**须包含**：为 Runtime 程序集生成 `[assembly: InternalsVisibleTo("<测试 asmdef 名>")]` 声明（否则首次调用 `SetXForTesting` 即编译失败，unity-specialist BLOCKING 项）；钦定 Runtime/测试 asmdef 的准确名称与配对关系。
+6. `/test-setup` 建立 CombatCore EditMode 测试 asmdef + Mocks 目录（本 ADR 解锁的后续动作）。**须包含**：为 Runtime 程序集生成 `[assembly: InternalsVisibleTo("EditModeTests")]` 声明（测试 asmdef 名 = `EditModeTests`，见 `Assets/Tests/EditMode/EditModeTests.asmdef`；否则首次调用 `SetXForTesting` 即编译失败，unity-specialist BLOCKING 项）；钦定 Runtime/测试 asmdef 的准确名称与配对关系。
 
 **Rollback plan**: 接口未被任何生产代码引用前（greenfield），删除 `Assets/Scripts/Core/Interfaces/` 即完全回滚；无运行时行为变更。
 
