@@ -518,7 +518,7 @@ public readonly struct RhythmJudgmentEvent
 | `ComboCountAfter` | int | — | [0, ComboMax] | 判定后连击数 = clamp(Before + ΔCombo, 0, ComboMax)（C1-F4） |
 | `OffsetMs` | float | ms | (−∞, +∞)；Off=0 | 负值=提前拍，正值=晚于拍；Off 模式强制 0；P1 HUD 偏移量指示器数据源 |
 
-> **ADR-D3 同步需求**：`CancelTier`、`ComboCountAfter` 字段须同步加入 ADR-D3 `RhythmJudgmentEvent` struct 定义（ADR-D3 §3 当前版本缺失）；`AttackType` 须确认包含 `HeavyAttack` 值（当前 ADR-D3 §3 仅列 LightAttack / ChargedAttack）。
+> **ADR-D3 同步需求 ✅（已解决 2026-08-13）**：`CancelTier`、`ComboCountAfter` 字段已同步加入 ADR-D3 §3 `RhythmJudgmentEvent` struct；`AttackType` 枚举已在 ADR-D3 §3 镜像为 `{ LightAttack, HeavyAttack, ChargedAttack }`（含 `HeavyAttack`）。ADR-D3 §3 现逐字对齐本节 6 字段规范，并显式标注本节为唯一规范源。旧 ADR-D3 字段 `BeatDspTime` / `Mode` 已从事件面移除（降级为 RhythmJudger 内部状态），与本节规范一致。
 
 > **广播事件名（W-04 规范化）**：C1 以事件 **`OnRhythmJudgment`**（`event Action<RhythmJudgmentEvent>`）广播上述载体。**此为唯一规范事件名**——C3 订阅 `OnRhythmJudgment`（一致）；C2 文中「订阅 `RhythmJudgmentEvent`」指订阅该事件、消费同名载体结构（载体类型名 = `RhythmJudgmentEvent`，事件名 = `OnRhythmJudgment`，二者不冲突）。ADR-D3 §3 须登记事件名 `OnRhythmJudgment`。
 
