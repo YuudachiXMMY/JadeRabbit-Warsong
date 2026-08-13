@@ -68,6 +68,16 @@
   固定帧数的攻击动画无法随 BPM 变速，破坏节奏手感一致性。
   替代方案：通过 Animancer 的 `AnimancerState.Speed` 属性按当前 BPM 动态缩放动画时长。
 
+- **禁止打包未授权字体** (v1 教训):
+  字体是版权作品，「工程里能编译」≠「有权在商业游戏中嵌入/分发」。TDE/Feel 等插件的
+  demo 目录捆绑了大量字体（含 **Gotham** 这类高价商业字型），Asset Store 授权不覆盖其再分发；
+  许多"免费"展示体实为 *personal-use only*，商用需另购。v1 因未授权字体进包踩坑。
+  理由：法律与发行风险，可能触发下架或索赔。
+  替代方案：任何字体进入构建前，必须在 `design/art/font-licensing.md` 登记且授权状态为 ✅，
+  授权凭证归档到 `design/art/font-licenses/`；未确认的一律不可打包。
+  **特别注意**: 生产字体 **汉仪尚巍手书** 为商业字库，商用嵌入前必须购授权或替换（阻塞项）。
+  来源：design/art/font-licensing.md。
+
 ## Allowed Libraries / Addons
 
 <!-- Add approved third-party dependencies here -->
