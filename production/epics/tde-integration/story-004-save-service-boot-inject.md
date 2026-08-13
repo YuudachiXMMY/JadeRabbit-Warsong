@@ -32,6 +32,8 @@
 *From GDD `design/gdd/tde-integration.md`, scoped to this story:*
 
 - [ ] AC-F6-23：boot 序列等待 `ISaveService` 就绪后，从 `PlayerInfoSO` 读取 `LatencyOffsetMs` 于 `BeatClock.Play()` 前一次性注入；未就绪时 `Play()` 被阻断
+- [ ] AC-F6-27：boot 门禁顺序可断言——`ISaveService` 就绪求值序号先于 FMOD 门禁求值序号；`LatencyOffsetMs` 注入调用序号先于 `BeatClock.Play()` 调用序号；`EnableGameplayInput()` 调用序号晚于 `Play()` 调用序号
+- [ ] AC-F6-28：`LatencyOffsetMs` boot 期注入累计恰好 1 次；`ISaveService` 就绪但 `PlayerInfoSO` 为 null 时，`BeatClock.LatencyOffsetMs` 采用默认值 0 且记录恰好 1 条 warning，`BeatClock.Play()` 仍正常放行
 
 ---
 
@@ -64,6 +66,18 @@
   - Then：`BeatClock.Play()` == 0；就绪后 `Play()` == 1，且 BeatClock 延迟校准字段 == 42（注入恰 1 次）
   - Edge cases：`LatencyOffsetMs == 0`（默认，无校准）正常注入不报错；ISaveService 就绪但 PlayerInfoSO 为空 → 采用默认 0 且警告日志
 
+**AC-2（AC-F6-27，Integration — PlayMode）**
+  - Given：`MockSaveService` + mock `IFMODRuntimeChecker`，调用序号 Spy 挂 5 处（ISaveService 就绪/FMOD 就绪/LatencyOffsetMs 注入/`Play()`/`EnableGameplayInput()`）
+  - When：触发完整 boot 序列（`OnSceneLoaded(Single)`）
+  - Then：ISaveService 就绪序号 < FMOD 就绪序号；注入序号 < `Play()` 序号；`Play()` 序号 < `EnableGameplayInput()` 序号
+  - Edge cases：任一环节延迟就绪时序号顺序不变
+
+**AC-3（AC-F6-28，Integration — PlayMode）**
+  - Given：`MockSaveService`（场景 A：`IsInitialized=true,LatencyOffsetMs=42.5f`；场景 B：`IsInitialized=true,PlayerInfoSO=null`）
+  - When：触发 boot 序列
+  - Then：A 注入累计==1；B `LatencyOffsetMs==0f`、Warning 恰 1 条、`Play()` 次数==1
+  - Edge cases：B 与 AC-F6-23 子用例 4（`IsInitialized==false` fail-fast）走不同分支
+
 ---
 
 ## Test Evidence
@@ -71,6 +85,7 @@
 **Story Type**: Integration
 **Required evidence**:
 - `Assets/Tests/PlayMode/F6/SaveServiceBootInject_test.cs`（AC-23，注入 ISaveService mock）— 必须存在且通过
+- `Assets/Tests/PlayMode/F6/SaveServiceBootInject_test.cs`（新增覆盖 AC-F6-27 调用序号断言 + AC-F6-28 一次性注入/PlayerInfoSO 缺失降级）— 必须存在且通过
 
 **Status**: [ ] Not yet created
 

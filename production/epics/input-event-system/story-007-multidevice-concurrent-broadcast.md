@@ -32,6 +32,8 @@
 *From GDD `design/gdd/input-event-system.md`, scoped to this story:*
 
 - [ ] AC-F3-13：键鼠、手柄、触屏并发输入时，各设备的输入分别广播，事件 `deviceType`/`deviceId` 正确标识来源设备；同一 Action 被不同设备触发时各自独立采样 `inputDspTime`（不复用），不发生事件合并或丢失
+- [ ] AC-F3-23：键鼠与手柄交替触发同一 Action，广播次数恰好等于触发次数（F3 不锁定/不丢弃）；反射断言 `InputEventBus` 内无「活动设备」锁定状态字段
+- [ ] AC-F3-24：两虚拟设备（`InputTestFixture`）同帧/交替触发 N 次，`ProfilerRecorder("GC Allocated In Frame")` 稳态测得堆分配==0B（排除首帧 JIT）
 
 ---
 
@@ -52,7 +54,7 @@
 *Handled by neighbouring stories — do not implement here:*
 
 - Story 003/005：单设备下 Attack/Dash/Move 的广播逻辑（本 story 验证多设备并发正确性）
-- Story 008：零 GC 的 `ProfilerRecorder` 断言（本 story 复用其零分配保证，不重复测量）
+- Story 008 测量**单设备**零分配基线；本 story 的 AC-F3-24 专测**多设备交替路径**零分配，两者互补而非重复（本 story 不重复单设备基线测量）
 - 本地多人分屏/多 `InputUser` 分流（本项目单人，不在范围）
 
 ---
@@ -66,6 +68,16 @@
   - When: (1) 键盘触发 Attack；(2) 手柄触发 Attack；(3) 两设备同帧交替触发
   - Then: 每次广播事件 `deviceType`/`deviceId` 正确标识来源；各事件 `inputDspTime` 独立采样（不复用）；无事件合并/丢失
   - Edge cases: 同帧两设备触发同一 Action → 两次独立广播；快速交替设备时间戳各自正确
+- **AC-2 (AC-F3-23)**: 设备无仲裁，广播次数守恒
+  - Given: PlayMode，虚拟 Keyboard+Gamepad
+  - When: 键盘 3 次→手柄 3 次→交替 4 次
+  - Then: 总广播==10；反射检查无活动设备锁定字段
+  - Edge cases: 设备中途拔出/重连不产生额外锁定
+- **AC-3 (AC-F3-24)**: 多设备并发零 GC
+  - Given: PlayMode，`ProfilerRecorder` 已激活并 marker 自验证（同 AC-F3-11 前置）
+  - When: 预热后稳态交替触发键盘/手柄 N 次
+  - Then: 稳态帧 GC Alloc==0B
+  - Edge cases: 三设备（含 Touchscreen）交替零分配不变
 
 ---
 
@@ -74,6 +86,7 @@
 **Story Type**: Integration
 **Required evidence**:
 - `Assets/Tests/PlayMode/input/multidevice_concurrent_test.cs` — 覆盖 AC-F3-13 的 PlayMode 测试（用 `InputTestFixture` 虚拟多设备），必须存在且通过
+- `Assets/Tests/PlayMode/input/multidevice_concurrent_test.cs`（新增覆盖 AC-F3-23 设备无仲裁 + AC-F3-24 零 GC 测量）— 必须存在且通过
 
 **Status**: [ ] Not yet created
 

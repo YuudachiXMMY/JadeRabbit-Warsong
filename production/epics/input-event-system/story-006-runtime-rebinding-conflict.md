@@ -33,6 +33,7 @@
 
 - [ ] AC-F3-10：运行时重绑定后，`SaveBindingOverridesAsJson` 产出的 JSON 经 `LoadBindingOverridesFromJson` 还原，绑定路径完全一致（往返无损）；还原后触发输入按新绑定广播事件
 - [ ] AC-F3-15：两个 Action 绑定到同一物理键（冲突）时，按键触发**两个** Action 各自广播（不静默丢弃其一），下游负责裁决优先级；冲突可被检测并上报（供 UI 提示）
+- [ ] AC-F3-22：绑定 JSON `save→load→save` 二次导出与首次等价（幂等）；空 override 往返返回等价空状态；`ImportBindingOverrides()` 全程无文件 I/O
 
 ---
 
@@ -73,6 +74,11 @@
   - When: 触发该物理键
   - Then: 两 Action 各自广播（`OnAttackInput` 与 `OnDashInput` 各一次），无一被静默丢弃
   - Edge cases: 冲突检测 API 正确返回冲突绑定对；F3 不拒绝绑定、不改变广播行为
+- **AC-3 (AC-F3-22)**: JSON 往返幂等 + 空状态 + 无 I/O
+  - Given: 独立 `InputActionAsset` 副本
+  - When: (1) 设 override→`ExportBindingOverrides()` 得 J1→`ImportBindingOverrides(J1)`→再 `ExportBindingOverrides()` 得 J2；(2) 未设 override 时导出/导入
+  - Then: (1) J1==J2；(2) 空状态往返仍为空集；全程无 `System.IO.File.*` 调用
+  - Edge cases: 导入含未知/过期 Action 路径的 JSON 不抛异常，忽略无法解析条目并记 Warning（若 GDD 未定义此行为，标注待确认）
 
 ---
 
@@ -81,6 +87,7 @@
 **Story Type**: Logic
 **Required evidence**:
 - `Assets/Tests/EditMode/input/rebinding_conflict_test.cs` — 覆盖 AC-F3-10/15 的 EditMode 单元测试，必须存在且通过
+- `Assets/Tests/EditMode/input/rebinding_conflict_test.cs`（新增覆盖 AC-F3-22 幂等/空状态/无 I/O）— 必须存在且通过
 
 **Status**: [ ] Not yet created
 

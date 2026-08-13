@@ -32,6 +32,7 @@
 *From GDD `design/gdd/tde-integration.md`, scoped to this story:*
 
 - [ ] AC-F6-20：Option A 变速攻击经体感盲测——多档 BPM（低/中/高）下攻击手感与节奏一致，无明显脱拍或黏滞；audio-director / creative-director 或指定 lead 签核通过
+- [ ] AC-F6-34：3 档 BPM（随机序）每档 10+ 次连续攻击录屏，经审阅确认起手/命中帧贴拍（无脱拍/黏滞）；逐档评语 + 录屏/关键帧截图 + audio-director 或 creative-director 签核，完整存入 `production/qa/evidence/story-012-feel-evidence.md`
 
 ---
 
@@ -62,6 +63,11 @@
   - Verify：每档下连续攻击 10+ 次，观察攻击起手/命中帧是否贴合节拍音；有无脱拍（攻击慢于拍）或黏滞（攻击拖尾）
   - Pass condition：3 档均被测试者判为「手感跟拍、无明显脱拍/黏滞」，且 audio-director 或 creative-director 签核；证据（录屏/截图 + 签核记录）存入 `production/qa/evidence/story-012-feel-evidence.md`
 
+**Manual check（AC-F6-34，Visual/Feel — 证据留存复核）**
+  - Setup：与 AC-F6-20 盲测同批次，额外全程录屏 + 逐档独立记录模板
+  - Verify：3 档随机序均有独立录屏、逐档评语、审阅确认贴拍；签核含人/日期
+  - Pass condition：`production/qa/evidence/story-012-feel-evidence.md` 存在且含 3 档完整证据链（录屏/截图 + 评语 + 签核）可追溯
+
 ---
 
 ## Test Evidence
@@ -69,6 +75,7 @@
 **Story Type**: Visual/Feel
 **Required evidence**:
 - `production/qa/evidence/story-012-feel-evidence.md`（盲测录屏/截图 + lead 签核）— ADVISORY 门
+- `production/qa/evidence/story-012-feel-evidence.md`（新增要求：3 档独立录屏/截图 + 逐档评语 + 签核）— ADVISORY 门
 
 **Status**: [ ] Not yet created
 

@@ -33,6 +33,7 @@
 
 - [ ] AC-F6-13：攻击速度公式 `speed = f(bpm, baseBpm)` 按 GDD Formulas 段定义计算，一次攻击恒占固定拍数（同拍数下 BPM 翻倍 → speed 翻倍）
 - [ ] AC-F6-18：速度结果被钳制在 GDD 定义的 `[minSpeed, maxSpeed]` 区间内（极端 BPM 下不越界）
+- [ ] AC-F6-33：`F6Constants.CalculateAttackAnimSpeed(bpm, authoredBpm)` 相同输入逐位确定性一致；反射/静态分析断言方法不引用 `Time.*`/单例/静态可变状态；钳制区间内随 bpm 单调非减
 
 ---
 
@@ -70,6 +71,12 @@
   - Then：结果被钳制 == `max` / `min`，不越界
   - Edge cases：恰好等于 min/max 边界的 BPM → 结果 == 边界值（含端点）；负数或 0 BPM → 按 GDD 定义处理（钳制或抛异常，遵 GDD）
 
+**AC-3（AC-F6-33，Logic — EditMode）**
+  - Given：`F6Constants.CalculateAttackAnimSpeed` 方法
+  - When：(1) 相同参数调 100 次；(2) 反射/Roslyn 静态分析；(3) 固定 `authoredBpm=120`，`currentBPM` 60→300 步长 10
+  - Then：(1) 100 次一致；(2) 无 `Time.*`/单例/静态可变引用；(3) 输出单调非减
+  - Edge cases：`SPEED_MIN`/`SPEED_MAX` 边界值代入精确等于边界（复用 AC-F6-13 边界，不重复数值表）
+
 ---
 
 ## Test Evidence
@@ -77,6 +84,7 @@
 **Story Type**: Logic
 **Required evidence**:
 - `Assets/Tests/EditMode/F6/AttackSpeedFormula_test.cs`（AC-13 比值 + AC-18 钳制，纯函数确定性单测）— 必须存在且通过
+- `Assets/Tests/EditMode/F6/AttackSpeedFormula_test.cs`（新增覆盖 AC-F6-33 确定性/无隐藏状态/单调性）— 必须存在且通过
 
 **Status**: [ ] Not yet created
 

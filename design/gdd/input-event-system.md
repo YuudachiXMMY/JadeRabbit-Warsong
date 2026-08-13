@@ -398,14 +398,26 @@ Move Action 的 `started` 回调广播 `MoveChangedEvent`（`isStarted = true`�
 **AC-F3-10: 重绑定 JSON 往返**
 `SaveBindingOverridesAsJson()` 返回的 JSON 传入 `LoadBindingOverridesFromJson()` 后，所有绑定覆盖恢复原状。验证方法：单元测试，修改一个绑定，保存 JSON，重新加载，断言绑定一致。
 
+**AC-F3-22: 重绑定 JSON 往返幂等性 + 空状态往返 + 无文件 I/O**
+`ExportBindingOverrides()`→`ImportBindingOverrides()`→再 `ExportBindingOverrides()` 产出 JSON 与首次等价（save→load→save 幂等，二次导出内容一致）；无覆盖时空状态往返仍为等价空集（不产生虚假条目）；`ImportBindingOverrides()` 全程无文件 I/O（磁盘持久化归 F5）。验证：(1) 设 override→导出 J1→导入→再导出 J2，断言 J1==J2；(2) 空 override 往返仍为空集；(3) Mock 文件系统/反射断言 `System.IO.File.*` 未被调用。
+
 **AC-F3-11: 零 GC 分配**
 `InputEvent` 系列结构（`AttackInputEvent`、`DashInputEvent`、`MoveChangedEvent`）为 `readonly struct`，不含引用类型字段（`deviceType: InputDeviceType` 为 enum，`deviceId: int` 为值类型），事件广播路径无堆分配。验证方法：PlayMode 测试，使用 `ProfilerRecorder`（`ProfilerCategory.Memory`）在 100 帧连续输入期间记录 GC 分配，断言 InputEventBus 广播路径的 GC Alloc = 0B。**前置条件（两步，缺一不可）**：① 测试 Setup 中须显式调用 `Profiler.enabled = true` 并验证 `recorder.IsRunning == true`——CI `-batchmode` 下 Profiler 默认未激活，未满足时测试必须 Fail 而非 Skip；② **Marker 名称自验证**：Setup 中先执行一段已知会分配内存的代码路径（如 `_ = new object()`），断言 `recorder.CurrentValue > 0`——若断言失败，测试必须 Fail 并输出 `"ProfilerRecorder marker名称可能与当前Unity版本不符；候选名称：'GC.Alloc'（点号）或 'GC Alloc'（空格），请在Unity 6.3 LTS实机验证"`，禁止 Skip 或继续执行主断言（防止 marker 名称错误导致的静默假阳性）。（注意：订阅者须使用方法组而非捕获 lambda，以保证 IL2CPP 构建下零 GC 承诺成立。）
 
 **AC-F3-12: 订阅者生命周期安全**
 场景卸载后，已销毁的 MonoBehaviour 订阅者不会导致 `NullReferenceException`。验证方法：PlayMode 测试，订阅事件 → 销毁 GameObject → 触发输入，断言无异常。
 
+**AC-F3-25: 广播循环异常隔离 + `event Action<TInputEvent>` 精确泛型无装箱**
+(1) 广播列表存在已 `Destroy` 但未对称退订的订阅者，其委托调用抛异常（如 `MissingReferenceException`）时广播循环不中断，其后订阅者全部收到事件（漏收==0）；(2) `event Action<AttackInputEvent>`（及 `DashInputEvent`/`MoveChangedEvent`）声明与 `Invoke` 路径中 `readonly struct` 负载与委托泛型精确匹配（非 `Action<object>` 或经 object 中转），无隐式装箱（IL2CPP/Mono 均验证）。验证：(1) 注册 3 订阅者，中间者未退订即 `Destroy` 且触发抛异常，断言其余 2 者各收 1 次；(2) 反射检查 event 泛型参数 + IL 层确认无 `box` 指令（或 `ProfilerRecorder` 交叉验证该路径 0 分配）。
+
 **AC-F3-13: 多设备并发（deviceType / deviceId 正确性）**
 同时连接键盘和手柄时，两个设备的输入均独立广播 `InputEvent`，`deviceType` 正确标识设备类型（`Keyboard` / `Gamepad`），`deviceId` 为对应 `InputDevice.deviceId` 的整数值。验证方法：PlayMode 测试，使用 `InputTestFixture`（`InputSystem.AddDevice<Keyboard>()` + `InputSystem.AddDevice<Gamepad>()`）在同帧从两设备触发输入，断言收到两个独立事件且 `deviceType` / `deviceId` 字段均正确。
+
+**AC-F3-23: F3 对设备无仲裁（交替触发广播次数守恒 + 无「活动设备」锁定状态）**
+键鼠与手柄交替触发同一 Action，F3 不锁定活动设备、不因切换丢弃/合并——广播次数恰等于物理触发次数。反射/静态断言 `InputEventBus`（及状态机类）内无「当前活动设备」持久化字段或锁定逻辑。验证：(1) 键盘 3 次+手柄 3 次+交替 4 次，总广播==10；(2) 反射断言无设备锁定语义字段。
+
+**AC-F3-24: 多设备并发广播路径零 GC**
+两虚拟设备（`InputTestFixture` 的 Keyboard+Gamepad）同会话交替触发 N 次后，`ProfilerRecorder(ProfilerCategory.Memory,"GC Allocated In Frame")` 稳态帧（排除首帧 JIT）堆分配==0B（复用 AC-F3-11 零 GC 协议，聚焦多设备交替路径，`deviceType`/`deviceId` 解析与事件构造不引入额外分配）。验证：同 AC-F3-11 前置（Profiler 激活 + marker 自验证），预热后稳态交替触发 N 次断言零分配。
 
 **AC-F3-14: ChargedAttack 切图中断静默丢失（E3）**
 `EnableUIInput()` 调用导致 Gameplay Map 禁用期间，若 ChargedAttack 正在 Hold 中，`canceled` 回调必须静默丢失（不广播任何 `AttackInputEvent`）。验证方法：单元测试，启动 ChargedAttack Hold → 调用 `EnableUIInput()` → 断言：① `OnAttackInput` 未触发；② 通过测试可观测内部状态（Test Double 或反射）确认 `_isSwitchingMaps` 在 `canceled` 回调执行期间为 `true`（即 E3 三路检查走路径①，而非路径②或③）——此断言确保是标志抑制机制生效，而非其他原因（如 Action Map 在回调前已禁用）导致静默，防止不同 bug 产生相同可观测输出。
