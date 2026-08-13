@@ -494,8 +494,8 @@ Task: 对 C2 跑 /design-review；follow-up 修 C1 clamp 50→999 (OQ1)
 - A1 (D1/D10 生命周期，上轮🔴BLOCKING) → 真实消解：D1 订阅唯一权威，D10 让步改 handler 早退 guard，两 ADR 代码逐字一致（非双重 Accept）
 - A2/A3/A4/A5 全 CLEARED；跨 ADR blocking conflicts = 0；依赖图 DAG 无环
 - 引擎: 9/9 有兼容段 / 0 deprecated / 0 陈旧版本 / 0 post-cutoff 冲突；GDD revision flags 无
-- 唯一 HIGH = H1（文档缺陷非阻塞）: ADR-D8 三处 InternalsVisibleTo("CombatCore.Tests.EditMode") 与实际跑绿代码 "EditModeTests" 不一致（:318/:379/:402），应修防 C1-C4 Mock 照抄重触 CS0122
-- 非阻塞 cleanup: H1 → D3 文本漂移(OnBeatClockPaused/HeavyAttack) → M1 FMOD Editor 编译确认 → E1 D2 同帧保证 → M2 plugins/fmod.md
+- 唯一 HIGH = H1（文档缺陷非阻塞）✅ 已消解 2026-08-13: ADR-D8 三处 InternalsVisibleTo("CombatCore.Tests.EditMode") 与实际跑绿代码 "EditModeTests" 不一致（:318/:379/:402），已统一到编译真值 "EditModeTests" 防 C1-C4 Mock 照抄重触 CS0122。改动 adr-d8-di-test-seams.md(:318/:321/:379/:402) + architecture.md(:111/:287/:415 note)，纯文档零 C# 触碰 → draft PR #47 (branch worktree-fix-d8-internalsvisibleto-cs0122)
+- 非阻塞 cleanup: ~~H1~~ ✅ (PR #47) → D3 文本漂移(OnBeatClockPaused/HeavyAttack) → M1 FMOD Editor 编译确认 → E1 D2 同帧保证 → M2 plugins/fmod.md
 - Pre-gate 全 ✅（Assets/Tests/EditMode+PlayMode / tests.yml / a11y / interaction-patterns）→ /gate-check pre-production 前置具备
 - 写入(worktree arch-review-postD8-2026-08-11): architecture-review-2026-08-11-postD8.md(新) + traceability-index.md(Rev.9) + tr-registry.yaml(TR-rhythm-015 尾注转正)
 - 下一步: /gate-check pre-production 或 C1 rhythm-core 实现冲刺（DI 硬门已解锁）
