@@ -1,10 +1,14 @@
 # ADR-D14: BPM 变更瞬态取消窗保护（accept→boundary 区间对齐）
 
 ## Status
-Proposed
+Accepted
+
+> **会签记录（Proposed → Accepted，2026-08-13）**：technical-director（架构面：边界合约 / C1-F5b 判定网格重锚硬约束 / `adaptationWindowBeats=2` 旋钮复用三条红线全部守住，纯订阅点重定向零新增接口面，无 post-cutoff API）+ game-designer（体验面：保护提前精确闭合 SG-5 暴露窗、`[accept, boundary)` 区间取消窗只更宽松不更严格、未引入新旋钮或判定/连招标准分歧）双签 **ACCEPT**，无 BLOCKING。
+>
+> 非阻塞前瞻项（不作签字条件，携入 C2 实装 DoD）：① 保护窗尾端须从 C1 同源 `MeterChangeEventData.predictedEffectiveDspTimeRaw` 计算（「三系统同时回归标准」由近似变严格）；② Animancer `Speed` 只影响后续帧、不回溯已播放 `NormalizedTime`，accept 落在动画中段时 `cancelWindowMs` 收窄基准须查运行时状态而非静态套总时长；③ 确认 BPM 变更触发权是否完全在关卡/系统侧（防连续触发 accept 维持宽松窗的边际利用，当前判低风险）；④ EC9 落地措辞保留「归一化时间不受影响、仅绝对毫秒宽度收窄」的精确区分。
 
 ## Date
-2026-08-12
+2026-08-12（Proposed）/ 2026-08-13（Accepted，TD + game-designer 会签）
 
 ## Engine Compatibility
 

@@ -1018,7 +1018,7 @@ requirements:
   - id: TR-combo-015
     system: combo
     gdd: design/gdd/combo-system.md
-    requirement: "BD-2 cancel-window adaptation window (Rule 12 / F7): within adaptationWindowBeats (locked=2) the cancel window's effective ms width takes max(cancelWindowMs(bpm_before), cancelWindowMs(bpm_after)) (wider), so cancel timing does not abruptly narrow on BPM jump; restores bpm_after standard width after the window. AC-C2-40/41/42. PARTIAL: ADR-D14 (Proposed) retimes the protection trigger from OnMeterChanged to OnMeterChangeAccepted (head of window = accept, tail still aligned to C1 OnMeterChanged +2 beats). Stories auto-blocked until ADR-D14 is Accepted; C2 implementation not yet started (non-blocking for C1 sprint)."
+    requirement: "BD-2 cancel-window adaptation window (Rule 12 / F7): within adaptationWindowBeats (locked=2) the cancel window's effective ms width takes max(cancelWindowMs(bpm_before), cancelWindowMs(bpm_after)) (wider), so cancel timing does not abruptly narrow on BPM jump; restores bpm_after standard width after the window. AC-C2-40/41/42. COVERED: ADR-D14 (Accepted 2026-08-13, TD+game-designer 会签) retimes the protection trigger from OnMeterChanged to OnMeterChangeAccepted (head of window = accept, tail still aligned to C1 OnMeterChanged +2 beats). C2 BD-2 stories unblocked; GDD text landing (combo-system Rule 12 / F7 / AC-C2-40 + rhythm-core cross-ref) is a downstream step. C2 implementation not yet started (non-blocking for C1 sprint)."
     created: 2026-08-12
     revised: ""
     status: active

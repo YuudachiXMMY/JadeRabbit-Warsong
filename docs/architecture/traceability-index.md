@@ -6,10 +6,10 @@
 > **Verdict this review**: CONCERNS（健康 — 0 阻塞项）— see `architecture-review-2026-08-12-coverage.md`
 >
 > **coverage 增量（2026-08-12）**：上轮 v8 后新增 **ADR-D12（死亡换局，Accepted）/ D13（胜利 run-end 统一，
-> Accepted，TD+game-designer 会签）/ D14（BD-2 取消窗瞬态，Proposed）**。ADR-D12+D13 闭合上轮两个审查缺口
+> Accepted，TD+game-designer 会签）/ D14（BD-2 取消窗瞬态，**Accepted 2026-08-13，TD+game-designer 会签**）**。ADR-D12+D13 闭合上轮两个审查缺口
 > **SG-2（死亡边界）+ W-F（胜利边界）**——死亡/胜利经单一 F6 `EndRun(RunOutcome)` 出口统一 run-end。
 > 追加 6 条 run-end/BD-2 TR（rhythm-019/director-019/tde-013/tde-014/combo-015/concept-015）。
-> **风险**：D14 仍 Proposed → C2 BD-2 故事受 Proposed 门控阻塞（C2 实装未开工，不阻塞 C1 冲刺）。
+> **~~风险~~ 解阻塞（2026-08-13）**：D14 已 Accepted → C2 BD-2 故事 Proposed 门控解除（C2 实装未开工）；GDD 文本落地（combo-system 规则12/F7/AC-C2-40 + rhythm-core 互引）为下游步骤。
 
 ---
 
@@ -24,7 +24,7 @@
 | save | save-persistence.md | 13 | 2 | 0 | 11 | GDD=规范 |
 | tde | tde-integration.md | 15 | 10 | 1 | 4 | +tde-013 run-end 边界(D12/D13 Covered) · +tde-014 胜利事件核对(D13 Partial) · +tde-015 F5 boot gate+延迟注入(D10 Covered → story-004) |
 | **rhythm (C1)** | rhythm-core.md | 19 | 17 | 2 | 0 | D3 主架构；+rhythm-019 SC-2 run-end 清空 → D12/D13 Covered |
-| **combo (C2)** | combo-system.md | 15 | 12 | 3 | 0 | D3/D4/D5；+combo-015 BD-2 适应窗口 → D14 Proposed(Partial) |
+| **combo (C2)** | combo-system.md | 15 | 13 | 2 | 0 | D3/D4/D5；+combo-015 BD-2 适应窗口 → D14 **Accepted(Covered)** |
 | **perk (C3)** | perk-system.md | 13 | 12 | 1 | 0 | D4；IRandomSource/pause 源已归 ADR-D8(Accepted) — **Gap 已闭环** |
 | **director (C4)** | combat-director.md | 19 | 17 | 2 | 0 | D2/D6/D10；+director-019 SC-3 令牌回收 → D12/D13 Covered |
 | **Total** | | **153** | **90** | **17** | **46** | |
@@ -50,7 +50,7 @@
 | ADR-D10 (Bootstrap Sequencing) | Accepted | TR-save (Initialize), TR-beatclock-007 (LatencyOffset), TR-tde (boot order), TR-tde-015 (F5 gate+latency inject → story-004), TR-director-015 |
 | ADR-D12 (Death & Run-Lifecycle) | Accepted | TR-concept-015, TR-tde-013, TR-rhythm-019, TR-director-019 — 死亡换局边界(run-ends-on-death) |
 | ADR-D13 (Run-End Victory Unification) | Accepted (TD+GD 会签) | TR-tde-013/014, TR-rhythm-019, TR-director-019 — 统一 `OnRunEnded(RunOutcome)`,胜利路径对称 |
-| ADR-D14 (BD-2 Cancel-Window Transient) | **Proposed** | TR-combo-015 — 取消窗适应窗口触发点前移至 `OnMeterChangeAccepted`(C2 故事待 D14 Accept 解阻塞) |
+| ADR-D14 (BD-2 Cancel-Window Transient) | **Accepted** (2026-08-13, TD+GD 会签) | TR-combo-015 — 取消窗适应窗口触发点前移至 `OnMeterChangeAccepted`(C2 BD-2 故事解阻塞；GDD 文本落地为下游步骤) |
 
 ---
 
@@ -60,7 +60,7 @@
 |-------|-----------|---------|---------|-----|-------|
 | Foundation (F2-F6) | 72 | 26 | 5 | 41 | datalayer/tde 覆盖佳；+tde-013(D12/D13 Covered)/tde-014(D13 Partial)/tde-015(D10 Covered) |
 | Core-concept | 15 | 6 | 4 | 5 | D3 覆盖 concept-006/007；+concept-015 run-ends-on-death(D12/D13) |
-| **Core (C1-C4)** | 66 | 58 | 8 | 0 | 跨切面 ADR + D8 DI 缝隙 + D12/D13 run-end；+rhythm-019/director-019 Covered、combo-015 Partial(D14 Proposed) |
+| **Core (C1-C4)** | 66 | 59 | 7 | 0 | 跨切面 ADR + D8 DI 缝隙 + D12/D13 run-end；+rhythm-019/director-019 Covered、combo-015 **Covered(D14 Accepted)** |
 | Feature | 0 | 0 | 0 | 0 | 尚无 GDD |
 | Presentation | 0 | 0 | 0 | 0 | 尚无 GDD |
 
