@@ -514,3 +514,18 @@ Task: 对 C2 跑 /design-review；follow-up 修 C1 clamp 50→999 (OQ1)
 - Report: design/gdd/gdd-cross-review-2026-08-12.md (在 PR #29, 尚未 merge 到 main)
 - 下一步: review/merge PR #29 → C1/F6 死亡语义清理已随补丁完成 → /gate-check pre-production 或 C1 rhythm-core 实现冲刺
 - W-F 已起草承接: ADR-D13 Run-End Boundary(Proposed, commit 558b33ea, 加入 PR #29) — 统一 run-end 边界(死亡+胜利经同一 F6 出口 Stop()+OnRunEnded(outcome)), 闭合胜利 double-Play/令牌孤儿; 结算经济学/胜利判定 defer FE5+game-designer; 待 technical-director+game-designer 批准后 C1/C4/F6 小修订
+
+<!-- ============================================================ -->
+## Session Checkpoint — /vertical-slice 苗刀节奏手感切片 (2026-08-16)
+
+**概念名**: Miaodao Rhythm Slice（苗刀节奏手感切片）
+**验证问题**: 新玩家能否 ≤3 分钟无引导走完 [进房+校准 → 踩拍苗刀轻/重/冲刺连招击败 1 落拍敌人 → 结算再来一局]，并把踩拍层体验为「奖励」而非「附加摩擦」（对齐已锁 M0 A 组判据）；且能否以代表性手感质量在合理工期内构建此循环。
+**验证目标风险**: R-FEEL-01（节奏手感未验证，#1 Critical）。
+**范围决定**: M0 §7 最小手感切片；**手感优先，非生产集成**（程序化 DSP 节拍器替 FMOD、图元+代码挥击替 Animancer 素材、IMGUI 替 P1 HUD、不接 TDE/Unity Behavior）。
+**落位**: 代码/场景 `Assets/_VerticalSlice/MiaodaoRhythmSlice/`（独立 asmdef，不被 CombatCore 引用，可整删）；文档/REPORT `prototypes/miaodao-rhythm-slice/`。理由：Unity 只编译 Assets/ 下 C#，prototypes/ 不编译。
+**忠实实现的 GDD 契约**: C1-F2 偏移公式、C1-F3 评级钳位级联(Perfect±50/Good±120ms@120BPM)、评级后果表(1.0/0.75/0.5 · +2/+1/+0 · Advanced/Standard/Closed · Perfect→Kinetics)、Off 模式恒 Perfect 但 CancelTier 封顶 Standard、combo_multiplier=min(5.0,1+0.01·count^1.2)、攻击时长按 BPM 缩放(禁绑死帧)、Miss 不清零段数、EC15 冻帧不冻玩家攻击时钟。
+**分工**: 我出全部脚本 + Editor 一键场景生成器(`VerticalSlice/Build Miaodao Rhythm Scene`)；用户手工=拉分支→开 Unity 等编译→点菜单→Play→试玩→报观察。
+**当前阶段**: **Phase 4 — Implement**（首轮脚手架）。
+**Day-3 沉没成本规则**: 经 ≤3 轮用户实跑后循环仍不可演示 → 停下复盘上报。
+**下一步(用户侧)**: 拉分支 → Unity 打开 worktree 工程 → 菜单 `VerticalSlice/Build Miaodao Rhythm Scene` → Play → 按 Phase 5 五问反馈手感。
+<!-- ============================================================ -->

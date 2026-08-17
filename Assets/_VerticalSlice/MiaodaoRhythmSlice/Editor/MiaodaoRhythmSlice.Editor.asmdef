@@ -1,0 +1,18 @@
+{
+    "name": "MiaodaoRhythmSlice.Editor",
+    "rootNamespace": "JadeRabbit.Slice.EditorTools",
+    "references": [
+        "MiaodaoRhythmSlice"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
