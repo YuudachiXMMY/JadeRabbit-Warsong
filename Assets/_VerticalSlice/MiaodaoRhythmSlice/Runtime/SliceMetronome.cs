@@ -150,8 +150,9 @@ namespace JadeRabbit.Slice
 
         private static AudioClip MakeClick(string name, float freq, float durationSec)
         {
-            int sampleRate = AudioSettings.outputSampleRate;
-            if (sampleRate <= 0) sampleRate = 44100;
+            // 本工程为 FMOD 禁用了 Unity 内建音频，AudioSettings.outputSampleRate 会报
+            // "Audio system is disabled"。click/chime 用固定 44100 生成即可（播放时 Unity 自动重采样）。
+            const int sampleRate = 44100;
             int samples = Mathf.Max(1, (int)(durationSec * sampleRate));
             var data = new float[samples];
             for (int i = 0; i < samples; i++)
@@ -169,8 +170,9 @@ namespace JadeRabbit.Slice
 
         private static AudioClip MakeChime(string name)
         {
-            int sampleRate = AudioSettings.outputSampleRate;
-            if (sampleRate <= 0) sampleRate = 44100;
+            // 本工程为 FMOD 禁用了 Unity 内建音频，AudioSettings.outputSampleRate 会报
+            // "Audio system is disabled"。click/chime 用固定 44100 生成即可（播放时 Unity 自动重采样）。
+            const int sampleRate = 44100;
             int samples = Mathf.Max(1, (int)(0.5f * sampleRate));
             var data = new float[samples];
             // 编钟：基频 + 泛音，缓慢衰减
