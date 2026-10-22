@@ -602,7 +602,7 @@ MonoBehaviour:
   _metronome: {fileID: 0}
   _mode: 1
   _perfectAuthoredMs: 50
-  _goodAuthoredMs: 120
+  _goodAuthoredMs: 100
   _platformMinPerfectMs: 16.7
   _calibrationOffsetSeconds: 0
 --- !u!114 &1008254046

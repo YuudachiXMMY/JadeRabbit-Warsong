@@ -143,7 +143,9 @@ namespace JadeRabbit.Slice
             switch (_runManager.CurrentPhase)
             {
                 case SliceRunManager.Phase.Calibration:
-                    GUILayout.Label("延迟校准中——请随节拍任意攻击键轻敲……", _smallStyle);
+                    // 文案须与 LatencyCalibration 的测量网格一致（整拍，非半拍），否则玩家敲在
+                    // 半拍上会引入 ±半个整拍的二值跳变，校准均值失去意义。
+                    GUILayout.Label("延迟校准中——请跟着「整拍」（较沉的那一声，不是中间细碎的半拍音）用任意攻击键轻敲……", _smallStyle);
                     if (_calibration != null)
                         GUILayout.Label($"进度 {_calibration.TapsCollected}/{_calibration.TapsNeeded}（按 Enter 跳过）", _smallStyle);
                     break;
