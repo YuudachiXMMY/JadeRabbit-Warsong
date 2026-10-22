@@ -1,9 +1,17 @@
 # Traceability Index
 
-> **Last Updated**: 2026-08-13 (Rev.12 · 定向修复 — F5 boot-gate TR 缺口：新增 TR-save-014 承接 D-4 同步 Initialize()/IsInitialized boot 就绪契约，story-003 引用 +014；TR-tde-015 consumes 由 save-010 测试 seam 改指 save-014 运行期契约)
-> **Source**: `/architecture-review 补建 story-004 TR 缺口` (coverage mode)
-> **TR Registry**: `docs/architecture/tr-registry.yaml` (153 entries, v4)
-> **Verdict this review**: CONCERNS（健康 — 0 阻塞项）— see `architecture-review-2026-08-12-coverage.md`
+> **Last Updated**: 2026-10-22 (Rev.13 · ADR-D15 单 ADR 审查 — 新增 TR-rhythm-020..029 承接 D15 统一钳位级联/三新旋钮/ClampDegradation/FQA 契约/BPM_max；TR-rhythm-005/006/013/017 标注 `blocked_by: ADR-D15`；TR-beatclock-010 按 ADR-D6:230 改写；修正上轮 `save` 行漏记 TR-save-014 的 −1 计数差)
+> **Source**: `/architecture-review adr-15 at pr#66` (single-ADR mode)
+> **TR Registry**: `docs/architecture/tr-registry.yaml` (164 entries, v5)
+> **Verdict this review**: **FAIL（7 项阻塞）** — see `architecture-review-2026-10-22.md`
+>
+> **ADR-D15 审查增量（2026-10-22）**：ADR-D15（节奏判定窗缺陷修正）仍为 **`Proposed`**。
+> 它登记的 10 项新规范此前**没有任何 TR-ID**，本轮补建 `TR-rhythm-020..029`。
+> ⚠️ **18 条需求被 D15 的单一 `Proposed` 状态门控**：原有 8 条仅由 D15 覆盖
+> （rhythm-005/006/008/013/014/017 + beatclock-005/007）+ 新建 10 条。D15 Accepted 前，
+> 这 18 条均不应视为"已获批准的架构覆盖"。
+> 🔴 **阻塞**：B-2（ADR-D3 Status 字段逸出模板枚举，L3 Accepted ADR 正文依赖 L5 `Proposed` ADR）、
+> B-5（TR-beatclock-010 与 ADR-D6:230 直接冲突）。详见审查报告。
 >
 > **coverage 增量（2026-08-12）**：上轮 v8 后新增 **ADR-D12（死亡换局，Accepted）/ D13（胜利 run-end 统一，
 > Accepted，TD+game-designer 会签）/ D14（BD-2 取消窗瞬态，**Accepted 2026-08-13，TD+game-designer 会签**）**。ADR-D12+D13 闭合上轮两个审查缺口
@@ -21,17 +29,40 @@
 | beatclock | audio-beat-clock.md | 17 | 1 | 3 | 13 | GDD=规范；内部项非 ADR 缺口 |
 | input | input-event-system.md | 15 | 2 | 0 | 13 | GDD=规范 |
 | datalayer | so-data-layer.md | 12 | 11 | 1 | 0 | **D4 全覆盖** |
-| save | save-persistence.md | 13 | 2 | 0 | 11 | GDD=规范 |
+| save | save-persistence.md | 14 | 3 | 0 | 11 | GDD=规范；**修正**：上轮漏记 TR-save-014（D10 boot 就绪契约，Covered） |
 | tde | tde-integration.md | 15 | 10 | 1 | 4 | +tde-013 run-end 边界(D12/D13 Covered) · +tde-014 胜利事件核对(D13 Partial) · +tde-015 F5 boot gate+延迟注入(D10 Covered → story-004) |
-| **rhythm (C1)** | rhythm-core.md | 19 | 17 | 2 | 0 | D3 主架构；+rhythm-019 SC-2 run-end 清空 → D12/D13 Covered |
+| **rhythm (C1)** | rhythm-core.md | 29 | 13 | 16 | 0 | D3 主架构；**+rhythm-020..029（ADR-D15 新规范）**。16 Partial **全部**为"ADR 存在但仍 `Proposed`"：新 10 条 + 005/006/013/017 转入 + 原有 2 条 |
 | **combo (C2)** | combo-system.md | 15 | 13 | 2 | 0 | D3/D4/D5；+combo-015 BD-2 适应窗口 → D14 **Accepted(Covered)** |
 | **perk (C3)** | perk-system.md | 13 | 12 | 1 | 0 | D4；IRandomSource/pause 源已归 ADR-D8(Accepted) — **Gap 已闭环** |
 | **director (C4)** | combat-director.md | 19 | 17 | 2 | 0 | D2/D6/D10；+director-019 SC-3 令牌回收 → D12/D13 Covered |
-| **Total** | | **153** | **90** | **17** | **46** | |
+| **Total** | | **164** | **88** | **30** | **46** | 本轮重算（上轮 Total 行 Covered/Partial 各与分行和差 1，已校正） |
 
 > Core 层"Covered"以跨切面 ADR（D2/D3/D4/D5/D6/D10）+ DI 缝隙 ADR-D8 承接为准；应用层状态机/调度器
 > 逻辑以 GDD 为规范文档，不单列 ADR 缺口。各 Core 系统上轮的单一残留 Gap（A2 接口所有权）
-> 已由 **ADR-D8 (Accepted, step-1 spike + CI 门控)** 归属并本轮转 Covered。Core 四系统 Gap 现为 **0**。
+> 已由 **ADR-D8 (Accepted, step-1 spike + CI 门控)** 归属并转 Covered。Core 四系统 Gap 仍为 **0**。
+>
+> ⚠️ **本轮口径变更（2026-10-22）**：凡"唯一覆盖 ADR 处于 `Proposed`"的需求，不再计入 Covered，
+> 一律降为 **Partial**。这是 C1 rhythm 的 Covered 由 17 降至 13、Partial 由 2 升至 16 的全部原因——
+> **不是覆盖退化，而是把"待批准"从"已覆盖"里剥出来**。D15 一经 Accepted，这 16 条中的 14 条
+> （新 10 条 + 005/006/013/017）即可一次性转 Covered。
+
+---
+
+## ADR-D15 门控清单（D15 Accepted 后一次性解阻塞）
+
+| TR-ID | 需求要旨 | 当前状态 |
+|-------|---------|---------|
+| TR-rhythm-005 | 拍点偏移公式（SPEC-1 去除双重延迟补偿） | Partial · blocked_by D15 |
+| TR-rhythm-006 | 钳位级联唯一权威副本 | Partial · blocked_by D15 |
+| TR-rhythm-008 | 早/晚侧判定对称性（FQA） | Partial · blocked_by D15 |
+| TR-rhythm-013 | LateWindow 过期判定改 DSP 域 | Partial · blocked_by D15 |
+| TR-rhythm-014 | perk delta 低频事件缓存 | Partial · blocked_by D15 |
+| TR-rhythm-017 | E7 窗口塌缩 / BPM_max（⚠ 含 B-1 数学错误，须先修） | Partial · blocked_by D15 |
+| TR-rhythm-020..029 | D15 本轮新建 10 条规范 | Partial · blocked_by D15 |
+| TR-beatclock-005 | Lookahead 事件前瞻时间 | Partial · 仅 D15 覆盖 |
+| TR-beatclock-007 | 延迟偏移内化进广播时间戳 | Partial · 仅 D15 覆盖 |
+
+**合计 18 条需求挂在一个 `Proposed` 状态上。** 这是本轮审查最大的单点风险。
 
 ---
 
@@ -51,6 +82,7 @@
 | ADR-D12 (Death & Run-Lifecycle) | Accepted | TR-concept-015, TR-tde-013, TR-rhythm-019, TR-director-019 — 死亡换局边界(run-ends-on-death) |
 | ADR-D13 (Run-End Victory Unification) | Accepted (TD+GD 会签) | TR-tde-013/014, TR-rhythm-019, TR-director-019 — 统一 `OnRunEnded(RunOutcome)`,胜利路径对称 |
 | ADR-D14 (BD-2 Cancel-Window Transient) | **Accepted** (2026-08-13, TD+GD 会签) | TR-combo-015 — 取消窗适应窗口触发点前移至 `OnMeterChangeAccepted`(C2 BD-2 故事解阻塞；GDD 文本落地为下游步骤) |
+| ADR-D15 (Rhythm Judgment Window Defects) | 🔴 **Proposed** | TR-rhythm-005/006/008/013/014/017 + **TR-rhythm-020..029**, TR-beatclock-005/007 — SPEC-1~5 五项缺陷修正、统一钳位级联 ①–⑥、三新旋钮(`MissHeadroomMs`/`MissBudgetShare`/`EarlyLenienceRatio`)、`ClampDegradation` 降级标志、FQA 契约。**审查裁决 FAIL：B-1 BPM_max 漏 Perfect 旋钮分支 · B-2 与 D3 的权威倒置 · B-3 control-manifest 零传播 · B-4 AC-C1-29/CI 死锁 · B-6 M0 Locked 影响面低估 · PR-7 裁决未落地** |
 
 ---
 
@@ -58,9 +90,9 @@
 
 | Layer | Total TRs | Covered | Partial | Gap | Notes |
 |-------|-----------|---------|---------|-----|-------|
-| Foundation (F2-F6) | 72 | 26 | 5 | 41 | datalayer/tde 覆盖佳；+tde-013(D12/D13 Covered)/tde-014(D13 Partial)/tde-015(D10 Covered) |
+| Foundation (F2-F6) | 73 | 27 | 5 | 41 | datalayer/tde 覆盖佳；**修正 save-014 漏记（+1 Total/+1 Covered）** |
 | Core-concept | 15 | 6 | 4 | 5 | D3 覆盖 concept-006/007；+concept-015 run-ends-on-death(D12/D13) |
-| **Core (C1-C4)** | 66 | 59 | 7 | 0 | 跨切面 ADR + D8 DI 缝隙 + D12/D13 run-end；+rhythm-019/director-019 Covered、combo-015 **Covered(D14 Accepted)** |
+| **Core (C1-C4)** | 76 | 55 | 21 | 0 | **+rhythm-020..029(D15 `Proposed` → Partial)**；rhythm-005/006/013/017 由 Covered 转 Partial(同因)；combo/perk/director 不变 |
 | Feature | 0 | 0 | 0 | 0 | 尚无 GDD |
 | Presentation | 0 | 0 | 0 | 0 | 尚无 GDD |
 
