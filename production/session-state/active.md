@@ -529,3 +529,89 @@ Task: 对 C2 跑 /design-review；follow-up 修 C1 clamp 50→999 (OQ1)
 **Day-3 沉没成本规则**: 经 ≤3 轮用户实跑后循环仍不可演示 → 停下复盘上报。
 **下一步(用户侧)**: 拉分支 → Unity 打开 worktree 工程 → 菜单 `VerticalSlice/Build Miaodao Rhythm Scene` → Play → 按 Phase 5 五问反馈手感。
 <!-- ============================================================ -->
+
+<!-- ============================================================ -->
+## Session Extract — /architecture-review 2026-10-22（ADR-D15 @ PR #66）
+
+**模式**: 单 ADR 聚焦审查（`adr-15 at pr#66`，ultracode 多代理扇出）。分支 `review/adr-d15-arch-review` @ `56f7b123`。
+**裁决**: **FAIL** — 7 项阻塞。读作「不能照原样 Accepted」，不是「这份 ADR 写得差」。
+**报告**: `docs/architecture/architecture-review-2026-10-22.md`
+
+### 验证层披露（重要）
+123 条原始发现 → CONFIRMED 77 / REFUTED 20 / **STILL-UNVERIFIED 26**。
+26 条未验证 = `gdd-diff-audit` 全 17 条 + `slice-evidence-integrity` 全 6 条 + `registry-tr-consistency` #10/11/12，
+验证层被月度额度上限打断，**未纳入裁决**，是恢复预算后第一批要重跑的。
+Phase 5 引擎审计与 `unity-specialist` 会诊**未执行**（同因），已在报告中声明为未跑而非通过。
+所有自称 Critical 的发现经三组独立视角一致降级为 High（D15 仍 Proposed、生产 C1 未实装、M0 三个签名均「⏳ 待签」、
+引用 Proposed ADR 的故事被自动阻塞），**仅 B-1 存活为 Critical**。
+
+### PR-7 裁决（PR #66 正式移交项）
+**PR-7 前提不成立**——该契约 2026-08-13 已裁决，ADR-D15 从未看到 `rhythm-core.md` §C1-F6（`grep -n "C1-F6" adr-d15` 为空）。
+定稿 = **C1-F6 现有 6 字段（最小集，非并集）**：`Rating`/`AttackType`/`CancelTier`/`ComboCountBefore`/`ComboCountAfter`/`OffsetMs`，
+规范源 = `rhythm-core.md` §C1-F6。每字段均已核出实际消费方。
+`BeatDspTime` **全仓零消费方**（所有命中都是 F2 上游 `BeatEventData.BeatDspTime`、RhythmJudger 私有 `_currentBeatDspTime`、
+或 C1 从自身状态传入的 `Play(attackType, beatDspTime)` 实参）；`Mode` 有消费需求但走非事件路径（`architecture.md:135` Exposes 只读属性）。
+**6 处待同步，其中 4 处 PR-7 未登记**：`registry/architecture.yaml:177`（PR-7 引的 `:176` 偏一行）、
+`architecture.md:135`、`architecture.md:193`、`adr-d3:58`、`rhythm-core.md:936`；`tr-registry.yaml:842` TR-rhythm-012 **本就正确，无需改**。
+附带新发现：`adr-d3:204`（「内部状态」）vs `architecture.md:135`（Exposes 列）vs `rhythm-core.md:575`（下游须读）
+三处口径不一，须统一为「非事件字段，经 `RhythmJudger.Mode` 公开只读属性暴露」。
+
+### 7 项阻塞
+- **B-1（唯一存活 Critical）**: `BPM_max` 漏掉 `PerfectHalfWindowMs_authored + perkPerfectDelta` 分支。
+  由级联②得 `MissUnreachable ⟺ C ≤ max(A+δ, m)`，而 `adr-d15:362-364` 只编码了 `C < m`（那是 PerfectFloorSacrificed 阈值）。
+  真实阈值（HalfBeat, `C = 15000/BPM − 1`）：PC/iOS 默认 A=50 → **294.12**；`perkPerfectDelta=+20` → **211.27**（落在已登记 [80,240] 内容区间）；
+  旋钮顶 A=100 → **148.51**；perk 满叠 +60 → **135.14**，Android 同为 135.14（**不是 185.19**）。
+  另 `30000/(2×17.7) = 847.46` 而非 **848.0**（`adr-d15:364`、`rhythm-core.md:372`、`:757` 三处）。
+  连带：`adr-d15:683` AC-C1-31 的等价式在 ⟹ 方向为假且边界应取 ≥（**落地的 GDD 形式 `rhythm-core.md:1026` 是对的**，只有 ADR 的 BPM 转述错）；
+  `adr-d15:358` 的 Validator 笛卡尔积与落地的 AC-C1-30 均漏这两个维度，故校验网格抓不到。
+  **纠正留档**：`rhythm-core.md:752-757` **不是**缺陷点（E7 的 `:754` 条件就是 `platformMinPerfectMs > C`，该域内公式正确）。
+- **B-2**: D3 ⇄ D15 权威倒置。`adr-d3:4` 的 Status 是逸出模板三值枚举的混合值；L3 的 Accepted ADR 正文现依赖 L5 的 `Proposed` ADR
+  （D15 → D3 → authority-of → D15）。无字面环，D15 三个依赖(D3/D8/D4)均 Accepted。后果：链上**没有任何文档持有自洽且已批准的算法**；
+  故事自动阻塞所依赖的 Status 精确枚举匹配**已失效**。层级：L0=D6,D7 | L1=D1 | L2=D5,D2,D10 | L3=D3,D4,D12 | L4=D8,D13 | L5=D14,**D15**。
+- **B-3**: `control-manifest.md` 零传播（第 9 处也是最危险的 SPEC-1 现场）。不在 PR #66 的 8 文件 diff 内，D15 全文未提它。
+  `:178`/`:182` 仍强制双重补偿，`:189` 仍是 SPEC-2 之前的钳位模型。最危险的是 `:4-5` 版本戳仍 `2026-08-12`，
+  而故事文件内嵌该版本号、`/story-done` 据此查陈旧——**照当前 manifest 写的任何 C1 故事都会把已知错误公式带进实装**。
+  `architecture.md`（`:8` 同为 2026-08-12）亦零传播。
+- **B-4**: AC-C1-29 与 CI 制度死锁。`adr-d15:666` 要求先写一个**预期失败**的测试，而 `tests.yml` 全文无 `continue-on-error`，
+  coding-standards 又明令「不得跳过失败测试」。D15 对此制度死锁只字未提。
+- **B-5**: TR-beatclock-010（`status: active`）要求 `ConcurrentQueue`，而 `adr-d6:230` 明令「**NOT required and must not be introduced**」。
+  （留档纠正：冲突对手是 **ADR-D6**，不是我早先说的 D8。）
+- **B-6**: M0 Locked 影响面低估。`adr-d15:34` 只点了 `m0:51-52`，但修正 2 另外推翻 `m0:40/:45/:48/:49/:56/:154` 六处；
+  而 `:51-52` 的**不变量本身在新级联下依然成立**。结构性确定式：`Good_eff @120BPM/HalfBeat/PC = 124 − MissHeadroomMs_effective`。
+  **「94ms」是 ADR 自己的数值示例（`:337`），不是已定的平衡值（`:718-719` GD-1 明确 defer 给平衡轮），不可当结论引用。**
+  `RhythmJudge.cs:35` 的 `_goodAuthoredMs = 100f` 由 PR 前提交 `31545105` 写入——切片在 PR #66 之前就已偏离 Locked 的 ±120。
+- **B-7**: PR-7 裁决的 6 处同步尚未落地。
+
+### 其他 CONFIRMED（不阻塞）
+第 8 处 SPEC-1 现场 `rhythm-core.md:70`；修正 4 C-2 带符号比较从未落地（`rhythm-core.md:395-398`、`adr-d3:174`）；
+4 条 `status: active` 的 TR 编码着 Proposed 规范却能通过 `/story-readiness`；`adr-d10:27` 自相矛盾（且提到并不存在的 ADR-D9）；
+**ADR-D9 与 D11 不存在且编号缺口无任何说明**（现存 13 份：D1–D8、D10、D12、D13、D14、D15）；`adr-d15:697` 把 D13 误记为 Proposed；
+TR-rhythm-018 文本已失效 + `rhythm-core.md:853` 矛盾；TR-rhythm-006 把「两份副本」说成三份。
+
+### 覆盖率
+在审 33 条 TR：✅17 / ⚠12 / ❌4。**18 条需求挂在 D15 单一 `Proposed` 状态上** = 原有 8 条仅由 D15 覆盖
+（rhythm-005/006/008/013/014/017 + beatclock-005/007）+ 本轮新建 10 条（此前完全没有 TR-ID）。
+
+### 本轮落盘（4 文件）
+1. `docs/architecture/architecture-review-2026-10-22.md` — 完整报告（新建）
+2. `docs/architecture/traceability-index.md` — Rev.13；164 条 v5；rhythm 29 条 13/16/0；Total 164/88/30/46；
+   裁决改 FAIL；新增「ADR-D15 门控清单」；**顺带修正上轮三处计数错误**（`save` 行漏记 TR-save-014、Total 行 Covered/Partial 各与分行和差 1）。
+   口径变更：凡「唯一覆盖 ADR 处于 Proposed」的需求一律由 Covered 降为 Partial——**不是覆盖退化，是把「待批准」从「已覆盖」里剥出来**。
+3. `docs/architecture/tr-registry.yaml` — v4→v5，`last_updated` 2026-10-22；**追加 TR-rhythm-020..029**（仅追加，无重号）；
+   新增可选字段 `blocked_by`（并在 requirement 文本前缀 `[BLOCKED BY ADR-D15 (Proposed)]`，使现有读取方无需认识新字段也能看见门控）；
+   TR-rhythm-005/006/013/017 标注门控；**TR-beatclock-010 按 `adr-d6:230` 改写**（B-5）；
+   TR-rhythm-017 修正 BPM_max 双阈值 + 推翻 185.19/「>=186」（B-1）；TR-rhythm-018 文本修正；TR-rhythm-006 三份→两份副本修正。
+   校验：164 条、rhythm 29、无重号、无非 active、引号转义干净，与索引数字对齐。
+4. `design/gdd/systems-index.md` — C1 状态 `**Approved**` → `**Needs Revision**`（精确串，无括注），依赖列加 ADR-D15 (Proposed)；头部记明四处未落地修正点。
+
+未写 `docs/consistency-failures.md`（文件不存在，技能规则明令不得新建），故本轮无 Reflexion Log。
+
+### 下一步（优先级序）
+1. 修 B-1 数学（ADR + GDD 六处锚点）→ 2. 修 B-2 让 `adr-d3:4` Status 回归裸枚举值 →
+3. 传播 B-3 到 control-manifest（并把 `Manifest Version` 推到 2026-10-22）+ `architecture.md` →
+4. 给 AC-C1-29 一个不让 main 变红的机制 → 5. 扩写 `adr-d15:34` 的 Ordering Note 覆盖 m0 六处并走 producer 的 M0 修订流程 →
+6. 落地 PR-7 裁决 6 处 → 7. 恢复预算后重跑 26 条丢失验证。
+**`/gate-check` 现在不应提供**——裁决 FAIL 且 7 项阻塞未闭。
+预门禁清单中 `tests/unit`/`tests/integration` 两个 ❌ 是技能的引擎中立路径清单与本项目
+`Assets/Tests/EditMode|PlayMode` 布局不匹配造成的，**不是真实缺口**（两者皆存在，CI `tests.yml` 亦存在）。
+<!-- ============================================================ -->

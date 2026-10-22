@@ -23,9 +23,17 @@
 #   NNN = three-digit zero-padded sequence per system, starting at 001
 #
 # STATUS VALUES: active | deprecated | superseded-by: TR-[system]-NNN
+#
+# OPTIONAL FIELD — blocked_by (added v5, 2026-10-22):
+#   blocked_by: ADR-DNN  marks an entry whose ONLY governing ADR is still
+#   `Proposed`. The entry stays `status: active` so existing readers behave
+#   unchanged, but the requirement text is prefixed with
+#   "[BLOCKED BY ADR-DNN (Proposed)]" so /create-stories and /story-done
+#   surface the gate without needing to understand the new field.
+#   Remove the prefix and the field when that ADR reaches `Accepted`.
 
-version: 4
-last_updated: "2026-08-13"
+version: 5
+last_updated: "2026-10-22"
 
 requirements:
 
@@ -228,9 +236,9 @@ requirements:
   - id: TR-beatclock-010
     system: beatclock
     gdd: design/gdd/audio-beat-clock.md
-    requirement: "Thread safety: audio thread events queued to main thread via ConcurrentQueue"
+    requirement: "Thread safety: beat dispatch happens entirely on the main thread — FMOD DSP clock is polled from Update() and BeatEventData is dispatched inline (ADR-D6:80). ConcurrentQueue<BeatEventData> is NOT required and MUST NOT be introduced (ADR-D6:230); it would add ~1 frame of latency (ADR-D6:139-142, control-manifest.md:135). No beat callback runs on the FMOD audio thread and OnAudioFilterRead must not be used for scheduling."
     created: 2026-07-15
-    revised: ""
+    revised: 2026-10-22
     status: active
 
   - id: TR-beatclock-011
@@ -783,18 +791,20 @@ requirements:
   - id: TR-rhythm-005
     system: rhythm
     gdd: design/gdd/rhythm-core.md
-    requirement: "Beat-offset formula (judgment_time - beat_dsp_time)x1000 — NO latency_offset_s term. REVISED 2026-10-22 by ADR-D15 SPEC-1: the prior wording '(judgment_time + latency_offset_s - beat_dsp_time)' double-compensated, because F2 Core Rule 7 (audio-beat-clock.md) already folds latency_offset_s into the beat_dsp_time it publishes; the two additions cancel algebraically and calibration had zero net effect. Latency compensation happens once and only once, in F2 Rule 7. Both operands are already in the perception domain, so C1 subtracts directly. Subtraction must complete in the double domain; narrow to float only on the final small millisecond delta."
+    requirement: "[BLOCKED BY ADR-D15 (Proposed)] Beat-offset formula (judgment_time - beat_dsp_time)x1000 — NO latency_offset_s term. REVISED 2026-10-22 by ADR-D15 SPEC-1: the prior wording '(judgment_time + latency_offset_s - beat_dsp_time)' double-compensated, because F2 Core Rule 7 (audio-beat-clock.md) already folds latency_offset_s into the beat_dsp_time it publishes; the two additions cancel algebraically and calibration had zero net effect. Latency compensation happens once and only once, in F2 Rule 7. Both operands are already in the perception domain, so C1 subtracts directly. Subtraction must complete in the double domain; narrow to float only on the final small millisecond delta."
     created: 2026-08-11
     revised: 2026-10-22
     status: active
+    blocked_by: ADR-D15
 
   - id: TR-rhythm-006
     system: rhythm
     gdd: design/gdd/rhythm-core.md
-    requirement: "Runtime window clamp cascade recomputed on every BPM change; writes runtime fields only, never back to SO (ADR-D4 D4-1). REVISED 2026-10-22 by ADR-D15 SPEC-2: there is now ONE unified cascade (steps 1-6, sole authority = rhythm-core.md C1-F3 step 1) producing _effectivePerfectMs / _effectiveGoodMs / _effectiveGoodEarlyMs / _effectiveMissHeadroomMs / _effectiveLateMs / _effectiveEarlyMs plus the _lastClampDegradation flags. No duplicate cascade copy may exist in any other section or file — the pre-ADR-D15 defect family accumulated precisely because three unsynchronized copies existed. Priority order is P1 (adjacent beats never overlap, ceiling C = gridIntervalMs/2 - 1) > P2 (platformMinPerfectMs floor) > P3 (Miss reachable)."
+    requirement: "[BLOCKED BY ADR-D15 (Proposed)] Runtime window clamp cascade recomputed on every BPM change; writes runtime fields only, never back to SO (ADR-D4 D4-1). REVISED 2026-10-22 by ADR-D15 SPEC-2: there is now ONE unified cascade (steps 1-6, sole authority = rhythm-core.md C1-F3 step 1) producing _effectivePerfectMs / _effectiveGoodMs / _effectiveGoodEarlyMs / _effectiveMissHeadroomMs / _effectiveLateMs / _effectiveEarlyMs plus the _lastClampDegradation flags. No duplicate cascade copy may exist in any other section or file — the pre-ADR-D15 defect family accumulated precisely because unsynchronized copies existed (ADR-D15:128 documents TWO such copies; the state-machine copy had already been eliminated per rhythm-core.md:466-470, which calls ApplyClampCascade(newBpm, _quantizationMode) — corrected 2026-10-22, the prior 'three copies' wording overcounted). Priority order is P1 (adjacent beats never overlap, ceiling C = gridIntervalMs/2 - 1) > P2 (platformMinPerfectMs floor) > P3 (Miss reachable)."
     created: 2026-08-11
     revised: 2026-10-22
     status: active
+    blocked_by: ADR-D15
 
   - id: TR-rhythm-007
     system: rhythm
@@ -847,10 +857,11 @@ requirements:
   - id: TR-rhythm-013
     system: rhythm
     gdd: design/gdd/rhythm-core.md
-    requirement: "LateWindow expiry authoritatively judged by DSP-time comparison inputDspTime - beatDspTime > LateWindowMs_effective/1000 (effective, not authored — the two diverge under the ADR-D15 unified clamp cascade), read via IBeatClock.CurrentDspTime (ADR-D8 forbids downstream AudioSettings.dspTime access), frame-rate independent"
+    requirement: "[BLOCKED BY ADR-D15 (Proposed)] LateWindow expiry authoritatively judged by DSP-time comparison inputDspTime - beatDspTime > LateWindowMs_effective/1000 (effective, not authored — the two diverge under the ADR-D15 unified clamp cascade), read via IBeatClock.CurrentDspTime (ADR-D8 forbids downstream AudioSettings.dspTime access), frame-rate independent"
     created: 2026-08-11
     revised: 2026-10-22
     status: active
+    blocked_by: ADR-D15
 
   - id: TR-rhythm-014
     system: rhythm
@@ -879,17 +890,18 @@ requirements:
   - id: TR-rhythm-017
     system: rhythm
     gdd: design/gdd/rhythm-core.md
-    requirement: "E7 window collapse: the collapse handling is no longer separate inline logic — REVISED 2026-10-22 by ADR-D15 SPEC-2, it is absorbed into steps 2 and 4 of the unified clamp cascade, which by construction runs before the invariant Asserts. Collapse threshold is derived, not hardcoded: BPM_max(platform, mode) = (mode==Beat ? 60000 : 30000) / (2 x (platformMinPerfectMs + 1)); Android/HalfBeat yields 185.19, hence the historical '>=186'. CORRECTION: the prior wording 'binary Perfect/Miss degrade accepted' was factually wrong. Above BPM_max the P2 Perfect floor consumes the entire ceiling C, so Good AND Miss vanish together and the result is a SINGLE Perfect tier, not a Perfect/Miss binary. That state raises _lastClampDegradation |= MissUnreachable and is a content-configuration error (Debug.LogError), not an accepted graceful degrade — remedy by lowering BPM below BPM_max, raising MissBudgetShare, or accepting PerfectFloorSacrificed."
+    requirement: "E7 window collapse: the collapse handling is no longer separate inline logic — REVISED 2026-10-22 by ADR-D15 SPEC-2, it is absorbed into steps 2 and 4 of the unified clamp cascade, which by construction runs before the invariant Asserts. TWO DISTINCT derived thresholds must be kept apart (corrected 2026-10-22 by /architecture-review B-1; the prior single-formula wording was wrong). (a) BPM_max_PerfectFloor = (mode==Beat ? 60000 : 30000) / (2 x (platformMinPerfectMs + 1)) — above this the platform Perfect floor alone exceeds the ceiling C, raising PerfectFloorSacrificed; this is the only threshold the pre-correction text encoded. (b) BPM_max_MissUnreachable = (mode==Beat ? 60000 : 30000) / (2 x (max(PerfectHalfWindowMs_authored + perkPerfectDelta, platformMinPerfectMs) + 1)) — the real collapse threshold, since cascade step 2 takes max(authored+perkDelta, platformMin). MissUnreachable <=> BPM >= BPM_max_MissUnreachable (>=, not >). Worked values, HalfBeat, C = 15000/BPM - 1: PC/iOS with authored 50 -> 294.12; +20 perkPerfectDelta -> 211.27 (inside the registered [80,240] content range); authored at knob top 100 -> 148.51; full perk stack +60 -> 135.14, and Android is IDENTICAL at 135.14 because authored+delta (110) dominates the 80ms floor — the previously claimed Android/HalfBeat value of 185.19 and the historical '>=186' are both WRONG. Also 30000/(2 x 17.7) = 847.46, not 848.0. CORRECTION: the prior wording 'binary Perfect/Miss degrade accepted' was factually wrong. Above BPM_max the P2 Perfect floor consumes the entire ceiling C, so Good AND Miss vanish together and the result is a SINGLE Perfect tier, not a Perfect/Miss binary. That state raises _lastClampDegradation |= MissUnreachable and is a content-configuration error (Debug.LogError), not an accepted graceful degrade — remedy by lowering BPM below BPM_max_MissUnreachable, lowering PerfectHalfWindowMs_authored, raising MissBudgetShare, or accepting PerfectFloorSacrificed."
     created: 2026-08-11
     revised: 2026-10-22
     status: active
+    blocked_by: ADR-D15
 
   - id: TR-rhythm-018
     system: rhythm
     gdd: design/gdd/rhythm-core.md
-    requirement: "Latency offset [-0.2, 0.2]s; range-clamp enforcement delegated to FE7 (C1 trusts F2-read value, no re-clamp)"
+    requirement: "Latency offset range [-0.2, 0.2]s; range-clamp enforcement delegated to FE7. REVISED 2026-10-22 by /architecture-review: C1 no longer reads the latency value at all (rhythm-core.md:253) — F2 Core Rule 7 is the single compensation point and C1 receives an already-compensated beat_dsp_time, so the former 'C1 trusts F2-read value, no re-clamp' wording describes a data dependency that no longer exists. NOTE a surviving contradiction: rhythm-core.md:853 still lists LatencyOffsetMs among the F2 data C1 consumes, against :193 and :253; that line must be removed."
     created: 2026-08-11
-    revised: ""
+    revised: 2026-10-22
     status: active
 
   - id: TR-rhythm-019
@@ -899,6 +911,100 @@ requirements:
     created: 2026-08-12
     revised: ""
     status: active
+
+  # Added 2026-10-22 by /architecture-review (adr-15 at pr#66). These ten
+  # requirements are registered by ADR-D15 and previously had NO TR-ID at all.
+  # ADR-D15 is still `Proposed`, so every entry below carries blocked_by.
+
+  - id: TR-rhythm-020
+    system: rhythm
+    gdd: design/gdd/rhythm-core.md
+    requirement: "[BLOCKED BY ADR-D15 (Proposed)] Unified clamp cascade steps 1-6 is the SOLE authoritative window-derivation path (rhythm-core.md:301-357, 'the unified cascade 1-6 is the only authoritative version'). Order: (1) C = gridIntervalMs/2 - 1 where gridIntervalMs = fullBeatMs in Beat mode else halfBeatMs; (2) Perfect = min(authored + perkPerfectDelta, C) then raised to platformMinPerfectMs, re-capped at C with PerfectFloorSacrificed; (3) missBudget = C - PerfectEff, MissHeadroomEff = min(authored, missBudget x MissBudgetShare); (4) Good = min(authored + perkGoodDelta, C - MissHeadroomEff) floored at PerfectEff; (5) GoodEarly = min(Good x EarlyLenienceRatio, C - MissHeadroomEff) floored at PerfectEff; (6) Late/Early window = clamp(authored, GoodEff + MissHeadroomEff, C). Runs on OnMeterChanged only, never per-frame or per-input."
+    created: 2026-10-22
+    revised: ""
+    status: active
+    blocked_by: ADR-D15
+
+  - id: TR-rhythm-021
+    system: rhythm
+    gdd: design/gdd/rhythm-core.md
+    requirement: "[BLOCKED BY ADR-D15 (Proposed)] MissHeadroomMs authored knob, [SerializeField] private float _missHeadroomMs = 30f, registered range [15, 60]. Guarantees a non-empty Miss band between the Good edge and the Late/Early window edge, so the Miss rating is reachable at every registered BPM. Pre-ADR-D15 the Miss set could be empty (lower bound > upper bound) and the condition was BPM-independent, making Miss structurally unreachable."
+    created: 2026-10-22
+    revised: ""
+    status: active
+    blocked_by: ADR-D15
+
+  - id: TR-rhythm-022
+    system: rhythm
+    gdd: design/gdd/rhythm-core.md
+    requirement: "[BLOCKED BY ADR-D15 (Proposed)] MissBudgetShare authored knob, [SerializeField] private float _missBudgetShare = 0.5f, registered range (0, 1]. Expresses Miss headroom as a SHARE OF THE REMAINING budget (C - PerfectEff) rather than an absolute millisecond figure. This is what prevents the clamp cascade from inverting: priority P3 (Miss reachable) takes a fraction of what P1 and P2 left behind, so it can never demand more than the ceiling allows. Values > 1 are a content error (Odin Validator must reject) because they would let Miss headroom exceed the entire remaining budget."
+    created: 2026-10-22
+    revised: ""
+    status: active
+    blocked_by: ADR-D15
+
+  - id: TR-rhythm-023
+    system: rhythm
+    gdd: design/gdd/rhythm-core.md
+    requirement: "[BLOCKED BY ADR-D15 (Proposed)] EarlyLenienceRatio authored knob, [SerializeField] private float _earlyLenienceRatio = 1.0f, registered range [1.0, 1.5]. Scales the early-side Good half-window relative to the late side, making the forward-quantization asymmetry an explicit authored value instead of an emergent accident. Ratio 1.0 = fully symmetric. The early side is still bounded by the same ceiling C - MissHeadroomEff and floored at PerfectEff."
+    created: 2026-10-22
+    revised: ""
+    status: active
+    blocked_by: ADR-D15
+
+  - id: TR-rhythm-024
+    system: rhythm
+    gdd: design/gdd/rhythm-core.md
+    requirement: "[BLOCKED BY ADR-D15 (Proposed)] [Flags] public enum ClampDegradation { None = 0, MissHeadroomCompressed = 1<<0, PerfectFloorSacrificed = 1<<1, MissUnreachable = 1<<2 } exposed as public ClampDegradation LastClampDegradation { get; }. Set by the cascade whenever a priority had to be sacrificed. THREE readers must all be satisfied by this single surface: EditMode unit tests, runtime telemetry, and the Odin Validator. Because Runtime assemblies are forbidden from referencing Sirenix.*, the property must be a plain C# read-only property with no Odin attributes on the Runtime side; Validator-side gating lives in an Editor assembly (ADR-D15 TD-3)."
+    created: 2026-10-22
+    revised: ""
+    status: active
+    blocked_by: ADR-D15
+
+  - id: TR-rhythm-025
+    system: rhythm
+    gdd: design/gdd/rhythm-core.md
+    requirement: "[BLOCKED BY ADR-D15 (Proposed)] FQA Contract (Forward-Quantization Asymmetry): any early/late asymmetry in the judgment windows must be BOUNDED and EXPLICIT (authored via EarlyLenienceRatio, bounded by the cascade), the Perfect window must remain SYMMETRIC about the beat, and no input may be silently swallowed. Replaces the pre-ADR-D15 situation where asymmetry was an undocumented consequence of clamp ordering."
+    created: 2026-10-22
+    revised: ""
+    status: active
+    blocked_by: ADR-D15
+
+  - id: TR-rhythm-026
+    system: rhythm
+    gdd: design/gdd/rhythm-core.md
+    requirement: "[BLOCKED BY ADR-D15 (Proposed)] SPEC-4 no-silent-swallow: an input landing on the early side must be EVALUATED and must emit a RhythmJudgmentEvent carrying a SIGNED OffsetMs. Pre-ADR-D15 the early side was discarded outright — no event, no attack animation (rhythm-core.md:192) — which also made an early Perfect structurally unreachable. The signed offset is what lets P1's HUD indicator and the accessibility early/late direction cue (accessibility-requirements.md:87) distinguish early from late at all. AC-C1-29 verifies this and is expected to FAIL until the fix lands."
+    created: 2026-10-22
+    revised: ""
+    status: active
+    blocked_by: ADR-D15
+
+  - id: TR-rhythm-027
+    system: rhythm
+    gdd: design/gdd/rhythm-core.md
+    requirement: "[BLOCKED BY ADR-D15 (Proposed)] DSP-time precision contract: the offset subtraction must complete in the double domain and only the final small millisecond delta may be narrowed to float — double diff = judgmentTime - beatDspTime; float offsetMs = (float)(diff * 1000.0). Converting raw DSP timestamps to float BEFORE subtracting is forbidden: FMOD DSP clock values are large enough that float mantissa loss exceeds the Perfect window tolerance."
+    created: 2026-10-22
+    revised: ""
+    status: active
+    blocked_by: ADR-D15
+
+  - id: TR-rhythm-028
+    system: rhythm
+    gdd: design/gdd/rhythm-core.md
+    requirement: "[BLOCKED BY ADR-D15 (Proposed)] Latency-compensation single-point invariant (SPEC-1 + SPEC-3): latency_offset_s is applied EXACTLY ONCE, at F2 Core Rule 7, and the declared latency range is [-0.2, 0.2]s everywhere. C1 must not re-add, re-clamp, or re-read it. The 120ms cap formerly asserted at rhythm-core.md:259 is deleted — it truncated the calibration chain toward under-compensation and narrowed FE7's usable range from +/-200ms to 120ms, which ADR-D15:377-391 upgrades from a documentation cleanup to an ACCESSIBILITY-CRITICAL fix serving R-AUDIO-01."
+    created: 2026-10-22
+    revised: ""
+    status: active
+    blocked_by: ADR-D15
+
+  - id: TR-rhythm-029
+    system: rhythm
+    gdd: design/gdd/rhythm-core.md
+    requirement: "[BLOCKED BY ADR-D15 (Proposed)] Editor-time validation grid: the Odin Validator must sweep the cartesian product of BPM x platform x quantizationMode x PerfectHalfWindowMs_authored x perkPerfectDelta and fail content validation whenever the cascade raises MissUnreachable. The last two dimensions are MANDATORY — ADR-D15:358's grid and the landed AC-C1-30 omit them, which is precisely why the BPM_max defect (see TR-rhythm-017) was not caught by validation. Validator code lives in an Editor assembly only; Runtime must not reference Sirenix.* (project forbidden pattern)."
+    created: 2026-10-22
+    revised: ""
+    status: active
+    blocked_by: ADR-D15
 
   # ── combo / C2 (design/gdd/combo-system.md) ───────────────────────────────
   # Added 2026-08-11 by /architecture-review. Arch ref: ADR-D3, ADR-D5, ADR-D4.
