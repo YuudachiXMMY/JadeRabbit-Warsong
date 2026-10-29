@@ -190,7 +190,7 @@ C1 在 `BeatClock.IsStartConfirmed == true` 之前不对任何输入进行节奏
 | C3 **↔** C1 | 心法构筑系统 | C1 消费 C3 实现的 `IRhythmModifierProvider`（窗口 delta / ΔCombo delta，见 C1-F7）；C3 订阅 C1 `OnRhythmJudgment` 作触发器 | 属性注入（C1 查询）+ 事件订阅（C3 侧）；**BC-2** |
 | C1 **→** F6/Animancer | 攻击动画 | `AnimancerAttackPlayer.Play(attackType, beatDspTime)` | 方法调用（ADR-D5） |
 | FE7 **→** C1 | 游戏设置 | `QuantizationMode`（Off/HalfBeat/Beat；运行时可切换） | 属性注入 |
-| FE3/F2 **→** C1 | 延迟校准 | `latency_offset_s`（由 F2 内化后，C1 从 F2 读取；用于跨时间域对齐） | 同步查询（`BeatClock.LatencyOffsetMs`） |
+| ~~FE3/F2 **→** C1~~ | ~~延迟校准~~ | **已移除（ADR-D15 SPEC-1）**：C1 不再消费 `latency_offset_s`。延迟补偿由 F2 Core Rule 7 一次且仅一次施加，C1 收到的两个时间戳已同域。`BeatClock.LatencyOffsetMs` getter 本身保留（FE3 校准链与 boot 链仍依赖）。 | — |
 
 > **M3 设计决策（来自 ADR-D3）**：C1 须决定 `IBeatClock` 和 `IInputEventBus` 是否正式声明为接口（以支持纯 C# 单元测试）还是直接引用单例。推荐方案 A（接口注入）。此决定须在实现 sprint 开始前落地，见 Open Questions。
 
@@ -227,36 +227,70 @@ else:
 **用途**：将判定锚点时间与最近半拍拍点对齐，得出偏差毫秒数。
 
 ```
-beat_offset_ms = (judgment_time + latency_offset_s − beat_dsp_time) × 1000
+beat_offset_ms = (judgment_time − beat_dsp_time) × 1000
 ```
+
+> **ADR-D15 SPEC-1（Critical）修订**：本公式原为
+> `(judgment_time + latency_offset_s − beat_dsp_time) × 1000`。因 F2 Core Rule 7
+> 已把 `latency_offset_s` 加进 `beat_dsp_time`，再给 `judgment_time` 加一次
+> 等于**双重补偿**——两项代数上完全抵消，校准净效应为零，
+> 完美踩拍的 `beat_offset_ms` 恒等于 `latency_offset`（不是 0）。
+> C1 **不再**出现 `latency_offset_s`：两个时间戳同域，直接相减。
+> 全文诊断与代数推导见 `docs/architecture/adr-d15-rhythm-judgment-window-defects.md`。
 
 **变量定义：**
 
 | 变量 | 来源 | 单位 | 范围 | 说明 |
 |------|------|------|------|------|
-| `judgment_time` | C1-F1 输出 | s（double） | — | 判定锚点时间 |
-| `latency_offset_s` | F2 `BeatClock.LatencyOffsetMs / 1000` | s（float） | [-0.2, 0.2] | 玩家校准的延迟补偿量；注册于实体注册表 `latency_calibration_offset_ms` |
+| `judgment_time` | C1-F1 输出 | s（double） | — | 判定锚点时间（玩家感知时域，由 F3 经 F2 的延迟补偿转入） |
 | `beat_dsp_time` | F2 `BeatEventData.beat_dsp_time` | s（double） | — | 已在"玩家感知时域"的半拍拍点时间（F2 Core Rule 7） |
 | `beat_offset_ms` | C1 内部 | ms（float） | (-∞, +∞) | 负值=提前拍，正值=晚于拍 |
 
-**时域说明**：`beat_dsp_time` 已由 F2 加入延迟补偿，处于"玩家感知时域"。`judgment_time` 来自 F3 原始 DSP 时间戳，须加 `latency_offset_s` 转换到同一时域后再计算差值。
+> **`latency_offset_ms` 量程的单一真源**：F2 `BeatClock.LatencyOffsetMs`
+> ∈ `[-200, 200]` ms（等价 `latency_offset_s ∈ [-0.2, 0.2]`），
+> 权威定义在 `design/gdd/audio-beat-clock.md:306` 与实体注册表
+> `latency_calibration_offset_ms`。C1 不复述、不另设上限。
+> 校准值的产生与钳位归 FE7；C1 已不消费该值。
+
+**时域说明**：`judgment_time` 与 `beat_dsp_time` 均处于"玩家感知时域"
+（F2 Core Rule 7 已对拍点时间戳施加一次且仅一次延迟补偿；F3 的输入时间戳
+同样经 F2 入域）。C1 只做同域减法，**不得**再施加任何延迟项。
+
+**浮点窄化护栏**：减法必须先在 `double` 域完成，只对最终小量级毫秒差值
+做 `float` 窄化（`(float)((judgment_time − beat_dsp_time) * 1000.0)`）。
+**禁止**把原始 DSP 时间戳本身转 `float`——FMOD DSP 时钟自系统启动累积，
+约 15–20 分钟后 `float` 精度侵蚀到 0.1ms 断言门槛以下。
 
 **示例 1（正延迟校准，BPM=120）：**
 - `halfBeatMs = 30/120 × 1000 = 250 ms`
-- 玩家设置 +30ms 延迟校准（音频延迟比输入慢 30ms）：`latency_offset_s = 0.030`
-- 实际输入提前 15ms 到达：`judgment_time = beat_dsp_time - 0.015 - 0.030`
-- `beat_offset_ms = (beat_dsp_time - 0.015 - 0.030 + 0.030 - beat_dsp_time) × 1000 = -15ms`
+- 玩家设置 +30ms 延迟校准：`LatencyOffsetMs = 30`，F2 据此令
+  `beat_dsp_time = raw_beat_dsp_time + 0.030`（**玩家听到声音的时刻**）
+- 玩家相对**听到的声音**提前 15ms 输入：`judgment_time = beat_dsp_time − 0.015`
+- `beat_offset_ms = (beat_dsp_time − 0.015 − beat_dsp_time) × 1000 = −15ms`
 - `|beat_offset_ms| = 15ms ≤ PerfectHalfWindowMs(50ms)` → **Perfect**
 
+> 原示例写作 `judgment_time = beat_dsp_time − 0.015 − 0.030`，展开后
+> `= raw_beat_dsp_time − 0.015`，即把玩家参考系错误地编码为
+> "原始调度拍点"而非"听到的声音"。玩家只能对听到的声音对拍——
+> 参考系必须是 `beat_dsp_time`（已补偿），这正是 F2 Core Rule 7 的用意。
+
 **示例 2（负延迟校准——显示/音频反相，BPM=120）：**
-- 玩家设置 -50ms 校准（罕见场景：玩家使用蓝牙音频但视觉比音频快）：`latency_offset_s = -0.050`
-- 玩家晚于拍点 20ms 输入：`judgment_time = beat_dsp_time + 0.020`
-- `beat_offset_ms = (beat_dsp_time + 0.020 + (-0.050) - beat_dsp_time) × 1000 = -30ms`
-- `|beat_offset_ms| = 30ms ≤ PerfectHalfWindowMs(50ms)` → **Perfect**（负偏移量补偿有效）
+- 玩家设置 -50ms 校准（罕见：蓝牙音频但视觉比音频快）：`LatencyOffsetMs = -50`，
+  F2 令 `beat_dsp_time = raw_beat_dsp_time − 0.050`
+- 玩家相对听到的声音晚 20ms 输入：`judgment_time = beat_dsp_time + 0.020`
+- `beat_offset_ms = (beat_dsp_time + 0.020 − beat_dsp_time) × 1000 = +20ms`
+- `|beat_offset_ms| = 20ms ≤ PerfectHalfWindowMs(50ms)` → **Perfect**
 
-> **符号约定总结**：`latency_offset_s > 0` 补偿输入系统延迟（常见）；`< 0` 补偿显示超前（罕见）。两种情形公式形式不变，C1 不区分处理。
-
-> **延迟安全约束**：`|latency_offset_ms|`（即 `|latency_offset_s × 1000|`）必须满足 `< GoodHalfWindowMs_effective`（默认 120ms）；超出此范围时，即使玩家完美踩拍（`judgment_time ≈ beat_dsp_time`），`beat_offset_ms` 的绝对值也将超过 Good 窗口，始终产生 Miss，直接破坏"踩准有奖励"的核心合约。**约束执行由 FE7 校准界面负责**：当玩家输入的延迟值超过此上限时，FE7 须显示警告并拒绝或钳位输入，禁止超范围值写入 `BeatClock.LatencyOffsetMs`。C1 信任从 F2 读取的 `LatencyOffsetMs` 已由 FE7 验证，不在 C1 层重复钳位。
+> **符号约定总结**：`latency_offset_s > 0` 补偿输入系统延迟（常见）；
+> `< 0` 补偿显示超前（罕见）。两种情形 C1 公式形式不变且**不感知**该值——
+> 补偿已在 F2 一次性完成。
+>
+> **无障碍关键**：修订后 `beat_offset_ms` 只反映**残余校准误差**
+> `e = L_true − L_offset`。校准链上四处截断（FE3 测量量程、网格折叠、
+> 跳过校准 = 0ms、平台延迟上报缺失）**全部单向压向补偿不足**，即 `e > 0`
+> ⇒ 系统性**判为晚**。原 `|latency_offset| < GoodHalfWindow` 约束
+> （曾位于本节）是 SPEC-1 的症状压制而非独立规格，已随公式修订**删除**。
+> 残余误差的符号与边界归属见 ADR-D15 Open Follow-up GD-3（FE3 规格缺口）。
 
 ---
 
@@ -266,33 +300,86 @@ beat_offset_ms = (judgment_time + latency_offset_s − beat_dsp_time) × 1000
 
 **步骤 1 — 运行时钳位（每次 BPM 变化时重算）：**
 
+> **ADR-D15 SPEC-2（High）修订**：本级联原由**四个互不知情的补丁**
+> 累积而成（E7 步骤 1 / 步骤 1b / E7 步骤 2 / 旧 MissHeadroom 方案），
+> 在 BPM 140 + Android 等组合下会产生 `clamp` 下界 > 上界的反转。
+> 下列**统一级联 ①–⑥ 为唯一权威版本**，吸收并**替换**原 E7 步骤 1/2 的
+> 全部语义。三承诺优先序：**P1 相邻拍不混叠 > P2 Perfect 平台保底 >
+> P3 Miss 可达**。推导、无反转性证明与数值示例见 ADR-D15。
+
 ```
-halfBeatMs = (30.0 / currentBpm) × 1000          // 单位 ms
-fullBeatMs = halfBeatMs × 2                       // 全拍间距（Beat 模式用）
+halfBeatMs     = (30.0 / currentBpm) × 1000       // 单位 ms
+fullBeatMs     = halfBeatMs × 2                    // 全拍间距（Beat 模式用）
 
 // 当前量化模式的网格间距：HalfBeat → halfBeatMs；Beat → fullBeatMs（间隔加倍）
 gridIntervalMs = (quantizationMode == Beat) ? fullBeatMs : halfBeatMs
 
-// 钳位 Good 窗口，确保不超过网格区间的一半（防止相邻拍点 Good 窗口重叠）
-GoodHalfWindowMs_effective  = min(GoodHalfWindowMs_authored,  gridIntervalMs / 2 - 1)
+// ① P1 —— 绝对天花板。−1 防相邻拍 Good 窗重叠。所有后续量不得越过 C。
+C = gridIntervalMs / 2 - 1
 
-// 钳位 Perfect 窗口，确保不超过有效 Good 窗口
-PerfectHalfWindowMs_effective = min(PerfectHalfWindowMs_authored, GoodHalfWindowMs_effective)
-
-// 平台最小 Perfect 窗口（确保玩家在目标平台上可物理打出 Perfect）
+// ② P2 —— Perfect 平台保底（吸收原 E7 步骤 2 的坍缩语义）
+PerfectHalfWindowMs_effective = min(PerfectHalfWindowMs_authored + perkPerfectDelta, C)
 PerfectHalfWindowMs_effective = max(PerfectHalfWindowMs_effective, platformMinPerfectMs)
+if PerfectHalfWindowMs_effective > C:
+    PerfectHalfWindowMs_effective = C
+    degradation |= PerfectFloorSacrificed          // P1 优先于 P2：平台保底让位
 
-// 步骤 1b — EarlyWindow 钳位（与 GoodHalfWindowMs_effective 对齐）
-// 确保 EarlyWindow 内接受的输入不会因 Good 窗口被 BPM 压缩后变成 Miss
-EarlyWindowMs_effective = min(EarlyWindowMs_authored, GoodHalfWindowMs_effective)
+// ③ P3 —— Miss 预算按【占比】分配（取代旧方案的"绝对毫秒下限"）
+missBudgetMs             = C - PerfectHalfWindowMs_effective
+MissHeadroomMs_effective = min(MissHeadroomMs_authored, missBudgetMs × MissBudgetShare)
+if MissHeadroomMs_effective < MissHeadroomMs_authored: degradation |= MissHeadroomCompressed
+if MissHeadroomMs_effective <= 0:                      degradation |= MissUnreachable
+
+// ④ Good（晚侧）（吸收原 E7 步骤 1）
+GoodHalfWindowMs_effective = min(GoodHalfWindowMs_authored + perkGoodDelta,
+                                 C - MissHeadroomMs_effective)
+GoodHalfWindowMs_effective = max(GoodHalfWindowMs_effective, PerfectHalfWindowMs_effective)
+
+// ⑤ Good（早侧）—— 现行为与 ④ 恒等（见下方「早侧对称化」说明）
+GoodEarlyHalfWindowMs_effective = GoodHalfWindowMs_effective
+
+// ⑥ 判定/丢弃边界 —— 由 ②③④ 保证下界恒 ≤ 上界（无反转性证明见 ADR-D15）
+LateWindowMs_effective  = clamp(LateWindowMs_authored,
+                                GoodHalfWindowMs_effective + MissHeadroomMs_effective, C)
+EarlyWindowMs_effective = min(EarlyWindowMs_authored, GoodEarlyHalfWindowMs_effective)
 ```
 
-**窗口不等式不变量**（经 E7 坍缩修复后始终成立）：
+**`MissBudgetShare` 的附带性质**：当 `MissBudgetShare < 1` 时，
+`MissHeadroomMs_effective < missBudgetMs`，故 Perfect / Good / Miss
+三档在降级前沿以下**恒非空**。`= 1` 时 Good 可退化为零宽（仅 Perfect + Miss）。
+
+**窗口不等式不变量**（统一级联下始终成立）：
 ```
-PerfectHalfWindowMs_effective ≤ GoodHalfWindowMs_effective ≤ gridIntervalMs/2 - 1
-EarlyWindowMs_effective       ≤ GoodHalfWindowMs_effective
+PerfectHalfWindowMs_effective ≤ GoodHalfWindowMs_effective      ≤ C
+PerfectHalfWindowMs_effective ≤ GoodEarlyHalfWindowMs_effective ≤ C
+GoodHalfWindowMs_effective      + MissHeadroomMs_effective ≤ LateWindowMs_effective  ≤ C
+GoodEarlyHalfWindowMs_effective                            ≥ EarlyWindowMs_effective
+0 ≤ MissHeadroomMs_effective ≤ C - PerfectHalfWindowMs_effective     其中 C = gridIntervalMs/2 - 1
 ```
 违反此不变量意味着实现 Bug——可由 `RhythmJudger` 在 `OnMeterChanged` 末尾 `Assert` 检验。
+
+> **降级可观测性（三级分治）**：`degradation` 为 `[Flags] ClampDegradation`，
+> 经 `RhythmJudger.LastClampDegradation` 暴露。断言与门禁**必须针对标志位**，
+> 不得针对日志文本。
+> - `MissHeadroomCompressed` —— Warning + 遥测，**非阻塞**（正常的高 BPM 行为）
+> - `PerfectFloorSacrificed` —— Warning + 内容期门禁（该平台此 BPM 下 Perfect 不可物理达成）
+> - `MissUnreachable` —— **内容期错误**（非 Warning）。理由：玩家视角零症状，
+>   苗刀切片 round-1 的同类缺陷"熬过了整轮试玩而未被发现"。
+>   三路并行处置：Odin Validator 编辑期门禁（仅 Editor 程序集）+
+>   开发构建 `Debug.LogError`（`#if UNITY_EDITOR || DEVELOPMENT_BUILD`）+
+>   内容侧 BPM 上限公式：
+>   `BPM_max(platform, mode) = (mode == Beat ? 60000 : 30000) / (2 × (platformMinPerfectMs + 1))`
+>   （Android/HalfBeat ⇒ 185.19；Android/Beat ⇒ 370.37；PC/HalfBeat ⇒ 848.0）
+
+> **早侧对称化（ADR-D15 SPEC-4，提案中，尚未写入本 GDD）**：⑤ 当前与 ④ 恒等，
+> 且 ⑥ 的 Early 行沿用现状 `min(EarlyWindowMs_authored, Good_eff)`。
+> ADR-D15 诊断出早侧存在**结构性失声**：早侧 Perfect 不可达、早侧 Miss 为空集、
+> 落在 `(T − EarlyWindowMs, T)` 的输入被**静默吞掉**（连攻击动作都不播，
+> 违反本文档「规则：绝不吞输入」）。修复方案引入 `EarlyLenienceRatio`
+> （默认 1.0 = 完全对称）与早侧独立的 `EarlyWindowMs_effective` 下界，
+> 但会改动 `production/milestones/m0-rhythm-feel-acceptance.md` §2.2 复刻的
+> **Locked** 不变量，须由 producer 走 M0 修订流程。
+> **在该流程完成前本节不改**——详见 ADR-D15 Open Follow-up TD-1 / PR-1。
 
 **平台最小 Perfect 窗口：**
 
@@ -376,28 +463,27 @@ void OnMeterChanged(MeterChangeEventData data):    // 订阅 F2 的 OnMeterChang
     perkGoodDeltaMs         = RhythmModifierProvider?.GetGoodWindowDeltaMs()    ?? 0
     // W-05 级联位点：weapon.perfectWindowModifier（F4 字段）应在此处、perk delta 之后 clamp 之前作为乘数接线，
     //             随 F4/C1 同轮消费（当前 C1 尚无 weapon 上下文来源，暂不接线，见评审 W-05）
-    _effectiveGoodMs        = min(GoodHalfWindowMs_authored    + perkGoodDeltaMs,    gridIntervalMs / 2 - 1)
-    _effectivePerfectMs     = min(PerfectHalfWindowMs_authored + perkPerfectDeltaMs, _effectiveGoodMs)
-    _effectivePerfectMs     = max(_effectivePerfectMs, platformMinPerfectMs)
-    
-    // E7 内联坍缩——须在 Assert 之前执行（Android BPM ≥ 186 时 platformMinPerfectMs 超过压缩后的
-    // _effectiveGoodMs，若不先坍缩则下方 Assert(_effectivePerfectMs <= _effectiveGoodMs) 误报 false）
-    if _effectivePerfectMs > _effectiveGoodMs:
-        _effectiveGoodMs = _effectivePerfectMs           // 将 Good 提升至 Perfect 平台下限
-        // 二次钳位：防止坍缩后窗口超出网格区间，引发相邻拍混叠（见 E7 步骤 2）
-        if _effectiveGoodMs > gridIntervalMs / 2 - 1:
-            _effectiveGoodMs    = gridIntervalMs / 2 - 1
-            _effectivePerfectMs = _effectiveGoodMs
-            // 此状态下平台 DSP 精度无法保证 Perfect 可达——记录 Warning 日志
-    
-    _effectiveEarlyMs   = min(EarlyWindowMs_authored,    _effectiveGoodMs)
+    // ⚠ 本处【不复刻】钳位级联。唯一权威实现见 C1-F3 步骤 1 的统一级联 ①–⑥。
+    //   ADR-D15 诊断：本节曾持有一份独立副本（含自己的 E7 二次钳位与 EarlyWindow min），
+    //   与 C1-F3 的规格副本互不同步——这正是"四个互不知情的补丁"能够累积的结构性原因。
+    //   实现者请只读 C1-F3；本处仅调用。
+    ApplyClampCascade(newBpm, _quantizationMode)        // 产出 _effective* 与 _lastClampDegradation
     
     // 约束断言——条件编译包裹（Unity 6.3 Release Build 中 Debug.Assert 通过 UNITY_ASSERTIONS 缺失被剥离；
     // #if 包裹是防御性冗余，确保 Development Build 调试期强制执行不变量检查）
+    // ⚠ 断言内容须与 C1-F3「窗口不等式不变量」五行逐字对应——两处同改。
     #if UNITY_EDITOR || DEVELOPMENT_BUILD
     Debug.Assert(newBpm >= 80 && newBpm <= 240, "BPM out of registered range [80, 240]")
-    Debug.Assert(_effectivePerfectMs <= _effectiveGoodMs)   // E7 坍缩后此不变量始终成立
-    Debug.Assert(_effectiveEarlyMs   <= _effectiveGoodMs)
+    Debug.Assert(_effectivePerfectMs   <= _effectiveGoodMs)        // ② ④ 共同保证
+    Debug.Assert(_effectivePerfectMs   <= _effectiveGoodEarlyMs)
+    Debug.Assert(_effectiveGoodMs      <= C && _effectiveGoodEarlyMs <= C)
+    Debug.Assert(_effectiveGoodMs + _effectiveMissHeadroomMs <= _effectiveLateMs && _effectiveLateMs <= C)
+    Debug.Assert(_effectiveEarlyMs     <= _effectiveGoodEarlyMs)
+    Debug.Assert(_effectiveMissHeadroomMs >= 0
+              && _effectiveMissHeadroomMs <= C - _effectivePerfectMs)
+    // MissUnreachable 是【内容期错误】而非 Warning——玩家视角零症状，不会自行冒头
+    if (_lastClampDegradation & MissUnreachable) != 0:
+        Debug.LogError($"[C1] Miss 评级在 BPM={newBpm} / {platform} 下不可达——内容配置越界，见 BPM_max 公式")
     #endif
     
     // 2. 清理悬挂缓冲状态（BPM 变化后，待评级输入对应旧拍网格，丢弃）
@@ -545,10 +631,19 @@ public interface IRhythmModifierProvider
 
 | 方法 | 消费方 & 点位 | 查询节拍 |
 |---|---|---|
-| `GetPerfectWindowDeltaMs` / `GetGoodWindowDeltaMs` | **C1** — C1-F5 窗口重算 | **缓存**：仅 `OnMeterChanged` / `OnPerkStackChanged` 时各查询一次，结果存 `_effectivePerfect/GoodMs` |
+| `GetPerfectWindowDeltaMs` / `GetGoodWindowDeltaMs` | **C1** — C1-F5 窗口重算 | **缓存**：仅 `OnMeterChanged` / `OnPerkStackChanged` 时各查询一次，结果存入 **delta 缓存字段** `_cachedPerkPerfectDelta` / `_cachedPerkGoodDelta`，随后触发一次 `ApplyClampCascade(...)` 重算 |
 | `GetComboDelta(rating)` | **C1** — C1-F4 ΔCombo | **每次判定**（轻量整型，随评级传参） |
 | `GetDamageMultiplier` / `GetRatingDamageOverride` | 下游伤害系统（C2/C6）— **非 C1** | 消费方自持节拍；C1 仅广播 Rating |
 | `GetHitstunMultiplier` | PL2 / Perfect 动力学反馈 — 具体归属随 PL2 GDD | 消费方自持节拍 |
+
+> **⚠ 缓存的是 delta，不是 effective 窗口（ADR-D15 澄清）**：perk delta 是统一级联的**输入**
+> （步骤 ② 的 `perkPerfectDelta`、步骤 ④ 的 `perkGoodDelta`），不是输出。查询结果必须存入独立的
+> delta 缓存字段，再由 `ApplyClampCascade(...)` 一次性算出全部 **6 个** effective 字段
+> （`_effectivePerfectMs` / `_effectiveGoodMs` / `_effectiveGoodEarlyMs` / `_effectiveMissHeadroomMs` /
+> `_effectiveLateMs` / `_effectiveEarlyMs`）与 `_lastClampDegradation` 标志位。
+> 本行原表述「结果存 `_effectivePerfect/GoodMs`」把两者混为一谈，且只提 2 个 effective 字段——
+> 照此实现会绕过 P1 天花板 `C` 与 P3 Miss 预算，直接把带 perk 加成的窗口写进生效字段。
+> `tr-registry.yaml` TR-rhythm-006 曾复刻同一错误表述（已随 ADR-D15 修正 6k 修订）。
 
 > **窗口 delta 为何缓存而非每次 Evaluate 查询（BC-2 节拍收敛）**：C3-R7 原表述「计算 effective-window 后查询」易被误读为每击查询。实际 perk 栈仅在房间之间选/弃心法时变化（Roguelike 流程），故 C1 在两个低频事件（meter 生效、perk 栈变更）后重算并缓存，判定热路径（`OnHalfBeatLookahead`）零 provider 查询开销。此为对「C3-R7 每次 Evaluate vs C1 仅 OnMeterChanged 缓存」冲突的收敛决定——工程正确解，不改变体感。ΔCombo 例外走每判定查询（整型、无重算成本）。
 
@@ -612,15 +707,27 @@ public interface IRhythmModifierProvider
 
 ### E5：LateWindow 过期精度（30fps 移动端）
 
-**场景**：移动端运行在 30fps（帧时间 33.3ms），`LateWindowMs = 100ms` 约覆盖 3 帧。输入恰好在第 3 帧末尾到达，但 LateWindow 在当帧已过期。
+**场景**：移动端运行在 30fps（帧时间 33.3ms），`LateWindowMs_effective` 约覆盖 3 帧
+（120BPM/HalfBeat/PC 下 = 124ms）。输入恰好在第 3 帧末尾到达，但 LateWindow 在当帧已过期。
 
 **处理规则**：
 - C1 使用 DSP 时间戳（来自 F3 Input System callback），不依赖 `Update()` 帧时间。
-- **LateWindow 过期的权威判定方式为 DSP 时间比较**：`inputDspTime - beatDspTime > LateWindowMs / 1000`。此为 GDD 层的规范性定义。
+- **LateWindow 过期的权威判定方式为 DSP 时间比较**：
+  `inputDspTime - beatDspTime > LateWindowMs_effective / 1000`。此为 GDD 层的规范性定义。
 - 因此 30fps 帧率不影响 LateWindow 的判定精度；边界误差来自 DSP 粒度（Android 最大 ~40ms），不来自帧率。
-- 在 DSP 粒度误差范围内恰好落在 LateWindow 边界的输入：视为**丢弃**（不产生判定，不产生 Miss）。
+- 在 DSP 粒度误差范围内恰好落在 `LateWindowMs_effective` 边界的输入：视为**丢弃**（不产生判定，不产生 Miss）。
 
-> **ADR-D3 一致性注意**：ADR-D3 当前伪代码使用 `Time.realtimeSinceStartup` 作为 LateWindow 到期判断依据，与本规范矛盾。实现时须改为 DSP 时间比较，ADR-D3 须同步修正。
+> **ADR-D15 修订（authored → effective）**：本节原文用 `LateWindowMs`（authored）。
+> 统一级联 ⑥ 引入 `LateWindowMs_effective` 后，二者在高 BPM 下取值不同
+> （例：authored=100 而 effective=124 时，offset=110ms 的输入按 authored 应丢弃、
+> 按 effective 应判 Miss——**直接矛盾**）。权威过期判定**一律用 effective**。
+> 连带 AC-C1-04 同步改引 effective。
+
+> **ADR-D3 一致性（ADR-D15 已同批修订）**：ADR-D3 伪代码原用
+> `Time.realtimeSinceStartup` 作为 LateWindow 到期判断依据，与本规范矛盾
+> （ADR-D3 自身在 post-MVP 小节已自认此矛盾）。现已将该 post-MVP 方案
+> `_lateWindowExpiry = _currentBeatDspTime + LateWindowMs_effective / 1000.0`
+> 提升为 ADR-D3 的规范写法。
 
 ---
 
@@ -637,31 +744,50 @@ public interface IRhythmModifierProvider
 
 ### E7：Android 高 BPM 时 Perfect/Good 窗口坍缩
 
-**场景**：Android 平台（`platformMinPerfectMs = 80ms`），BPM > 187（`halfBeatMs/2 ≈ 80ms`），运行时钳位后 `GoodHalfWindowMs_effective` 已缩减到 ≤ 80ms，低于平台 Perfect 最小值。
+**场景**：Android 平台（`platformMinPerfectMs = 80ms`），BPM 高到使网格天花板
+`C = gridIntervalMs/2 − 1` 降至 ≤ 80ms，低于平台 Perfect 最小值。
 
-**临界 BPM 计算**（HalfBeat 模式，`gridIntervalMs = halfBeatMs`）：
-- 坍缩条件：`GoodHalfWindowMs_effective < platformMinPerfectMs(80ms)`
-- `gridIntervalMs/2 - 1 < 80` → `halfBeatMs < 162ms` → `BPM > 185.19`
-- **HalfBeat 模式 BPM ≥ 186 时**，在 Android 上 `PerfectHalfWindowMs_effective > GoodHalfWindowMs_effective`，触发坍缩。（Beat 模式临界 BPM ≈ 93，但 Beat 模式内容 BPM 通常较低，此场景实际较少出现。）
-
-**处理规则**：
+**临界 BPM 计算**（统一公式，取代原文三个互不一致的精度版本）：
 ```
-// 步骤 1：一次坍缩——将 Good 提升到 Perfect 的平台下限
-if PerfectHalfWindowMs_effective > GoodHalfWindowMs_effective:
-    GoodHalfWindowMs_effective = PerfectHalfWindowMs_effective   // = platformMinPerfectMs(80ms)
-
-// 步骤 2：二次钳位——防止坍缩后窗口超出网格区间，引发相邻拍重叠
-//   (在极高 BPM 下 platformMinPerfectMs 可能超过 gridIntervalMs/2 - 1)
-if GoodHalfWindowMs_effective > gridIntervalMs / 2 - 1:
-    GoodHalfWindowMs_effective    = gridIntervalMs / 2 - 1
-    PerfectHalfWindowMs_effective = GoodHalfWindowMs_effective
-    // 此时平台 DSP 精度无法保证 Perfect 可达——记录 Warning 日志
-    // 设计上接受此降级：优先保证相邻拍不混叠，而非强行保留 platformMinPerfectMs 承诺
+BPM_max(platform, mode) = (mode == Beat ? 60000 : 30000) / (2 × (platformMinPerfectMs + 1))
 ```
-- 坍缩后效果：`|offset| ≤ PerfectHalfWindowMs_effective` → Perfect；超出 → Miss（Good 区间消失）。
-- 此状态下不产生 Good 评级——C1 只输出 Perfect 或 Miss。
+- 降级条件（P2 让位于 P1）：`platformMinPerfectMs > C`，即 `BPM > BPM_max`
+- **Android / HalfBeat** ⇒ `30000 / (2 × 81) = 185.19`（即 BPM ≥ 186 触发）
+- **Android / Beat** ⇒ `60000 / (2 × 81) = 370.37`
+- **PC / HalfBeat** ⇒ `30000 / (2 × 17.7) = 848.0`（已注册 BPM 上限 240 之外，PC 永不触发）
 
-> **设计影响**：Android 高 BPM（≥186）时，评级变为二元（Perfect/Miss），中间缓冲区消失。此为平台 DSP 能力限制的必要降级，比强制报错或不可打出 Perfect 更合理。需在 QA 阶段验证此 BPM 范围的实际游戏内手感。
+> **ADR-D15 SPEC-5（Low）修订三处**：
+> ① 原文「Beat 模式临界 BPM ≈ 93」**错误**——Beat 模式网格间距**加倍**，
+> 临界 BPM 应为 HalfBeat 的**两倍**（≈370），作者误将 185.19 除以 2 而非乘 2。
+> 随之删除原文「Beat 模式内容 BPM 通常较低，此场景实际较少出现」的缓和语：
+> 在 Beat 模式下该降级比 HalfBeat **更难**触发，不需要缓和语来解释。
+> ② 原文「BPM > 187」源自漏掉 `−1` 的式子（`halfBeatMs/2 < 80` ⇒ 187.5），
+> 与同节「185.19」「≥186」构成同一条件的三个精度版本。现统一为公式派生。
+> ③ 原文「超出 → Miss（Good 区间消失）」在**旧**规格下为真（因 `LateWindowMs`
+> 从未进入钳位级联，Android BPM 200 时 `C=74` 而 `Late=100`，Miss 带 `(74,100]` 非空）
+> ——但它之所以为真，恰因 `100 > C` 本身违反 P1。统一级联 ⑥ 把 Late 钳到 `C` 后，
+> 该状态下为 **Perfect 单一档**（见下方处理规则）。
+
+**处理规则**：统一级联 ②（`PerfectFloorSacrificed` 分支）已完整承载本边缘案例的
+全部语义。**本节不再给出独立伪代码**——原步骤 1 已被 ④ 的 `max(..., PerfectEff)` 吸收，
+原步骤 2 已被 ② 的 `if PerfectEff > C` 吸收。见 C1-F3 步骤 1。
+
+降级后的评级档位（设 Android / HalfBeat / BPM = 200 ⇒ `C = 74`）：
+- ② `PerfectEff = max(min(50, 74), 80) = 80 > C` ⇒ `PerfectEff = 74`，置
+  `PerfectFloorSacrificed`
+- ③ `missBudgetMs = 74 − 74 = 0` ⇒ `MissHeadroomMs_effective = 0`，置 `MissUnreachable`
+- ④ `GoodEff = max(min(120, 74 − 0), 74) = 74`
+- ⑥ `LateWindowMs_effective = clamp(100, 74 + 0, 74) = 74`
+- 结果：`|offset| ≤ 74` → **Perfect**；`> 74` → **丢弃**（不产生判定事件）。
+  即该 BPM 下**只有 Perfect 一档**，Good 与 Miss 同时消失。
+
+> **设计影响**：这是**内容配置越界**，不是可接受的降级。`MissUnreachable`
+> 为**内容期错误**（非 Warning）：玩家视角零症状——每一刀都 Perfect，
+> 看起来像"手感极好"，不会在试玩中自行冒头（苗刀切片 round-1 实证）。
+> 内容侧必须遵守 `BPM ≤ BPM_max(platform, mode)`。
+> `PerfectFloorSacrificed` 单独出现（Miss 仍可达）时仍是可接受降级：
+> 优先保证相邻拍不混叠，而非强行保留 `platformMinPerfectMs` 承诺。
+> 需在 QA 阶段验证降级前沿附近（Android BPM 170–185）的实际游戏内手感。
 
 ---
 
@@ -745,7 +871,7 @@ if GoodHalfWindowMs_effective > gridIntervalMs / 2 - 1:
 
 ### 双向合约
 
-- **F2 ↔ C1**：F2 的 `beat_dsp_time` 已在"玩家感知时域"（F2 Core Rule 7）。C1 须对 F3 时间戳加 `latency_offset_s` 后再比较（C1-F2）。若 F2 修改时域约定，C1 的 beat_offset_ms 公式失效。
+- **F2 ↔ C1**：F2 的 `beat_dsp_time` 已在"玩家感知时域"（F2 Core Rule 7），延迟补偿由 F2 **一次且仅一次**施加。C1 **不得**再加 `latency_offset_s`——两个时间戳同域，直接相减（C1-F2，ADR-D15 SPEC-1）。若 F2 修改时域约定，C1 的 beat_offset_ms 公式失效。`IBeatClock.LatencyOffsetMs` getter **不可删除**：FE3 校准链与 boot 链仍依赖它，只是 C1 不再消费。
 - **F2 ↔ C1（BC-6 暂停/恢复）**：F2 权威定义 `OnBeatClockPaused` / `OnBeatClockResumed`（携恢复首拍 `beat_dsp_time`）+ `IAudioPlayer.Pause()/Resume()`。C1 订阅两事件：恢复时重锚拍网格并清空过期 `_pendingInput`（Rule 8 + E6）。C1 使用规范化事件名 `OnBeatClockResumed`（**非** `OnBpmChanged`）。F2 GDD 须对称登记 C1 为 `OnBeatClockResumed` 订阅方。
 - **F6 ↔ C1（SC-2 run-end 清空）**：C1 订阅 F6 桥接域事件 `OnRunEnded(outcome)`（**MVP 活跃**；Death 与 Victory 均触发，ADR-D13，取代原 `OnPlayerDeath`，不保留别名；死亡/胜利=换新局，ADR-D12/D13）与 `OnRespawnComplete`（**MVP 休眠**，Post-MVP checkpoint 预留；MVP 下 F6 不广播）（CombatCore 可见纯 C# event，`RunOutcome` 为 CombatCore 可见纯 C# enum，无 TDE 依赖；F6 由 TDE `PlayerDeath`/胜利判定/`RespawnComplete` 桥接；C1 禁止直接 `using` TDE），run-end 时（死亡或胜利）`OnRunEnded(outcome)` 同帧清空过期 `_pendingInput` 与评级状态（E10），防幽灵评级（MVP 另由换新局重建新实例兜底）。F6 生命周期 GDD 已对称登记 C1（`tde-integration.md` Rule 15 + 双向依赖确认 + AC-F6-25）。此为**跨系统场景 G** 承接合约，F6 广播侧（AC-F6-25）+ C1 消费侧（AC-C1-22e）闭环。
 - **F3 ↔ C1**：F3 的 `chargeStartDspTime` 哨兵值为 -1.0（F3 Core Rule 8）。C1 以 `> -1.0` 检测。若 F3 修改哨兵值约定，C1-F1 失效。
@@ -762,7 +888,10 @@ if GoodHalfWindowMs_effective > gridIntervalMs / 2 - 1:
 | `PerfectHalfWindowMs` | `RhythmConfigSO.PerfectHalfWindowMs` | float | 50 ms | [16, 100] | 缩小 → Perfect 更难打出，高手挑战感↑；放大 → 更宽容，新手友好 |
 | `GoodHalfWindowMs` | `RhythmConfigSO.GoodHalfWindowMs` | float | 120 ms | [50, 200] | 缩小 → Miss 更易出现，惩罚感↑；放大 → 整体更宽松。受运行时钳位约束（C1-F3），BPM>125 时自动缩减 |
 | `EarlyWindowMs` | `RhythmConfigSO.EarlyWindowMs` | float | 120 ms | [50, 200] | 缩小 → 玩家必须更精确地等待拍点，"抢拍"惩罚↑；放大 → 提前输入更被容忍 |
-| `LateWindowMs` | `RhythmConfigSO.LateWindowMs` | float | 100 ms | [50, 200] | 缩小 → 慢半拍的玩家更容易被丢弃；放大 → 后拍容忍度↑ |
+| `LateWindowMs` | `RhythmConfigSO.LateWindowMs` | float | 100 ms | [50, 200] | 缩小 → 慢半拍的玩家更容易被丢弃；放大 → 后拍容忍度↑。**须 author 为 `≥ GoodHalfWindowMs + MissHeadroomMs`**，否则级联 ⑥ 的 clamp 下界生效、authored 值被静默忽略（见 ADR-D15 Open Follow-up TD-4：是否取消本独立 authored 值、直接取 `LateWindowMs_effective = C`，待 TD 裁决） |
+| `MissHeadroomMs` | `RhythmConfigSO.MissHeadroomMs` | float | 30 ms | [15, 60] | **上限**语义（不是下限）：Miss 带目标宽度。缩小 → Miss 更难打出（宽容↑）；放大 → 节奏惩罚更锐利。高 BPM 下由级联 ③ 按 `MissBudgetShare` 压缩，压缩时置 `MissHeadroomCompressed` 标志（Warning + 遥测，非阻塞）。**具体数值待 balance pass**（ADR-D15 GD-1） |
+| `MissBudgetShare` | `RhythmConfigSO.MissBudgetShare` | float | 0.5 | (0, 1] | Miss 带可占用「`C` 减去 Perfect 窗」剩余预算的比例。`< 1` 时保证 Perfect/Good/Miss 三档在降级前沿以下恒非空；`= 1` 时 Good 可退化为零宽。放大 → 高 BPM 下 Miss 带更宽但 Good 带更窄 |
+| `EarlyLenienceRatio` | `RhythmConfigSO.EarlyLenienceRatio` | float | **1.0**（完全对称） | [1.0, 1.5] | **提案中，尚未生效**（ADR-D15 SPEC-4 修正 4，待 M0 修订流程）。早侧 Good 窗相对晚侧的放宽倍率。1.0 = 两侧恒等；> 1.0 = 容忍抢拍多于拖拍。设为 FQA 合约下**唯一**的不对称旋钮——禁止钳位级联以副产物形式隐式产生两侧不对称 |
 | `ComboMax` | `RhythmConfigSO.ComboMax` | int | **999**（对齐 registry `combo_max`） | [148, 999] | 影响连击系统的心理上限和 UI 显示设计；下界 148 = `combo_multiplier` 触顶点（低于此会提前截断倍率），上界 999 = registry 权威平台段 |
 | `LookaheadMs` | `RhythmConfigSO.LookaheadMs` | float | 来自 ADR-D3 | [50, 200] | F2 提前广播拍点事件的时间量；C1 用它确定 EarlyWindow 起始边界 |
 | `AdaptationWindowBeats`（BD-2） | `RhythmConfigSO.AdaptationWindowBeats` | int | **2**（owner 联合锁定 2026-08-11，对齐 registry `adaptation_window_beats`） | [0, 4] | BPM 上升后判定窗宽容期时长（拍）；窗口内窗口宽度取变更前后较宽者（C1-F5b），防 BPM 跃升三系统难度尖峰。缩小 → 更快恢复新 BPM 标准难度（张力↑）；0 = 关闭宽容期；放大 → 过渡更平缓。**单一 owner = 本字段（PascalCase 权威）**，C2 camelCase `adaptationWindowBeats` 为引用别名、语义等同；C1/C2/C4 三 owner 已联合锁定 2 拍（先于 FE4 Boss GDD） |
@@ -771,7 +900,13 @@ if GoodHalfWindowMs_effective > gridIntervalMs / 2 - 1:
 | `meritMultiplierOff` | C5/FE5 经济配置（**非 C1 SO**，C1 仅暴露激活模式） | float | **0.5**（owner 联合锁定 2026-08-11，对齐 registry `merit_multiplier_off`） | (0, 1) — 严格开区间，不可为 0（否则完全剥夺无障碍玩家进度）或 ≥1（否则失去隔离意义） | Off 模式功勋折算系数；过高则「零技巧刷取」漏洞复现，过低则惩罚无障碍用户。已锁定 0.5（占位转正）；C5/FE5 经济 GDD 创建时须对称记录并将 owner 迁移至经济 GDD（Off 合约第 4 条为 C1 规范性要求，执行方 C5/FE5） |
 
 **调参指南**：
-- 先调 `PerfectHalfWindowMs` 和 `GoodHalfWindowMs` 确定基础手感，再调 `EarlyWindowMs` / `LateWindowMs` 确定缓冲宽容度。
+- 调参顺序须沿统一级联 ①–⑥ 的依赖方向，否则下游旋钮的 authored 值会被上游钳位静默吞掉：
+  1. 先调 `PerfectHalfWindowMs`（级联 ②）确定核心手感；
+  2. 再调 `MissHeadroomMs` + `MissBudgetShare`（级联 ③）确定 Miss 带宽度与高 BPM 退让策略——
+     **必须先于 `GoodHalfWindowMs`**，因为 ④ 的天花板是 `C − MissHeadroomMs_effective`；
+  3. 然后调 `GoodHalfWindowMs`（级联 ④）填充剩余空间；
+  4. 最后调 `EarlyWindowMs` / `LateWindowMs`（级联 ⑥）确定缓冲宽容度。
+- 任一组合改动后须复核 `LastClampDegradation`：出现 `MissUnreachable` 即为内容配置越界（错误，非 Warning）。
 - BPM 跨度大的关卡（80–240）必须在最高 BPM 下测试运行时钳位后的实际有效窗口。
 - `ComboMax` 最终值 = **999**（Q1 已解决：C2/C3 设计完成，以 registry `combo_max=999` 为权威；`combo_multiplier` 于 count=148 触顶，故 148 以上纯为连击数平台段）。
 
@@ -807,9 +942,16 @@ if GoodHalfWindowMs_effective > gridIntervalMs / 2 - 1:
 
 - **AC-C1-01**：HalfBeat 模式下，输入在 EarlyWindow 内到达 → 拍点到来时评级，偏移量 ≤ PerfectHalfWindowMs → Perfect。
 - **AC-C1-02**：HalfBeat 模式下，输入在 LateWindow 内到达 → 立即评级，正偏移量（晚于拍点）≤ GoodHalfWindowMs_effective → Good。
-- **AC-C1-02b**：HalfBeat 模式下，输入在 LateWindow 末尾（偏移量 > GoodHalfWindowMs_effective 且 **< LateWindowMs**，不含精确边界点）到达 → Miss（不丢弃，产生 Miss `RhythmJudgmentEvent`）。精确边界点（偏移量 == LateWindowMs）适用 AC-C1-04（丢弃，不产生事件）。
+- **AC-C1-02b**（ADR-D15 SPEC-2 改写）：HalfBeat 模式下，输入在 Miss 带内
+  （偏移量 > `GoodHalfWindowMs_effective` 且 **< `LateWindowMs_effective`**，不含精确边界点）
+  到达 → Miss（不丢弃，产生 Miss `RhythmJudgmentEvent`）。精确边界点
+  （偏移量 == `LateWindowMs_effective`）适用 AC-C1-04（丢弃，不产生事件）。
+  **原文用 authored 值表述，在默认配置下不可满足**：`GoodHalfWindowMs_authored(120)`
+  > `LateWindowMs_authored(100)` 使区间 `(120, 100)` 下界大于上界，与 BPM 无关恒为空集
+  ——该 AC 从未能通过，也从未失败，因为没有任何输入能落入其前提。
+  现一律用 effective 值表述；非空性由级联 ③ 的 `MissHeadroomMs_effective > 0` 保证。
 - **AC-C1-03**：输入偏移量 > `GoodHalfWindowMs_effective` → C1 广播 `RhythmJudgmentEvent { Rating=Miss, CancelTier=Closed }`，`ComboCountAfter == ComboCountBefore`（连击不增长、不清零）。伤害倍率 0.5× 由下游伤害系统按 Rating 字段应用，不在 C1 层验证。
-- **AC-C1-04**：LateWindow 过期后到达的输入 → 不产生 `RhythmJudgmentEvent`，不产生 Miss。
+- **AC-C1-04**：`LateWindowMs_effective` 过期后到达的输入 → 不产生 `RhythmJudgmentEvent`，不产生 Miss。（ADR-D15：原文用 authored 值，与 E5 权威判定不一致，已统一为 effective。）
 - **AC-C1-05**：不攻击的拍点 → 无 `RhythmJudgmentEvent` 广播，无惩罚。
 - **AC-C1-06**：Off 模式下，任何攻击输入 → 广播 `RhythmJudgmentEvent { Rating=Perfect, CancelTier=Standard }`，偏移量 = 0，即时触发。**断言 `CancelTier == Standard`（非 Advanced）**——验证 Off 覆盖规则生效（Off 合约第 5 条 + Rule 10）：即便评级为 Perfect，Off 模式亦不授予 Advanced 高级取消。
 - **AC-C1-07**：Beat 模式，BPM=120 时，`gridIntervalMs = 500ms`（全拍间距，HalfBeat 的 2 倍）；`GoodHalfWindowMs_effective` 上界钳位 = `gridIntervalMs/2 - 1 = 249ms`；给定 `GoodHalfWindowMs_authored=120ms`，有效值 = 120ms（未触发钳位）；偏移量 ≤ `PerfectHalfWindowMs_effective` → Perfect，≤ 120ms → Good，> 120ms → Miss。**架构说明**：F2 在 Beat 模式下仍每 250ms 广播 `OnHalfBeatLookahead`（F2 Core Rule 3 不变，F2 不感知 C1 量化模式）；C1 内部维护 skip toggle，初始为"处理"相位，逐次交替处理/跳过，等效全拍判定网格。
@@ -826,7 +968,15 @@ if GoodHalfWindowMs_effective > gridIntervalMs / 2 - 1:
 ### 公式验证（C1-F1~F5）
 
 - **AC-C1-11**：`chargeStartDspTime > -1.0` → 判定使用 `chargeStartDspTime`（无论 `attackType` 为 ChargedAttack 或 LightAttack）；`chargeStartDspTime == -1.0`（普通轻攻击）→ 使用 `inputDspTime`。
-- **AC-C1-12**：`beat_offset_ms` 计算：给定 `judgment_time=T`, `latency_offset_s=L`, `beat_dsp_time=B` → 结果 = `(T+L−B)×1000`（正负号正确）。
+- **AC-C1-12**（ADR-D15 SPEC-1 改写）：**延迟补偿只施加一次**。给定
+  `LatencyOffsetMs = 30`，F2 产出 `beat_dsp_time = raw_beat_dsp_time + 0.030`。
+  玩家相对 `beat_dsp_time` 提前 15ms 输入 ⇒ 断言 `beat_offset_ms == −15`（**不是 +15**）。
+  对照：`LatencyOffsetMs = 0` 时同一相对输入 ⇒ 同样 `−15`，即**校准值变化不改变相对偏移**。
+  再取 `LatencyOffsetMs = 120`、玩家完美踩拍（`judgment_time == beat_dsp_time`）
+  ⇒ 断言 `beat_offset_ms == 0` 且评级 == Perfect。
+  **原 AC 为同义反复**：它把被测公式 `(T+L−B)×1000` 逐字复述为期望值，
+  任何实现只要照抄公式就通过，双重补偿缺陷因此未被捕获。改写后的断言
+  以**物理可观测量**（相对听到的声音的提前/延后量）为期望值，与公式形式解耦。
 - **AC-C1-13**：BPM=160 时，`GoodHalfWindowMs_authored=120` → 运行时钳位为 `min(120, 93.75-1) = 92.75ms`。
 - **AC-C1-14**：Perfect → ComboCount += 2；Good → += 1；Miss → += 0（不归零）。ComboCount 不超过 ComboMax（**999**，对齐 registry `combo_max`）。
 - **AC-C1-15**：`OnMeterChanged` 事件（`data.bpmChanged==true`，新 BPM 有效）→ 有效窗口重算 + `_pendingInput` 清空 + `_lateWindowActive` 关闭 + `_skipToggle` 重置为"处理"相位。**Beat 模式额外断言**：事件后立即注入攻击输入，触发一次 `OnHalfBeatLookahead` → 应产生 `RhythmJudgmentEvent`（skip toggle 已重置为处理相位，首拍不被跳过）。**拍号-only 变更断言**：`OnMeterChanged` 携 `data.bpmChanged==false, data.newBpm==oldBpm` → `currentBpm` 不变、窗口重算幂等（值不变）、缓冲仍清空。
@@ -837,7 +987,19 @@ if GoodHalfWindowMs_effective > gridIntervalMs / 2 - 1:
 - **AC-C1-16**：量化模式战斗中切换 → 缓冲区清空，下一输入使用新模式评级。
 - **AC-C1-17**：时钟未确认 2s 超时 → 静默丢弃缓冲区输入，不产生任何 `RhythmJudgmentEvent`，记录 `Warning` 日志。
 - **AC-C1-18**：E3a 退化充能（`attackType=LightAttack`, `chargeStartDspTime > -1.0`）→ 使用 `chargeStartDspTime`（按下时刻）判定，与 F3 guard table 一致。
-- **AC-C1-19**：Android BPM ≥ 186 → Perfect/Good 窗口坍缩，只产生 Perfect 或 Miss（Good 评级消失）；BPM 极高时（如 BPM=240 HalfBeat 模式，`gridIntervalMs/2-1=61.5ms < platformMinPerfectMs=80ms`）触发二次钳位，记录 Warning 日志。**此时 `platformMinPerfectMs=80ms` 承诺被设计放弃**：`PerfectHalfWindowMs_effective` 降至 `gridIntervalMs/2-1`（如 61.5ms），该平台该 BPM 下 Perfect 物理可达性无法保证。Warning 日志须包含当前 BPM 值和实际有效 Perfect 窗口值。
+- **AC-C1-19**（ADR-D15 SPEC-5 改写，三处）：
+  (a) **降级前沿由公式派生**：`BPM_max(Android, HalfBeat) = 30000/(2×81) = 185.19`
+  ⇒ BPM 185 不置 `PerfectFloorSacrificed`、BPM 186 置之。断言对象为
+  `LastClampDegradation` 标志位，**不得**断言日志文本。
+  (b) **Beat 模式前沿为 HalfBeat 的两倍**：`BPM_max(Android, Beat) = 370.37`
+  ⇒ Android / Beat / BPM 240（已注册上限）**不触发**任何降级。原文「Beat 模式临界
+  BPM ≈ 93」为误算（除 2 而非乘 2），该断言若按原文编写会在正确实现上失败。
+  (c) **降级后的档位**：Android / HalfBeat / BPM 240（`C = 61.5`）
+  ⇒ `PerfectEff == 61.5`（`platformMinPerfectMs=80` 承诺被设计放弃，
+  置 `PerfectFloorSacrificed`）、`MissHeadroomMs_effective == 0`（置 `MissUnreachable`）、
+  `LateWindowMs_effective == 61.5` ⇒ **只产生 Perfect 一档**，Good 与 Miss 同时消失，
+  `|offset| > 61.5` 的输入被丢弃。`MissUnreachable` 须触发
+  `Debug.LogError`（开发构建）而非 Warning。日志须含当前 BPM 与实际有效 Perfect 窗口值。
 - **AC-C1-20**：`OnMeterChanged`（`data.newBpm == 0`）→ BPM 不更新，窗口不变，记录警告日志。
 - **AC-C1-21**：Off 模式连击 → 每次 +2，受 ComboMax 约束；每次事件 `CancelTier == Standard`（连招深度封顶断言，见 AC-C1-06）。
 - **AC-C1-21b（功勋隔离契约）**：Off 模式激活期间，C1 暴露的激活 `QuantizationMode == Off`，供下游功勋结算系统（C5/FE5）读取。**C1 层可验证**：C1 广播/暴露的模式状态在 Off 下恒为 `Off`（结算方据此应用 `meritMultiplierOff` 折算）。折算金额本身的验收属 C5/FE5 集成 AC（C1 不发放功勋）。
@@ -852,6 +1014,37 @@ if GoodHalfWindowMs_effective > gridIntervalMs / 2 - 1:
 - **AC-C1-24**：`RhythmJudgmentEvent { Rating=Miss, CancelTier=Closed, ComboCountAfter==ComboCountBefore }` 正确广播；连击不变且不清零（C1 层可独立验证）。
 - **AC-C1-25（BLOCKING，BC-2 perk delta 消费）**：注入 mock `IRhythmModifierProvider`，令 `GetPerfectWindowDeltaMs()==+20`、`GetComboDelta(Perfect)==+3`。GIVEN `OnPerkStackChanged` 触发后，THEN `_effectivePerfectMs` == clamp(authored+20, …)（窗口重算含 delta）；WHEN Perfect 判定，THEN `ComboCountAfter == Before + 2 + 3`。GIVEN provider == null（无心法），THEN 窗口/ΔCombo 退化为无 perk 基线（`?? 0`）。**Miss 护栏**：provider `GetComboDelta(Miss)` 无论返回何值，Miss 的 ΔCombo 恒 = 0（C1-F4 短路，不查询 perkDelta）。
 - **AC-C1-26（BD-1 Off perk 封顶——可判定）**：owner 裁定「Off perk 封顶」。注入 mock `IRhythmModifierProvider`，令 `GetDamageMultiplier() == 1.8`（模拟满栈数值心法）。**BPM=120，`QuantizationMode == Off`**：任一攻击输入 → 广播 `RhythmJudgmentEvent { Rating=Perfect, CancelTier=Standard }`；**断言下游可见的聚合 `perk_multiplier == min(1.8, 1.0) == 1.0`**（C1-F5c Off 分支 clamp）。对照组 `QuantizationMode == HalfBeat`、同一 mock、Perfect 判定 → `perk_multiplier == 1.8`（未封顶，受 C3 PERK_MULT_MAX=2.0 约束）。**功勋隔离**：Off 下功勋仍按 `meritMultiplierOff` 折算（不因 perk 封顶而绕过，AC-C1-21b）。此断言与 C3 AC-C3-15(b)「Off 下 `perk_multiplier ≤ 1.0`」对齐。
+
+- **AC-C1-30（统一级联永不反转）**〔**生效**，ADR-D15 SPEC-2〕：参数网格扫描
+  BPM ∈ [80, 240] 步长 1 × `quantizationMode` ∈ {HalfBeat, Beat} ×
+  `platformMinPerfectMs` ∈ {16.7, 39, 80} × `MissBudgetShare` ∈ {0.25, 0.5, 0.75, 1.0}
+  （约 4300 组）。每组断言 C1-F3「窗口不等式不变量」五行全部成立，且级联 ⑥ 的
+  `clamp` 下界 ≤ 上界。**回归锚点**：`BPM = 140` + `platformMinPerfectMs = 80`
+  必须通过——该组合下旧方案（绝对毫秒下限 `MissHeadroomMs = 30`）产生
+  `clamp(100, 110, 106.14)` 即下界 110 > 上界 106.14，是本次重写的直接动因。
+- **AC-C1-31（降级标志位等价性）**〔**生效**〕：对 AC-C1-30 的同一参数网格，断言
+  `(LastClampDegradation & MissUnreachable) != 0` ⟺ `MissHeadroomMs_effective <= 0`，
+  且 `(… & PerfectFloorSacrificed) != 0` ⟺ `platformMinPerfectMs > C`，
+  且 `(… & MissHeadroomCompressed) != 0` ⟺ `MissHeadroomMs_effective < MissHeadroomMs_authored`。
+  **断言对象必须是 `LastClampDegradation` 标志位，不得是日志文本**（文本会随本地化与
+  措辞调整漂移，标志位是合约）。
+- **AC-C1-27（早侧 Miss 带结构性非空）**〔**阻塞于 M0 修订**，ADR-D15 SPEC-4 修正 4〕：
+  四子断言——(1) `EarlyWindowMs_effective ≥ GoodEarlyHalfWindowMs_effective + MissHeadroomMs_effective`；
+  (2) 早侧 Perfect 可达，即存在 `offset < 0` 使评级 == Perfect；
+  (3) `EarlyLenienceRatio == 1.0` 时两侧窗口逐值恒等（默认几何对称）；
+  (4) `EarlyLenienceRatio == 1.5` 时早侧 Good 带恰为晚侧 1.5 倍（上界仍受 `C` 约束）。
+- **AC-C1-28（早侧 Miss 实际产生）**〔**阻塞于 M0 修订**〕：120BPM / HalfBeat / PC，
+  输入落在早侧 Miss 带内 ⇒ 断言 `Rating == Miss`、`OffsetMs < 0`、
+  `CancelTier == Closed`、`ΔCombo == 0`（不清零）。晚侧同偏移量对照组须给出
+  除 `OffsetMs` 符号外完全相同的结果。
+- **AC-C1-29（禁止静默吞输入 / No Silent Swallow）**〔**阻塞于 M0 修订**；
+  **在 SPEC-4 修复前必然失败——这正是其价值**，作为 ADR-D15 风险 R-a 的哨兵〕：
+  以 1ms 步长扫描 `offset ∈ [−EarlyWindowMs_effective, +LateWindowMs_effective]`
+  全区间。对每个被拍点缓冲准入的输入，断言**有且仅有一次** `RhythmJudgmentEvent`，
+  且 `OffsetMs` 符号忠实反映方向；被判 Miss 的输入**仍执行攻击**
+  （`AnimancerAttackPlayer.Play(...)` 被调用）。当前早侧
+  `(T − EarlyWindowMs, T)` 区间内的输入既不产生事件也不播攻击动作
+  ——违反本文档 Core Rule「绝不吞输入」。
 
 ---
 

@@ -73,12 +73,13 @@ state_ownership:
     status: active
     owner_system: c1-rhythm-judger
     adr: docs/architecture/adr-d3-rhythm-quantization-core.md
-    interface: "RhythmJudger.CurrentCombo (read-only int property); reset on Miss or death; incremented on Perfect/Good"
+    interface: "RhythmJudger.CurrentCombo (read-only int property); NOT reset on Miss (ADR-D15: Miss preserves the combo count and resets graph position only — combo-system.md:56 rule 7 / EC6); reset on death only; incremented on Perfect/Good"
     write_access: c1-rhythm-judger-only
     referenced_by:
       - docs/architecture/adr-d3-rhythm-quantization-core.md
+      - docs/architecture/adr-d15-rhythm-judgment-window-defects.md
     added: 2026-07-18
-    revised: ""
+    revised: 2026-10-22
 
   - state: latency_offset_ms
     status: active
@@ -539,9 +540,10 @@ forbidden_patterns:
   - pattern: direct_beat_offset_at_input_time
     status: active
     description: "Do not evaluate beat_offset_ms using BeatStateSnapshot.nearest_half_beat or any BeatClock snapshot query at the moment input arrives. All offset calculation must occur in TryEvaluateEarly() / TryEvaluateLate(), using _currentBeatDspTime set by OnHalfBeatLookahead."
-    why: "Evaluating offset at input time introduces two errors: (1) pre-beat inputs reference the previous half-beat, producing a falsely large positive offset; (2) BeatStateSnapshot.nearest_half_beat interpolates from system time, not FMOD DSP clock, introducing the very latency error that F3's beat_offset_ms formula is designed to remove."
+    why: "Evaluating offset at input time introduces two errors: (1) pre-beat inputs reference the previous half-beat, producing a falsely large positive offset; (2) BeatStateSnapshot.nearest_half_beat interpolates from system time, not FMOD DSP clock, introducing the very latency error that F2 Core Rule 7's single-point compensation is designed to remove. NOTE (ADR-D15 SPEC-1, 2026-10-22): this ban constrains the TIME SOURCE — evaluation must use the lookahead-anchored _currentBeatDspTime read from the DSP clock — NOT the number of terms in the offset formula. The formula itself carries no latency term (it is (judgment_time - beat_dsp_time)x1000; compensation happens once, in F2 Rule 7). The ban is unweakened by that correction: error (1) is a beat-anchoring defect and error (2) is a clock-source defect, and neither is affected by removing the redundant term."
     adr: docs/architecture/adr-d3-rhythm-quantization-core.md
     added: 2026-07-18
+    revised: 2026-10-22
 
   - pattern: resources_load_for_so
     status: active

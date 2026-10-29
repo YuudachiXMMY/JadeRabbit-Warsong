@@ -1,7 +1,7 @@
 # ADR-D3: Rhythm Quantization Core
 
 ## Status
-Accepted (2026-07-19)
+Accepted (2026-07-19) · **Amended 2026-10-22 by ADR-D15**（SPEC-1 双重延迟补偿、SPEC-2 统一钳位级联与三新旋钮、SPEC-4 静默吞输入登记、LateWindow 过期判定改 DSP 域。本 ADR 的 Decision 与 Evaluation Algorithm 已就地修订；修订依据与完整推导见 `adr-d15-rhythm-judgment-window-defects.md`，该 ADR 当前 `Proposed`——本文件的修订段落随其 Accepted 后方可据以实现。）
 
 ## Date
 2026-07-18
@@ -45,7 +45,7 @@ C2（连招图）、HUD（P1）和 Feel/MMFeedbacks（PL2）均消费 C1 的输�
 
 ### Constraints
 
-- **F2 Core Rule 7**：`BeatEventData.beat_dsp_time` 已含 `LatencyOffsetMs`（处于「玩家感知时间域」）；C1 须将 F3 的原始 `inputDspTime` 加回 `latency_offset_s` 后再与 `beat_dsp_time` 对比（见 F3 GDD F3-F2 公式）
+- **F2 Core Rule 7**：`BeatEventData.beat_dsp_time` 已含 `LatencyOffsetMs`（处于「玩家感知时间域」）；F3 的输入时间戳经 F2 入域后与之同域，**C1 直接相减，不得再加 `latency_offset_s`**（ADR-D15 SPEC-1：再加一次构成双重补偿，两项代数抵消使校准净效应为零）
 - **F2 Core Rule 12**：C1 须在 `BeatClock.IsStartConfirmed == true` 后方可开始评估
 - **Forbidden: beatclock_lifecycle_bypass**：C1 禁止调用 `BeatClock.Play() / Stop() / Pause() / Resume()`
 - **ADR-D5 约束**：攻击动画须通过 `AnimancerAttackPlayer.Play(attackType, targetDspTime)` 触发
@@ -76,8 +76,8 @@ F2.OnHalfBeatLookahead ───────────────────
     回调在墙上时间 T - LookaheadMs 触发       │
                                               ▼
                                     TryEvaluateEarly(beat)
-                                      offset = (jt + latency_s - T)*1000
-                                      if offset ∈ [-EarlyWindowMs, 0]:
+                                      offset = (jt - T)*1000        // ADR-D15: 同域，无 latency_s
+                                      if offset ∈ [-EarlyWindowMs_eff, 0]:
                                         → emit RhythmJudgmentEvent
                                         → AnimancerAttackPlayer.Play(type, T)
                                         → _pendingInput = null
@@ -85,12 +85,12 @@ F2.OnHalfBeatLookahead ───────────────────
                                       else: 开启 LateWindow
 
 F3.OnAttackInput (T 之后到达) ───────► TryEvaluateLate(e)
-    if _lateWindowActive               offset = (jt + latency_s - T)*1000
-    and offset ∈ [0, LateWindowMs]:    → emit RhythmJudgmentEvent（立即触发动画）
+    if _lateWindowActive               offset = (jt - T)*1000   // ADR-D15: 同域
+    and offset ∈ [0, LateWindowMs_eff]:→ emit RhythmJudgmentEvent（立即触发动画）
 
 BeatClock.OnPaused (直接事件绑定) ──► _lateWindowActive = false; _pendingInput = null
 
-Update() ──────────────────────────► expire LateWindow if Time.realtimeSinceStartup > _lateWindowExpiry
+Update() ──────────────────────────► expire LateWindow if _beatClock.CurrentDspTime > _lateWindowExpiry
 ```
 
 ### Evaluation Algorithm
@@ -100,24 +100,27 @@ Update() ───────────────────────�
 AttackInputEvent? _pendingInput           // 单槽可空 struct 缓冲
 double  _currentBeatDspTime              // OnHalfBeatLookahead 写入
 bool    _lateWindowActive
-float   _lateWindowExpiry                // Time.realtimeSinceStartup + LookaheadMs + LateWindowMs
+double  _lateWindowExpiry                // DSP 域：_currentBeatDspTime + LateWindowMs_eff/1000.0（ADR-D15）
 
 // ── 订阅 F2 HalfBeat ──
 void OnHalfBeatLookahead(BeatEventData beat):
     if !BeatClock.IsStartConfirmed: return
     _currentBeatDspTime = beat.beat_dsp_time
-    _lateWindowExpiry   = Time.realtimeSinceStartup + (LookaheadMs + LateWindowMs) / 1000f
+    // ADR-D15：过期判定改为 DSP 域，对齐 rhythm-core.md E5 的权威定义
+    // （原用 Time.realtimeSinceStartup，30fps 下引入最多 33ms 误差，且与 GDD 规范矛盾）
+    _lateWindowExpiry   = _currentBeatDspTime + LateWindowMs_effective / 1000.0
     _lateWindowActive   = true
     TryEvaluateEarly()
 
 // ── 订阅 F3 AttackInput ──
 void OnAttackInput(AttackInputEvent e):
-    _pendingInput = e                    // 覆盖旧值（单槽，同一半拍内先到优先）
+    _pendingInput = e                    // 覆盖旧值（单槽，同一半拍内【后到】覆盖先到）
     if _lateWindowActive: TryEvaluateLate(e)
 
 // ── Update 过期检查 ──
 void Update():
-    if _lateWindowActive && Time.realtimeSinceStartup > _lateWindowExpiry:
+    // 经 IBeatClock 读 DSP 时间——ADR-D8 禁止下游直读 AudioSettings.dspTime
+    if _lateWindowActive && _beatClock.CurrentDspTime > _lateWindowExpiry:
         _lateWindowActive = false
         _pendingInput = null             // 丢弃过期的预拍点输入
 
@@ -135,16 +138,25 @@ double GetJudgmentTime(AttackInputEvent e):
 void TryEvaluateEarly():
     if !_pendingInput.HasValue: return
     double jt     = GetJudgmentTime(_pendingInput.Value)
-    float  offset = (float)((jt + latency_offset_s - _currentBeatDspTime) * 1000)
-    if offset < -EarlyWindowMs: return  // 过早（针对下一拍），保留在缓冲
+    // ADR-D15 SPEC-1：两时间戳同域，直接相减；减法在 double 域完成后才窄化为 float
+    float  offset = (float)((jt - _currentBeatDspTime) * 1000.0)
+    if offset < -EarlyWindowMs_effective: return  // 过早（针对下一拍），保留在缓冲
     if offset > 0: return               // 后拍点输入，交由 LateWindow 处理
     EmitAndClear(offset)
 
 void TryEvaluateLate(AttackInputEvent e):
     double jt     = GetJudgmentTime(e)
-    float  offset = (float)((jt + latency_offset_s - _currentBeatDspTime) * 1000)
-    if offset < 0 || offset > LateWindowMs: return  // 超出 LateWindow
+    float  offset = (float)((jt - _currentBeatDspTime) * 1000.0)
+    if offset < 0 || offset > LateWindowMs_effective: return  // 超出 LateWindow
     EmitAndClear(offset)
+
+// ⚠ ADR-D15 SPEC-4（High，未修复）：上面两个 early-return 构成【静默吞输入】。
+//   落在 (T − EarlyWindowMs_eff, T) 的输入会卡在 _pendingInput：TryEvaluateEarly
+//   仅在 arm 时刻调用一次，TryEvaluateLate 首行把负 offset 挡掉且不清缓冲，
+//   过期检查先把它 null 掉。EmitAndClear 是 RhythmJudgmentEvent 与
+//   AnimancerAttackPlayer.Play(...) 的唯一发生地 ⇒ 既不产生评级也不播攻击动作，
+//   违反 rhythm-core.md「绝不吞输入」。修复路径见 ADR-D15 Open Follow-up TD-1。
+//   硬约束：不得以「把 EarlyWindowMs_effective 钳到 LookaheadMs」的方式回避。
 
 void EmitAndClear(float offset):
     var rating      = Evaluate(Mathf.Abs(offset))
@@ -220,13 +232,28 @@ public class RhythmConfigSO : ScriptableObject
     public float PerfectHalfWindowMs = 50f;   // 创作默认值；Start() 时以平台下限钳位
     public float GoodHalfWindowMs    = 120f;
     public float EarlyWindowMs       = 120f;  // 预拍点缓冲窗口（输入早于拍点最多此值）
-    public float LateWindowMs        = 100f;  // 拍点后容忍窗口
+    public float LateWindowMs        = 100f;  // 拍点后容忍窗口；须 ≥ Good + MissHeadroom
+    // ADR-D15 SPEC-2 新增三旋钮（统一钳位级联 ③ ⑤）
+    public float MissHeadroomMs      = 30f;   // [15, 60] —— Miss 带目标宽度（上限语义）
+    public float MissBudgetShare     = 0.5f;  // (0, 1] —— Miss 可占剩余预算比例
+    public float EarlyLenienceRatio  = 1.0f;  // [1.0, 1.5] —— 早侧放宽倍率（提案中，默认全对称）
     // 平台最小值（Start() 自动注入，不在此处暴露）:
     //   PC/Console: 16.7ms | iOS: 39ms | Android: 80ms
-    // 不变量验证（Start() 断言）:
-    //   GoodHalfWindowMs < halfBeatDurationMs / 2（防止相邻拍点窗口重叠）
-    //   PerfectHalfWindowMs < GoodHalfWindowMs
+    // 不变量验证：见 rhythm-core.md C1-F3「窗口不等式不变量」五行（唯一权威）。
+    //   ⚠ 本处【不复刻】不变量——ADR-D15 诊断出规格副本互不同步是缺陷累积的结构性原因。
+    //   原文两行（GoodHalfWindowMs < halfBeat/2、Perfect < Good）仅覆盖 authored 值
+    //   且漏掉 Miss 带与早侧，已被统一级联的五行不变量取代。
 }
+
+[Flags] public enum ClampDegradation      // ADR-D15：钳位降级的可观测性合约
+{
+    None                   = 0,
+    MissHeadroomCompressed = 1 << 0,      // Warning + 遥测，非阻塞
+    PerfectFloorSacrificed = 1 << 1,      // Warning + 内容期门禁
+    MissUnreachable        = 1 << 2,      // 内容期【错误】——玩家视角零症状
+}
+// RhythmJudger 暴露：public ClampDegradation LastClampDegradation { get; }
+// 断言与门禁一律针对标志位，不得针对日志文本。
 ```
 
 ## Alternatives Considered
@@ -259,9 +286,9 @@ public class RhythmConfigSO : ScriptableObject
 - 攻击动画调度时间为 `_currentBeatDspTime`（拍点 DSP 时间），而非输入到达时间。后拍点输入立即触发动画。玩家感受到攻击被「吸附」到拍点，这是量化机制的设计意图。
 
 ### Risks
-- **窗口重叠**: `GoodHalfWindowMs > halfBeatDurationMs / 2` 时，相邻拍点的 Good 窗口重叠，单个输入可归属两个拍点。缓解：`Start()` 断言 `GoodHalfWindowMs < 60000f / currentBpm / 2`；BPM 变更时重新验证。
-- **Android 80ms 下限**: 120 BPM 时半拍 = 250ms，PerfectHalfWindowMs 钳位至 80ms（32%）。C1 GDD 须为 Android 设置更宽的 GoodHalfWindowMs（建议 ≥ 150ms），确保 Perfect/Good 两档有实质区别。
-- **LateWindow 过期精度**（M2）: `Time.realtimeSinceStartup` 在 30fps 移动端引入最多 33ms 过期误差。MVP 可接受；post-MVP 可切换至 DSP 时钟计算过期（`_lateWindowExpiry = _currentBeatDspTime + LateWindowMs/1000.0`，在 DSP 域比较）。
+- **窗口重叠**: 相邻拍点 Good 窗口重叠会使单个输入归属两个拍点。缓解已上移为统一钳位级联的 **P1 承诺**（优先级最高）：`C = gridIntervalMs/2 − 1`，所有 effective 窗口不得越过 `C`。本 ADR **不再**给出独立的 `Start()` 断言式——权威不变量见 `rhythm-core.md` C1-F3（ADR-D15：原断言只验 authored 值，而钳位作用于 effective 值，验错了对象）。
+- **Android 80ms 下限**: 120 BPM 时半拍 = 250ms，`PerfectHalfWindowMs` 被抬到平台下限 80ms（占 `C=124` 的 65%）。原建议「C1 GDD 须为 Android 设置更宽的 `GoodHalfWindowMs`（≥150ms）」**已失效**：`GoodHalfWindowMs_effective` 的天花板是 `C − MissHeadroomMs_effective`，150ms 无法达成。正确做法是调 `MissBudgetShare`，并遵守 `BPM ≤ BPM_max(platform, mode)`（ADR-D15）。
+- **LateWindow 过期精度**（**ADR-D15 已修订，不再是 post-MVP 可选项**）: `Time.realtimeSinceStartup` 在 30fps 移动端引入最多 33ms 过期误差，且与 `rhythm-core.md` E5「权威判定方式为 DSP 时间比较」直接矛盾——本 ADR 原已自认此矛盾却将修复推迟到 post-MVP。现正式采用 DSP 域判定：`_lateWindowExpiry = _currentBeatDspTime + LateWindowMs_effective / 1000.0`，经 `IBeatClock.CurrentDspTime` 比较（ADR-D8 禁止下游直读 `AudioSettings.dspTime`）。残余误差来自 DSP 粒度（Android ~40ms），不来自帧率。
 - **`OnBeatClockPaused` 绑定方式**（M2 修复）: `RhythmJudger` 须在 `Start()` 中直接绑定 `BeatClock.OnPaused += OnBeatClockPaused`，而非在 `Update()` 中轮询暂停状态。直接事件绑定消除 Script Execution Order 竞争（TDELifecycleAdapter 触发暂停 → BeatClock 广播 → RhythmJudger 同帧清除，而非等到下一 Update）。
 
 ## GDD Requirements Addressed

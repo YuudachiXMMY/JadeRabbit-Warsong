@@ -783,17 +783,17 @@ requirements:
   - id: TR-rhythm-005
     system: rhythm
     gdd: design/gdd/rhythm-core.md
-    requirement: "Beat-offset formula (judgment_time + latency_offset_s - beat_dsp_time)x1000; cross-time-domain alignment in perception domain"
+    requirement: "Beat-offset formula (judgment_time - beat_dsp_time)x1000 — NO latency_offset_s term. REVISED 2026-10-22 by ADR-D15 SPEC-1: the prior wording '(judgment_time + latency_offset_s - beat_dsp_time)' double-compensated, because F2 Core Rule 7 (audio-beat-clock.md) already folds latency_offset_s into the beat_dsp_time it publishes; the two additions cancel algebraically and calibration had zero net effect. Latency compensation happens once and only once, in F2 Rule 7. Both operands are already in the perception domain, so C1 subtracts directly. Subtraction must complete in the double domain; narrow to float only on the final small millisecond delta."
     created: 2026-08-11
-    revised: ""
+    revised: 2026-10-22
     status: active
 
   - id: TR-rhythm-006
     system: rhythm
     gdd: design/gdd/rhythm-core.md
-    requirement: "Runtime window clamp cascade recomputed on every BPM change; writes runtime fields _effectivePerfect/GoodMs, never back to SO (ADR-D4 D4-1)"
+    requirement: "Runtime window clamp cascade recomputed on every BPM change; writes runtime fields only, never back to SO (ADR-D4 D4-1). REVISED 2026-10-22 by ADR-D15 SPEC-2: there is now ONE unified cascade (steps 1-6, sole authority = rhythm-core.md C1-F3 step 1) producing _effectivePerfectMs / _effectiveGoodMs / _effectiveGoodEarlyMs / _effectiveMissHeadroomMs / _effectiveLateMs / _effectiveEarlyMs plus the _lastClampDegradation flags. No duplicate cascade copy may exist in any other section or file — the pre-ADR-D15 defect family accumulated precisely because three unsynchronized copies existed. Priority order is P1 (adjacent beats never overlap, ceiling C = gridIntervalMs/2 - 1) > P2 (platformMinPerfectMs floor) > P3 (Miss reachable)."
     created: 2026-08-11
-    revised: ""
+    revised: 2026-10-22
     status: active
 
   - id: TR-rhythm-007
@@ -847,9 +847,9 @@ requirements:
   - id: TR-rhythm-013
     system: rhythm
     gdd: design/gdd/rhythm-core.md
-    requirement: "LateWindow expiry authoritatively judged by DSP-time comparison inputDspTime - beatDspTime > LateWindowMs/1000, frame-rate independent"
+    requirement: "LateWindow expiry authoritatively judged by DSP-time comparison inputDspTime - beatDspTime > LateWindowMs_effective/1000 (effective, not authored — the two diverge under the ADR-D15 unified clamp cascade), read via IBeatClock.CurrentDspTime (ADR-D8 forbids downstream AudioSettings.dspTime access), frame-rate independent"
     created: 2026-08-11
-    revised: ""
+    revised: 2026-10-22
     status: active
 
   - id: TR-rhythm-014
@@ -879,9 +879,9 @@ requirements:
   - id: TR-rhythm-017
     system: rhythm
     gdd: design/gdd/rhythm-core.md
-    requirement: "E7 window-collapse inline logic must run before Assert (Android BPM>=186); binary Perfect/Miss degrade accepted"
+    requirement: "E7 window collapse: the collapse handling is no longer separate inline logic — REVISED 2026-10-22 by ADR-D15 SPEC-2, it is absorbed into steps 2 and 4 of the unified clamp cascade, which by construction runs before the invariant Asserts. Collapse threshold is derived, not hardcoded: BPM_max(platform, mode) = (mode==Beat ? 60000 : 30000) / (2 x (platformMinPerfectMs + 1)); Android/HalfBeat yields 185.19, hence the historical '>=186'. CORRECTION: the prior wording 'binary Perfect/Miss degrade accepted' was factually wrong. Above BPM_max the P2 Perfect floor consumes the entire ceiling C, so Good AND Miss vanish together and the result is a SINGLE Perfect tier, not a Perfect/Miss binary. That state raises _lastClampDegradation |= MissUnreachable and is a content-configuration error (Debug.LogError), not an accepted graceful degrade — remedy by lowering BPM below BPM_max, raising MissBudgetShare, or accepting PerfectFloorSacrificed."
     created: 2026-08-11
-    revised: ""
+    revised: 2026-10-22
     status: active
 
   - id: TR-rhythm-018
