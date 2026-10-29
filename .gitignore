@@ -186,3 +186,24 @@ fmod_editor.log
 
 # Visual Studio XML solution (generated, mirrors *.sln)
 *.slnx
+
+# =============================================================================
+# Plugin: 托管程序集（Asset Store 插件本体）
+# =============================================================================
+#
+# 上面「Build Output」段的 *.dll 本意是忽略构建产物，但它把 Asset Store 插件
+# 自身的托管程序集一并误伤了。后果：仓库里只有 .dll.meta 而没有 .dll，
+# 全新检出（CI runner / git worktree）无法编译 ——
+#   DOTween/Modules/*.cs      → CS0234: 命名空间 DG.Tweening.Core 不存在
+#   Sirenix/.../*Drawers.cs   → CS0234: 命名空间 Sirenix.Utilities 不存在
+# 进而 Unity 以 "Scripts have compiler errors" 中止，测试门禁永远无法产出
+# 可信结果（本仓库前 95 次 CI run 从未走到这一步，故一直未被发现）。
+#
+# .gitattributes:147 早已声明 `*.dll lfs`，即「DLL 应当入库并走 LFS」；
+# 仓库也已用 LFS 跟踪了 24 个商业插件原生二进制（iOS .a 静态库等）。
+# 因此下面的反忽略不是新政策，而是补上既有意图缺失的一环。
+#
+# 维护提示：新增以 DLL 形式分发的 Asset Store 插件时，在此追加一行反忽略，
+# 否则 CI 会以同样的 CS0234 失败。反忽略必须位于 *.dll 之后（git 取最后匹配）。
+!/[Aa]ssets/Plugins/Demigiant/**/*.dll
+!/[Aa]ssets/Plugins/Sirenix/**/*.dll
