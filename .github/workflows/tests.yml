@@ -31,6 +31,22 @@ jobs:
         with:
           lfs: true
 
+      # .claude/docs/technical-preferences.md 对 Hot Reload 的约定：
+      # 「仅限开发期 Editor 使用 … CI 构建和 Player 构建中完全忽略此插件。」
+      #
+      # 该包的 9 个托管程序集按 Asset Store 授权未纳入版本控制，因此在全新检出中
+      # 它的 144 个 .cs 找不到 SingularityGroup.HotReload.DTO / .Newtonsoft /
+      # .RuntimeDependencies 等命名空间，产生 408 个 CS0246/CS0234，
+      # 导致 Unity 以 "Scripts have compiler errors" 中止、测试一次都跑不到。
+      #
+      # 按上述既定政策移除该开发期工具，而不是把它的二进制提交进仓库 ——
+      # 质量门禁不应依赖一个开发期加速工具能否编译。
+      # 置于 Cache Library 之前，使缓存键如实反映实际参与编译的文件树。
+      - name: Remove Editor-only Dev Tooling (Hot Reload)
+        run: |
+          rm -rf "Packages/com.singularitygroup.hotreload"
+          rm -rf "Assets/HotReload"
+
       - name: Cache Library
         uses: actions/cache@v4
         with:
