@@ -36,6 +36,7 @@ namespace JadeRabbit.Slice
         private Color _baseColor;
         private Coroutine _flashRoutine;
         private bool _dead;
+        private bool _loggedMissingAttackRefs;
 
         private void Awake()
         {
@@ -75,7 +76,20 @@ namespace JadeRabbit.Slice
 
         private void HandleAttack(AttackType type, double dsp)
         {
-            if (_judge == null || _swing == null || _metronome == null) return;
+            // 同 RhythmJudge 的教训：静默 return 会把「引用缺失」表现为「按键没反应」，零线索。
+            if (_judge == null || _swing == null || _metronome == null)
+            {
+                if (!_loggedMissingAttackRefs)
+                {
+                    _loggedMissingAttackRefs = true; // 节流：每次攻击都走此路径
+                    Debug.LogError(
+                        $"[PlayerController] 攻击链引用缺失，攻击输入已被丢弃："
+                        + $"_judge={(_judge == null ? "null" : "ok")}, "
+                        + $"_swing={(_swing == null ? "null" : "ok")}, "
+                        + $"_metronome={(_metronome == null ? "null" : "ok")}。", this);
+                }
+                return;
+            }
             RhythmJudgment j = _judge.Judge(type, dsp);
             _combo?.Submit(j);
             _swing.Play(type, j, _metronome.Bpm);
