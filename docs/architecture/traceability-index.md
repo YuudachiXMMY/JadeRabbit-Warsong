@@ -51,6 +51,7 @@
 | ADR-D12 (Death & Run-Lifecycle) | Accepted | TR-concept-015, TR-tde-013, TR-rhythm-019, TR-director-019 — 死亡换局边界(run-ends-on-death) |
 | ADR-D13 (Run-End Victory Unification) | Accepted (TD+GD 会签) | TR-tde-013/014, TR-rhythm-019, TR-director-019 — 统一 `OnRunEnded(RunOutcome)`,胜利路径对称 |
 | ADR-D14 (BD-2 Cancel-Window Transient) | **Accepted** (2026-08-13, TD+GD 会签) | TR-combo-015 — 取消窗适应窗口触发点前移至 `OnMeterChangeAccepted`(C2 BD-2 故事解阻塞；GDD 文本落地为下游步骤) |
+| ADR-D15 (Rhythm Judgment Window Defects) | **Proposed** (2026-10-21) | TR-rhythm-005 (偏移公式 `latency_offset_s` 双重补偿代数抵消 → SPEC-1 删除重复项)、TR-rhythm-006 (钳位级联追加 `MissHeadroomMs` 一步 → SPEC-2)、TR-rhythm-013 (`LateWindowMs_effective` 下界钳到 `GoodEff + MissHeadroomMs`)、TR-beatclock-007 (F2 Core Rule 7「C1 须额外相加」指示改写) — ⚠️ **Proposed 门控**：按 `docs/CLAUDE.md`「stories referencing a Proposed ADR are auto-blocked」，C1 生产判定代码实装被阻塞；在本 ADR 转 Accepted 前，ADR-D3 `:138`/`:145` 的既有公式仍为权威。切片实现 (`Assets/_VerticalSlice/`) 不复刻该缺陷，不受此门控约束 |
 
 ---
 
