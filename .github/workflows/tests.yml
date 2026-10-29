@@ -11,6 +11,16 @@ jobs:
     name: Run Unity Tests
     runs-on: ubuntu-latest
 
+    # game-ci/unity-test-runner 在测试结束后会把结果发布为 GitHub Check Run。
+    # 本仓库 GITHUB_TOKEN 的默认权限为只读，因此即使 186 个测试全数通过，
+    # 该 step 仍会在发布阶段以下述错误失败、把门禁染红：
+    #   Resource not accessible by integration
+    #   https://docs.github.com/rest/checks/runs#create-a-check-run
+    # 显式声明 checks: write 以放行结果发布；contents: read 为 checkout 所需。
+    permissions:
+      contents: read
+      checks: write
+
     steps:
       # Unity CI 编辑器镜像（il2cpp 变体）体积达数 GB，ubuntu-latest 默认磁盘会被
       # docker pull 写满并以 exit code 125 (no space left on device) 失败。
